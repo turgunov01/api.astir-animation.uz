@@ -11,6 +11,8 @@ pnpm-debug.log*
 dist/
 coverage/
 .cache/
+data/*.json
+!data/.gitkeep
 
 logs/
 *.log

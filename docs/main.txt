@@ -1,0 +1,22 @@
+Astir is an animation app for parents and children.
+
+The app will show kids cartoons and TV shows on mobile devices and TV apps.
+The parent controls how long the child can watch and when watching is allowed.
+
+The parent app and the child app use the same backend, but they do not work in the same way.
+
+1. The parent installs the app on the parent phone.
+2. The parent creates an account.
+3. The parent sets a 4 digit PIN.
+4. The parent adds a child profile.
+5. The child opens Astir on a phone, tablet, or TV.
+6. The child app opens in child mode.
+7. The child app shows a QR code or pairing code.
+8. The parent scans or enters the code from the parent app.
+9. The backend connects that device to the selected child.
+10. The parent sets watch limits for the child.
+11. The child app reads those limits from the backend.
+12. The child can watch only inside the rules set by the parent.
+
+For the first backend version, the main job is not video streaming yet.
+The main job is account setup, child setup, device pairing, limits, and watch sessions.

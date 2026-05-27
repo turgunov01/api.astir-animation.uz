@@ -4,8 +4,19 @@
   "private": true,
   "type": "module",
   "description": "",
-  "scripts": {},
+  "scripts": {
+    ".": "nodemon run.js",
+    "start": "node run.js",
+    "test": "node scripts/smoke-test.js"
+  },
   "keywords": [],
   "author": "",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "nodemon": "^3.1.14",
+    "swagger-ui-express": "^5.0.1"
+  }
 }
