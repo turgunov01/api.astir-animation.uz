@@ -1,14 +1,10 @@
 import { Router } from "express";
 import { asyncHandler } from "../lib/errors.js";
-import { requireDevice } from "../middleware/auth.js";
-import { getDeviceConfig } from "../services/watchService.js";
 
-export const deviceRoutes = Router();
+export function createDeviceRoutes({ authMiddleware, deviceController }) {
+  const router = Router();
 
-deviceRoutes.get(
-  "/config",
-  requireDevice,
-  asyncHandler((request, response) => {
-    response.json(getDeviceConfig(request.device));
-  })
-);
+  router.get("/config", authMiddleware.requireDevice, asyncHandler(deviceController.getConfig));
+
+  return router;
+}

@@ -6,6 +6,7 @@ import path from "node:path";
 const dataFile = path.join(os.tmpdir(), `astir-smoke-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
 process.env.JWT_SECRET = "astir-smoke-test-secret";
+process.env.REQUIRE_AUTH = "true";
 
 const { createServer } = await import("../app/server.js");
 
@@ -50,8 +51,26 @@ async function request(baseUrl, pathName, options = {}) {
   return body;
 }
 
+async function requestWithStatus(baseUrl, pathName, options = {}) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      ...(options.headers || {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const body = await response.json();
+
+  return {
+    body,
+    status: response.status
+  };
+}
+
 const port = await listen();
 const baseUrl = `http://127.0.0.1:${port}`;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 try {
   const registration = await request(baseUrl, "/v1/auth/register", {
@@ -65,6 +84,7 @@ try {
   });
 
   assert.equal(typeof registration.token, "string");
+  assert.equal(registration.parent.tariff, "free");
   const parentToken = registration.token;
 
   const pinVerification = await request(baseUrl, "/v1/auth/pin/verify", {
@@ -74,6 +94,327 @@ try {
   });
 
   assert.equal(pinVerification.verified, true);
+
+  const tariffs = await request(baseUrl, "/v1/tariffs");
+
+  assert.equal(tariffs.tariffs.some((tariff) => tariff.code === "free"), true);
+  assert.equal(tariffs.tariffs.some((tariff) => tariff.code === "premium"), true);
+
+  const defaultTariff = await request(baseUrl, "/v1/tariffs/current", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(defaultTariff.tariff.code, "free");
+  assert.equal(defaultTariff.access.can_watch_premium, false);
+
+  const categoryResponse = await request(baseUrl, "/v1/content/categories/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      title: {
+        en: `Smoke Category ${Date.now()}`,
+        ru: `Тестовая категория ${Date.now()}`,
+        uz: `Test kategoriyasi ${Date.now()}`
+      },
+      description: {
+        en: "Category created by smoke test",
+        ru: "Категория создана smoke test",
+        uz: "Smoke test yaratgan kategoriya"
+      }
+    }
+  });
+
+  const categoryId = categoryResponse.category.id;
+  assert.equal(typeof categoryId, "string");
+  assert.equal(typeof categoryResponse.category.title.en, "string");
+  assert.equal(typeof categoryResponse.category.title.ru, "string");
+  assert.equal(typeof categoryResponse.category.title.uz, "string");
+
+  const listedCategories = await request(baseUrl, "/v1/content/categories", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    listedCategories.categories.some((category) => category.id === categoryId),
+    true
+  );
+
+  const categoryById = await request(baseUrl, `/v1/content/categories/${categoryId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(categoryById.category.id, categoryId);
+
+  const updatedCategory = await request(baseUrl, `/v1/content/categories/${categoryId}`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      title: {
+        en: `Updated Smoke Category ${Date.now()}`,
+        ru: `Обновленная тестовая категория ${Date.now()}`,
+        uz: `Yangilangan test kategoriyasi ${Date.now()}`
+      }
+    }
+  });
+
+  assert.equal(updatedCategory.category.id, categoryId);
+
+  const movieResponse = await request(baseUrl, "/v1/content/movies/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      id: "client-selected-movie-id",
+      title: {
+        en: `Smoke Movie ${Date.now()}`,
+        ru: `Smoke Movie RU ${Date.now()}`,
+        uz: `Smoke Movie UZ ${Date.now()}`
+      },
+      description: {
+        en: "Movie created by smoke test",
+        ru: "Movie created by smoke test RU",
+        uz: "Movie created by smoke test UZ"
+      },
+      series: [],
+      is_premium: false
+    }
+  });
+
+  const movieId = movieResponse.movie.id;
+  assert.equal(typeof movieId, "string");
+  assert.match(movieId, uuidPattern);
+  assert.notEqual(movieId, "client-selected-movie-id");
+  assert.equal(movieResponse.movie.is_premium, false);
+
+  const premiumMovieResponse = await request(baseUrl, "/v1/content/movies/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      title: {
+        en: `Premium Smoke Movie ${Date.now()}`,
+        ru: `Premium Smoke Movie RU ${Date.now()}`,
+        uz: `Premium Smoke Movie UZ ${Date.now()}`
+      },
+      description: {
+        en: "Premium movie created by smoke test",
+        ru: "Premium movie created by smoke test RU",
+        uz: "Premium movie created by smoke test UZ"
+      },
+      series: [],
+      is_premium: true
+    }
+  });
+
+  const premiumMovieId = premiumMovieResponse.movie.id;
+  assert.match(premiumMovieId, uuidPattern);
+  assert.equal(premiumMovieResponse.movie.is_premium, true);
+
+  const blockedPremiumMovie = await requestWithStatus(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(blockedPremiumMovie.status, 403);
+  assert.equal(blockedPremiumMovie.body.error.code, "PREMIUM_TARIFF_REQUIRED");
+
+  const movies = await request(baseUrl, "/v1/content/movies", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    movies.movies.some((movie) => movie.id === movieId),
+    true
+  );
+  assert.equal(
+    movies.movies.some((movie) => movie.id === premiumMovieId),
+    false
+  );
+
+  const customTariffId = `smoke-tariff-${Date.now()}`;
+  const customTariff = await request(baseUrl, "/v1/tariffs/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      id: customTariffId,
+      title: {
+        en: "Smoke Tariff",
+        ru: "Smoke Tariff RU",
+        uz: "Smoke Tariff UZ"
+      },
+      description: {
+        en: "Created by smoke test",
+        ru: "Created by smoke test RU",
+        uz: "Created by smoke test UZ"
+      },
+      is_default: false,
+      can_watch_premium: false
+    }
+  });
+
+  assert.equal(customTariff.tariff.id, customTariffId);
+  assert.equal(customTariff.tariff.can_watch_premium, false);
+
+  const customTariffById = await request(baseUrl, `/v1/tariffs/${customTariffId}`);
+
+  assert.equal(customTariffById.tariff.id, customTariffId);
+
+  const updatedCustomTariff = await request(baseUrl, `/v1/tariffs/${customTariffId}`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { can_watch_premium: true }
+  });
+
+  assert.equal(updatedCustomTariff.tariff.can_watch_premium, true);
+
+  const customCurrentTariff = await request(baseUrl, "/v1/tariffs/current", {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { tariff: customTariffId }
+  });
+
+  assert.equal(customCurrentTariff.tariff.id, customTariffId);
+  assert.equal(customCurrentTariff.access.can_watch_premium, true);
+
+  const customTariffPremiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(customTariffPremiumMovie.movie.id, premiumMovieId);
+
+  const usedTariffDelete = await requestWithStatus(baseUrl, `/v1/tariffs/${customTariffId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(usedTariffDelete.status, 409);
+  assert.equal(usedTariffDelete.body.error.code, "TARIFF_IN_USE");
+
+  const freeTariff = await request(baseUrl, "/v1/tariffs/current", {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { tariff: "free" }
+  });
+
+  assert.equal(freeTariff.tariff.code, "free");
+  assert.equal(freeTariff.access.can_watch_premium, false);
+
+  const deletedCustomTariff = await request(baseUrl, `/v1/tariffs/${customTariffId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(deletedCustomTariff.deleted, true);
+
+  const appleSubscriptionId = `apple-sub-${Date.now()}`;
+  const applePurchase = await request(baseUrl, "/v1/billing/apple/verify", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      tariff_id: "premium",
+      receipt: "local-apple-receipt",
+      provider_subscription_id: appleSubscriptionId,
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  });
+
+  assert.equal(applePurchase.subscription.provider, "apple");
+  assert.equal(applePurchase.subscription.providerSubscriptionId, appleSubscriptionId);
+  assert.equal(applePurchase.subscription.status, "active");
+  assert.equal(applePurchase.tariff.id, "premium");
+  assert.equal(applePurchase.access.can_watch_premium, true);
+
+  const currentSubscription = await request(baseUrl, "/v1/billing/subscription/current", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(currentSubscription.subscription.id, applePurchase.subscription.id);
+
+  const billingTariff = await request(baseUrl, "/v1/tariffs/current", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(billingTariff.tariff.id, "premium");
+  assert.equal(billingTariff.subscription.id, applePurchase.subscription.id);
+  assert.equal(billingTariff.access.can_watch_premium, true);
+
+  const appleWebhook = await request(baseUrl, "/v1/billing/webhook/apple", {
+    method: "POST",
+    body: {
+      provider_subscription_id: appleSubscriptionId,
+      status: "active",
+      expires_at: applePurchase.subscription.expiresAt
+    }
+  });
+
+  assert.equal(appleWebhook.accepted, true);
+  assert.equal(appleWebhook.subscription.id, applePurchase.subscription.id);
+
+  const premiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(premiumMovie.movie.id, premiumMovieId);
+
+  const premiumMovies = await request(baseUrl, "/v1/content/movies", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    premiumMovies.movies.some((movie) => movie.id === premiumMovieId),
+    true
+  );
+
+  const singleMovie = await request(baseUrl, `/v1/content/movies/${movieId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(singleMovie.movie.id, movieId);
+  assert.equal(singleMovie.movie.playback.status, "missing_source");
+
+  const updatedMovie = await request(baseUrl, `/v1/content/movies/${movieId}`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      title: {
+        en: `Updated Smoke Movie ${Date.now()}`,
+        ru: `Updated Smoke Movie RU ${Date.now()}`,
+        uz: `Updated Smoke Movie UZ ${Date.now()}`
+      }
+    }
+  });
+
+  assert.equal(updatedMovie.movie.id, movieId);
+
+  const seriesResponse = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      id: "client-selected-series-id",
+      title: {
+        en: `Smoke Series ${Date.now()}`,
+        ru: `Smoke Series RU ${Date.now()}`,
+        uz: `Smoke Series UZ ${Date.now()}`
+      },
+      description: {
+        en: "Series item created by smoke test",
+        ru: "Series item created by smoke test RU",
+        uz: "Series item created by smoke test UZ"
+      },
+      is_premium: false
+    }
+  });
+
+  const seriesItemId = seriesResponse.series_item.id;
+  assert.equal(typeof seriesItemId, "string");
+  assert.match(seriesItemId, uuidPattern);
+  assert.notEqual(seriesItemId, "client-selected-series-id");
+
+  const series = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    series.series.some((movie) => movie.id === seriesItemId),
+    true
+  );
 
   const childResponse = await request(baseUrl, "/v1/children", {
     method: "POST",
@@ -128,11 +469,30 @@ try {
 
   assert.equal(config.child.id, childId);
 
+  const deviceTariff = await request(baseUrl, "/v1/tariffs/current", {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceTariff.tariff.code, "premium");
+  assert.equal(deviceTariff.access.can_watch_premium, true);
+
   const content = await request(baseUrl, "/v1/content", {
     headers: { authorization: `Bearer ${deviceToken}` }
   });
 
   assert.equal(content.content.length > 0, true);
+  assert.equal(typeof content.content[0].title.en, "string");
+  assert.equal(typeof content.content[0].title.ru, "string");
+  assert.equal(typeof content.content[0].title.uz, "string");
+
+  const deviceCategories = await request(baseUrl, "/v1/content/categories", {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(
+    deviceCategories.categories.some((category) => category.id === categoryId),
+    true
+  );
 
   const started = await request(baseUrl, "/v1/watch-sessions/start", {
     method: "POST",
@@ -149,6 +509,27 @@ try {
   });
 
   assert.equal(stopped.watchSession.id, watchSessionId);
+
+  const deletedCategory = await request(baseUrl, `/v1/content/categories/${categoryId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(deletedCategory.deleted, true);
+
+  const deletedPremiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(deletedPremiumMovie.deleted, true);
+
+  const deletedMovie = await request(baseUrl, `/v1/content/movies/${movieId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(deletedMovie.deleted, true);
   console.log("Smoke test passed");
 } finally {
   await close();

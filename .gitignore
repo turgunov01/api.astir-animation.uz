@@ -13,6 +13,7 @@ coverage/
 .cache/
 data/*.json
 !data/.gitkeep
+media/
 
 logs/
 *.log

@@ -4,7 +4,8 @@ export function notFoundHandler(request, response) {
   response.status(404).json({
     error: {
       code: "NOT_FOUND",
-      message: "Route not found"
+      message: "Route not found",
+      requestId: request.id
     }
   });
 }
@@ -19,7 +20,19 @@ export function errorHandler(error, request, response, next) {
     response.status(400).json({
       error: {
         code: "INVALID_JSON",
-        message: "Request body must be valid JSON"
+        message: "Request body must be valid JSON",
+        requestId: request.id
+      }
+    });
+    return;
+  }
+
+  if (error.name === "MulterError" || error.message === "Only video files are allowed") {
+    response.status(400).json({
+      error: {
+        code: "UPLOAD_ERROR",
+        message: error.message,
+        requestId: request.id
       }
     });
     return;
@@ -29,7 +42,8 @@ export function errorHandler(error, request, response, next) {
     response.status(error.statusCode).json({
       error: {
         code: error.code,
-        message: error.message
+        message: error.message,
+        requestId: request.id
       }
     });
     return;
@@ -38,7 +52,8 @@ export function errorHandler(error, request, response, next) {
   response.status(500).json({
     error: {
       code: "INTERNAL_SERVER_ERROR",
-      message: "Internal server error"
+      message: "Internal server error",
+      requestId: request.id
     }
   });
 }

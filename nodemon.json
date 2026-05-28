@@ -1,0 +1,18 @@
+{
+  "watch": [
+    "app",
+    ".env",
+    "run.js",
+    "package.json"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    ".git",
+    "data",
+    "docs",
+    "media",
+    "node_modules",
+    "package-lock.json",
+    "README.md"
+  ]
+}

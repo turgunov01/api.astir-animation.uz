@@ -1,5 +1,4 @@
 import { forbidden, notFound } from "../lib/errors.js";
-import { store } from "../store/jsonStore.js";
 
 const defaultLimit = {
   dailyMinutes: 60,
@@ -19,66 +18,73 @@ export function serializeChild(child) {
   };
 }
 
-export function listChildren(parentId) {
-  return store.filter("children", (child) => child.parentId === parentId).map(serializeChild);
-}
-
-export function getChildForParent(parentId, childId) {
-  const child = store.findById("children", childId);
-
-  if (!child) {
-    throw notFound("Child not found", "CHILD_NOT_FOUND");
+export function createChildService({ children, watchLimits }) {
+  function listChildren(parentId) {
+    return children.listByParentId(parentId).map(serializeChild);
   }
 
-  if (child.parentId !== parentId) {
-    throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
+  function getChildForParent(parentId, childId) {
+    const child = children.findById(childId);
+
+    if (!child) {
+      throw notFound("Child not found", "CHILD_NOT_FOUND");
+    }
+
+    if (child.parentId !== parentId) {
+      throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
+    }
+
+    return child;
   }
 
-  return child;
-}
-
-export function createChild(parentId, { name, birthYear }) {
-  const child = store.insert("children", {
-    parentId,
-    name,
-    birthYear
-  });
-
-  store.insert("watchLimits", {
-    parentId,
-    childId: child.id,
-    ...defaultLimit
-  });
-
-  return serializeChild(child);
-}
-
-export function getLimits(parentId, childId) {
-  getChildForParent(parentId, childId);
-
-  const limit = store.findOne("watchLimits", (record) => record.childId === childId);
-
-  if (!limit) {
-    return store.insert("watchLimits", {
+  function createChild(parentId, { name, birthYear }) {
+    const child = children.create({
       parentId,
-      childId,
+      name,
+      birthYear
+    });
+
+    watchLimits.create({
+      parentId,
+      childId: child.id,
       ...defaultLimit
     });
+
+    return serializeChild(child);
   }
 
-  return limit;
-}
+  function getLimits(parentId, childId) {
+    getChildForParent(parentId, childId);
 
-export function updateLimits(parentId, childId, attributes) {
-  getChildForParent(parentId, childId);
+    const limit = watchLimits.findByChildId(childId);
 
-  return store.upsertOne(
-    "watchLimits",
-    (record) => record.childId === childId,
-    {
+    if (!limit) {
+      return watchLimits.create({
+        parentId,
+        childId,
+        ...defaultLimit
+      });
+    }
+
+    return limit;
+  }
+
+  function updateLimits(parentId, childId, attributes) {
+    getChildForParent(parentId, childId);
+
+    return watchLimits.upsertByChildId(childId, {
       parentId,
       childId,
       ...attributes
-    }
-  );
+    });
+  }
+
+  return {
+    createChild,
+    getChildForParent,
+    getLimits,
+    listChildren,
+    serializeChild,
+    updateLimits
+  };
 }

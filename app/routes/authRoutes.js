@@ -1,49 +1,13 @@
 import { Router } from "express";
 import { asyncHandler } from "../lib/errors.js";
-import { email, pin, requiredString } from "../lib/validation.js";
-import { requireParent } from "../middleware/auth.js";
-import { loginParent, registerParent, sanitizeParent, verifyParentPin } from "../services/authService.js";
 
-export const authRoutes = Router();
+export function createAuthRoutes({ authController, authMiddleware }) {
+  const router = Router();
 
-authRoutes.post(
-  "/register",
-  asyncHandler((request, response) => {
-    const result = registerParent({
-      name: requiredString(request.body, "name"),
-      email: email(request.body),
-      password: requiredString(request.body, "password", { minLength: 8 }),
-      pin: pin(request.body)
-    });
+  router.post("/register", asyncHandler(authController.register));
+  router.post("/login", asyncHandler(authController.login));
+  router.get("/me", authMiddleware.requireParent, asyncHandler(authController.me));
+  router.post("/pin/verify", authMiddleware.requireParent, asyncHandler(authController.verifyPin));
 
-    response.status(201).json(result);
-  })
-);
-
-authRoutes.post(
-  "/login",
-  asyncHandler((request, response) => {
-    response.json(
-      loginParent({
-        email: email(request.body),
-        password: requiredString(request.body, "password")
-      })
-    );
-  })
-);
-
-authRoutes.get(
-  "/me",
-  requireParent,
-  asyncHandler((request, response) => {
-    response.json({ parent: sanitizeParent(request.parent) });
-  })
-);
-
-authRoutes.post(
-  "/pin/verify",
-  requireParent,
-  asyncHandler((request, response) => {
-    response.json(verifyParentPin(request.parent, pin(request.body)));
-  })
-);
+  return router;
+}

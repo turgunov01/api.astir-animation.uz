@@ -7,7 +7,11 @@ const emptyData = {
   parents: [],
   children: [],
   devices: [],
+  contentCategories: [],
+  contentMovies: [],
   pairingSessions: [],
+  subscriptions: [],
+  tariffs: [],
   watchLimits: [],
   watchSessions: []
 };
@@ -84,6 +88,20 @@ export class JsonStore {
     this.save();
 
     return records[index];
+  }
+
+  delete(collection, id) {
+    const records = this.all(collection);
+    const index = records.findIndex((record) => record.id === id);
+
+    if (index === -1) {
+      return null;
+    }
+
+    const [deletedRecord] = records.splice(index, 1);
+    this.save();
+
+    return deletedRecord;
   }
 
   upsertOne(collection, predicate, attributes) {

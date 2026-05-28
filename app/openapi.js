@@ -17,7 +17,10 @@ export const openApiDocument = {
     { name: "Children" },
     { name: "Pairing" },
     { name: "Device" },
-    { name: "Content" },
+    { name: "Tariffs" },
+    { name: "Billing" },
+    { name: "Movies" },
+    { name: "Categories" },
     { name: "Watch Sessions" }
   ],
   components: {
@@ -41,10 +44,21 @@ export const openApiDocument = {
             type: "object",
             properties: {
               code: { type: "string", example: "VALIDATION_ERROR" },
-              message: { type: "string", example: "Email is required" }
+              message: { type: "string", example: "Email is required" },
+              requestId: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" }
             }
           }
         }
+      },
+      LocalizedText: {
+        type: "object",
+        required: ["en", "ru", "uz"],
+        properties: {
+          en: { type: "string", example: "Cartoons" },
+          ru: { type: "string", example: "Мультфильмы" },
+          uz: { type: "string", example: "Multfilmlar" }
+        },
+        additionalProperties: false
       },
       Parent: {
         type: "object",
@@ -52,6 +66,7 @@ export const openApiDocument = {
           id: { type: "string" },
           name: { type: "string", example: "Parent" },
           email: { type: "string", example: "parent@example.com" },
+          tariff: { type: "string", example: "free" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" }
         }
@@ -89,10 +104,121 @@ export const openApiDocument = {
         type: "object",
         properties: {
           id: { type: "string", example: "bluey-001" },
-          title: { type: "string", example: "Bluey - Keepy Uppy" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
           type: { type: "string", example: "cartoon" },
           ageRating: { type: "string", example: "G" },
           durationMinutes: { type: "integer", example: 7 }
+        }
+      },
+      ContentCategory: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          description: { $ref: "#/components/schemas/LocalizedText" }
+        }
+      },
+      ContentMovie: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            readOnly: true,
+            example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
+          },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          series: {
+            type: "array",
+            items: {
+              oneOf: [
+                { type: "string" },
+                { $ref: "#/components/schemas/ContentMovie" }
+              ]
+            }
+          },
+          is_premium: { type: "boolean", example: false },
+          media: {
+            type: "object",
+            properties: {
+              has_source: { type: "boolean", example: true },
+              original_name: { type: "string", nullable: true, example: "movie.mp4" },
+              mime_type: { type: "string", nullable: true, example: "video/mp4" },
+              size: { type: "integer", nullable: true, example: 1024000 }
+            }
+          },
+          playback: {
+            type: "object",
+            properties: {
+              type: { type: "string", example: "hls" },
+              status: { type: "string", example: "pending" },
+              hls_url: { type: "string", nullable: true, example: "/media/hls/movie_id/master.m3u8" },
+              error: { type: "string", nullable: true }
+            }
+          }
+        }
+      },
+      Tariff: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "free" },
+          code: { type: "string", example: "free" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          is_default: { type: "boolean", example: true },
+          can_watch_premium: { type: "boolean", example: false },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" }
+        }
+      },
+      TariffStatus: {
+        type: "object",
+        properties: {
+          tariff: { $ref: "#/components/schemas/Tariff" },
+          subscription: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/Subscription" }]
+          },
+          access: {
+            type: "object",
+            properties: {
+              can_watch_premium: { type: "boolean", example: false }
+            }
+          }
+        }
+      },
+      Subscription: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string" },
+          parentId: { type: "string" },
+          tariffId: { type: "string", example: "premium" },
+          provider: { type: "string", enum: ["apple", "google"], example: "apple" },
+          providerSubscriptionId: { type: "string", example: "1000001234567890" },
+          status: {
+            type: "string",
+            enum: ["active", "grace_period", "expired", "cancelled"],
+            example: "active"
+          },
+          startedAt: { type: "string", format: "date-time" },
+          expiresAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" }
+        }
+      },
+      BillingPurchaseResponse: {
+        type: "object",
+        properties: {
+          subscription: { $ref: "#/components/schemas/Subscription" },
+          tariff: { $ref: "#/components/schemas/Tariff" },
+          access: {
+            type: "object",
+            properties: {
+              can_watch_premium: { type: "boolean", example: true }
+            }
+          }
         }
       }
     }
@@ -379,6 +505,7 @@ export const openApiDocument = {
               }
             }
           },
+          403: { $ref: "#/components/responses/Forbidden" },
           404: { $ref: "#/components/responses/NotFound" }
         }
       },
@@ -587,22 +714,446 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/content": {
+    "/v1/billing/subscription/current": {
       get: {
-        tags: ["Content"],
-        summary: "List fake content",
+        tags: ["Billing"],
+        summary: "Get current active subscription",
         security: [{ parentToken: [] }, { deviceToken: [] }],
         responses: {
           200: {
-            description: "Content list",
+            description: "Current subscription",
             content: {
               "application/json": {
                 schema: {
                   type: "object",
                   properties: {
-                    content: {
+                    subscription: {
+                      nullable: true,
+                      allOf: [{ $ref: "#/components/schemas/Subscription" }]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/billing/apple/verify": {
+      post: {
+        tags: ["Billing"],
+        summary: "Verify Apple purchase",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["tariff_id", "receipt", "provider_subscription_id"],
+                properties: {
+                  tariff_id: { type: "string", example: "premium" },
+                  receipt: { type: "string", example: "apple-receipt-data" },
+                  provider_subscription_id: { type: "string", example: "1000001234567890" },
+                  original_transaction_id: { type: "string", example: "1000001234567890" },
+                  transaction_id: { type: "string", example: "1000001234567891" },
+                  expires_at: { type: "string", format: "date-time" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Purchase verified",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/BillingPurchaseResponse" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/billing/google/verify": {
+      post: {
+        tags: ["Billing"],
+        summary: "Verify Google Play purchase",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["tariff_id", "purchase_token"],
+                properties: {
+                  tariff_id: { type: "string", example: "premium" },
+                  purchase_token: { type: "string", example: "google-purchase-token" },
+                  product_id: { type: "string", example: "astir_premium_monthly" },
+                  provider_subscription_id: { type: "string", example: "google-subscription-id" },
+                  expires_at: { type: "string", format: "date-time" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Purchase verified",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/BillingPurchaseResponse" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/billing/webhook/apple": {
+      post: {
+        tags: ["Billing"],
+        summary: "Handle Apple subscription webhook",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  subscription_id: { type: "string" },
+                  provider_subscription_id: { type: "string", example: "1000001234567890" },
+                  status: {
+                    type: "string",
+                    enum: ["active", "grace_period", "expired", "cancelled"],
+                    example: "expired"
+                  },
+                  expires_at: { type: "string", format: "date-time" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Webhook accepted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    accepted: { type: "boolean", example: true },
+                    subscription: {
+                      nullable: true,
+                      allOf: [{ $ref: "#/components/schemas/Subscription" }]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/v1/billing/webhook/google": {
+      post: {
+        tags: ["Billing"],
+        summary: "Handle Google Play subscription webhook",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  subscription_id: { type: "string" },
+                  provider_subscription_id: { type: "string", example: "google-subscription-id" },
+                  purchase_token: { type: "string", example: "google-purchase-token" },
+                  status: {
+                    type: "string",
+                    enum: ["active", "grace_period", "expired", "cancelled"],
+                    example: "cancelled"
+                  },
+                  expires_at: { type: "string", format: "date-time" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Webhook accepted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    accepted: { type: "boolean", example: true },
+                    subscription: {
+                      nullable: true,
+                      allOf: [{ $ref: "#/components/schemas/Subscription" }]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/v1/tariffs": {
+      get: {
+        tags: ["Tariffs"],
+        summary: "List tariffs",
+        responses: {
+          200: {
+            description: "Tariff list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tariffs: {
                       type: "array",
-                      items: { $ref: "#/components/schemas/ContentItem" }
+                      items: { $ref: "#/components/schemas/Tariff" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tariffs/{tariff_id}": {
+      get: {
+        tags: ["Tariffs"],
+        summary: "Get one tariff",
+        parameters: [
+          {
+            name: "tariff_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Tariff details",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tariff: { $ref: "#/components/schemas/Tariff" }
+                  }
+                }
+              }
+            }
+          },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      patch: {
+        tags: ["Tariffs"],
+        summary: "Update one tariff",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "tariff_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  is_default: { type: "boolean", example: false },
+                  can_watch_premium: { type: "boolean", example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Tariff updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tariff: { $ref: "#/components/schemas/Tariff" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Tariffs"],
+        summary: "Delete one tariff",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "tariff_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Tariff deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    tariff: { $ref: "#/components/schemas/Tariff" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" },
+          409: { $ref: "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/tariffs/create": {
+      post: {
+        tags: ["Tariffs"],
+        summary: "Create a tariff",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["title", "description"],
+                properties: {
+                  id: { type: "string", example: "family" },
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  is_default: { type: "boolean", example: false },
+                  can_watch_premium: { type: "boolean", example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Tariff created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tariff: { $ref: "#/components/schemas/Tariff" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          409: { $ref: "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/tariffs/current": {
+      get: {
+        tags: ["Tariffs"],
+        summary: "Get current account tariff",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        responses: {
+          200: {
+            description: "Current tariff",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TariffStatus" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      },
+      patch: {
+        tags: ["Tariffs"],
+        summary: "Change current parent tariff",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["tariff"],
+                properties: {
+                  tariff: { type: "string", example: "premium" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Tariff updated",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TariffStatus" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/movies": {
+      get: {
+        tags: ["Movies"],
+        summary: "List movies",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        responses: {
+          200: {
+            description: "Movie list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movies: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentMovie" }
                     }
                   }
                 }
@@ -610,6 +1161,443 @@ export const openApiDocument = {
             }
           },
           401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/movies/{movie_id}": {
+      get: {
+        tags: ["Movies"],
+        summary: "Get one movie and prepare playback",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Movie details",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      patch: {
+        tags: ["Movies"],
+        summary: "Update movie title or description",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Movie updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Movies"],
+        summary: "Delete one movie",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Movie deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/content/movies/{movie_id}/series": {
+      get: {
+        tags: ["Movies"],
+        summary: "List movie series",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Movie series list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie_id: { type: "string" },
+                    series: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentMovie" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Movies"],
+        summary: "Add movie to series",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["title", "description"],
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  is_premium: { type: "boolean", example: false }
+                }
+              }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["metadata"],
+                properties: {
+                  metadata: {
+                    type: "string",
+                    description: "JSON with title, description, and is_premium"
+                  },
+                  video: {
+                    type: "string",
+                    format: "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Series movie added",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie: { $ref: "#/components/schemas/ContentMovie" },
+                    series_item: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/content/movies/create": {
+      post: {
+        tags: ["Movies"],
+        summary: "Create or upload a movie",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["title", "description"],
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  series: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  is_premium: { type: "boolean", example: false }
+                }
+              }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["metadata"],
+                properties: {
+                  metadata: {
+                    type: "string",
+                    description: "JSON with title, description, series, and is_premium"
+                  },
+                  video: {
+                    type: "string",
+                    format: "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Movie created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/v1/content/categories": {
+      get: {
+        tags: ["Categories"],
+        summary: "List content categories",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        responses: {
+          200: {
+            description: "Content category list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    categories: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentCategory" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/categories/{category_id}": {
+      get: {
+        tags: ["Categories"],
+        summary: "Get one content category",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "category_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content category",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    category: { $ref: "#/components/schemas/ContentCategory" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      patch: {
+        tags: ["Categories"],
+        summary: "Update one content category",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "category_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Content category updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    category: { $ref: "#/components/schemas/ContentCategory" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" },
+          409: { $ref: "#/components/responses/Conflict" }
+        }
+      },
+      delete: {
+        tags: ["Categories"],
+        summary: "Delete one content category",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "category_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content category deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    category: { $ref: "#/components/schemas/ContentCategory" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/content/categories/create": {
+      post: {
+        tags: ["Categories"],
+        summary: "Create a content category",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["title", "description"],
+                properties: {
+                  title: { $ref: "#/components/schemas/LocalizedText" },
+                  description: { $ref: "#/components/schemas/LocalizedText" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Content category created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    category: { $ref: "#/components/schemas/ContentCategory" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          409: { $ref: "#/components/responses/Conflict" }
         }
       }
     },

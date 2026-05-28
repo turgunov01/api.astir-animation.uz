@@ -1,16 +1,49 @@
 import { Router } from "express";
-import { authRoutes } from "./authRoutes.js";
-import { childrenRoutes } from "./childrenRoutes.js";
-import { contentRoutes } from "./contentRoutes.js";
-import { deviceRoutes } from "./deviceRoutes.js";
-import { pairingRoutes } from "./pairingRoutes.js";
-import { watchSessionRoutes } from "./watchSessionRoutes.js";
+import { createAuthRoutes } from "./authRoutes.js";
+import { createBillingRoutes } from "./billingRoutes.js";
+import { createChildrenRoutes } from "./childrenRoutes.js";
+import { createContentRoutes } from "./contentRoutes.js";
+import { createDeviceRoutes } from "./deviceRoutes.js";
+import { createPairingRoutes } from "./pairingRoutes.js";
+import { createTariffRoutes } from "./tariffRoutes.js";
+import { createWatchSessionRoutes } from "./watchSessionRoutes.js";
 
-export const routes = Router();
+export function createRoutes({ controllers, middleware }) {
+  const routes = Router();
 
-routes.use("/auth", authRoutes);
-routes.use("/children", childrenRoutes);
-routes.use("/pairing", pairingRoutes);
-routes.use("/device", deviceRoutes);
-routes.use("/content", contentRoutes);
-routes.use("/watch-sessions", watchSessionRoutes);
+  routes.use("/auth", createAuthRoutes({
+    authController: controllers.auth,
+    authMiddleware: middleware.auth
+  }));
+  routes.use("/billing", createBillingRoutes({
+    authMiddleware: middleware.auth,
+    billingController: controllers.billing
+  }));
+  routes.use("/children", createChildrenRoutes({
+    authMiddleware: middleware.auth,
+    childrenController: controllers.children
+  }));
+  routes.use("/pairing", createPairingRoutes({
+    authMiddleware: middleware.auth,
+    pairingController: controllers.pairing
+  }));
+  routes.use("/device", createDeviceRoutes({
+    authMiddleware: middleware.auth,
+    deviceController: controllers.device
+  }));
+  routes.use("/content", createContentRoutes({
+    authMiddleware: middleware.auth,
+    contentController: controllers.content,
+    uploadMiddleware: middleware.upload
+  }));
+  routes.use("/tariffs", createTariffRoutes({
+    authMiddleware: middleware.auth,
+    tariffController: controllers.tariffs
+  }));
+  routes.use("/watch-sessions", createWatchSessionRoutes({
+    authMiddleware: middleware.auth,
+    watchSessionController: controllers.watchSessions
+  }));
+
+  return routes;
+}
