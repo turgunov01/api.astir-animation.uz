@@ -11,7 +11,7 @@ function parseBoolean(value, fallback) {
 export const config = {
   env: process.env.NODE_ENV || "development",
   host: process.env.HOST || "127.0.0.1",
-  port: Number(process.env.PORT || 3000),
+  port: Number(process.env.PORT || 2048),
   requireAuth: parseBoolean(process.env.REQUIRE_AUTH, true),
   jwtSecret: process.env.JWT_SECRET || "astir-local-development-secret",
   parentTokenTtl: process.env.PARENT_TOKEN_TTL || "7d",
