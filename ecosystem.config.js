@@ -1,5 +1,5 @@
 module.exports = {
-  apps : [{
+  apps: [{
     script: 'index.js',
     watch: '.'
   }, {
@@ -7,16 +7,14 @@ module.exports = {
     watch: ['./service-worker']
   }],
 
-  deploy : {
-    production : {
-      user : 'root',
-      host : '96.46.96.48',
-      ref  : 'origin/master',
-      repo : 'https://github.com/turgunov01/api.astir-animation.uz.git',
-      path : '/var/www/api.astir.uz',
-      'pre-deploy-local': '',
-      'post-deploy' : 'npm install && pm2 reload ecosystem.config.js --env production',
-      'pre-setup': ''
+  deploy: {
+    production: {
+      user: "root",
+      host: "api.astir.uz",
+      ref: "origin/master",
+      repo: "git@github.com:turgunov01/api.astir-animation.uz.git",
+      path: "/var/www/api.astir.uz",
+      "post-deploy": "npm ci --omit=dev && pm2 startOrReload ecosystem.config.cjs --env production"
     }
   }
 };
