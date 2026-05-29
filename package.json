@@ -7,8 +7,11 @@
   "scripts": {
     ".": "nodemon run.js",
     "start": "nodemon run.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "db:seed": "node scripts/db-seed.js",
     "test": "node scripts/smoke-test.js",
-    "test:auth-off": "node scripts/auth-toggle-test.js"
+    "test:auth-off": "node scripts/auth-toggle-test.js",
+    "test:legacy": "node scripts/legacy-test.js"
   },
   "keywords": [],
   "author": "",
@@ -17,8 +20,12 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "nodemailer": "^8.0.9",
+    "pg": "^8.21.0",
+    "qrcode": "^1.5.4",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {

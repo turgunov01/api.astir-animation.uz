@@ -37,6 +37,18 @@ The raw OpenAPI file is available here:
 http://127.0.0.1:3000/openapi.json
 ```
 
+The duplicated legacy Astir Streaming API is available separately:
+
+```text
+http://127.0.0.1:3000/api/v1
+http://127.0.0.1:3000/legacy-api-docs
+http://127.0.0.1:3000/legacy-doc.json
+```
+
+The legacy API requires PostgreSQL for runtime requests. Run `npm run db:migrate`
+and `npm run db:seed` after setting `DATABASE_URL` and the `SUPER_ADMIN_*`
+environment variables.
+
 Raw scoped OpenAPI files are available here:
 
 ```text

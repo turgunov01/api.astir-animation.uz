@@ -94,6 +94,26 @@ http://127.0.0.1:3000/watch-docs
 9. Use the pairing flow to get a device token.
 10. Paste the device token for device requests.
 
+## Legacy Streaming API
+
+The old Astir Streaming API is mounted separately from the local `/v1` API.
+
+```text
+http://127.0.0.1:3000/api/v1
+http://127.0.0.1:3000/legacy-api-docs
+http://127.0.0.1:3000/legacy-doc.json
+```
+
+The legacy runtime uses PostgreSQL. Configure `DATABASE_URL`, then run:
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+`db:seed` creates the first `super_admin` from `SUPER_ADMIN_EMAIL`,
+`SUPER_ADMIN_PASSWORD`, and `SUPER_ADMIN_NAME`.
+
 ## Run The Test Flow
 
 1. Run the smoke test.

@@ -29,6 +29,6 @@ export function createSubscriptionRepository(store) {
 
     update(id, attributes) {
       return store.update("subscriptions", id, attributes);
-    }
+    },
   };
 }

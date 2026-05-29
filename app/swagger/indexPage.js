@@ -58,12 +58,24 @@ function renderDocCards(links, label) {
 }
 
 export function createSwaggerIndexPage(scopes) {
+  const legacyOperationCount = 140;
+  const legacySwaggerLink = {
+    href: "/legacy-api-docs",
+    title: "Astir Streaming API",
+    description: "Legacy Swagger UI duplicated from the old Astir Streaming API contract."
+  };
+  const legacyOpenApiLink = {
+    href: "/legacy-doc.json",
+    title: "Astir Streaming API JSON",
+    description: "Legacy Swagger 2.0 document with local host and /api/v1 base path."
+  };
   const swaggerLinks = [
     {
       href: "/api-docs",
       title: "Astir API",
       description: "Complete Swagger UI for every API endpoint."
     },
+    legacySwaggerLink,
     ...scopes.map((scope) => ({
       href: scope.docsPath,
       title: scope.title,
@@ -77,6 +89,7 @@ export function createSwaggerIndexPage(scopes) {
       title: "Astir OpenAPI JSON",
       description: "Complete raw OpenAPI document."
     },
+    legacyOpenApiLink,
     ...scopes.map((scope) => ({
       href: scope.jsonPath,
       title: `${scope.title} JSON`,
@@ -87,7 +100,7 @@ export function createSwaggerIndexPage(scopes) {
   const metrics = [
     { value: swaggerLinks.length, label: "Swagger pages" },
     { value: scopes.length, label: "Focused APIs" },
-    { value: countOperations(scopes), label: "Documented routes" },
+    { value: countOperations(scopes) + legacyOperationCount, label: "Documented routes" },
     { value: openApiLinks.length, label: "JSON files" }
   ];
 
@@ -618,6 +631,7 @@ export function createSwaggerIndexPage(scopes) {
         </a>
         <nav class="site-nav" aria-label="Primary">
           <a href="/api-docs">Swagger</a>
+          <a href="/legacy-api-docs">Legacy</a>
           <a href="/openapi.json">OpenAPI</a>
           <a href="/health">Health</a>
         </nav>
@@ -636,6 +650,7 @@ export function createSwaggerIndexPage(scopes) {
               <p>One generated entry point for the complete Astir API, focused Swagger pages, and raw OpenAPI JSON files.</p>
               <div class="hero-actions">
                 <a class="button button-primary" href="/api-docs">Open Complete Swagger</a>
+                <a class="button" href="/legacy-api-docs">Open Legacy Streaming API</a>
                 <a class="button" href="/parent-docs">Open Parent API</a>
               </div>
             </div>
