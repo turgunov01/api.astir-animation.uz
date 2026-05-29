@@ -1,7 +1,20 @@
-import { email, pin, requiredString } from "../lib/validation.js";
+import { email, otpCode, pin, requiredString } from "../lib/validation.js";
 
 export function createAuthController({ authService }) {
   return {
+    async requestRegistrationOtp(request, response) {
+      response.json(await authService.requestRegistrationOtp({
+        email: email(request.body)
+      }));
+    },
+
+    verifyRegistrationOtp(request, response) {
+      response.json(authService.verifyRegistrationOtp({
+        email: email(request.body),
+        code: otpCode(request.body)
+      }));
+    },
+
     register(request, response) {
       const result = authService.registerParent({
         name: requiredString(request.body, "name"),

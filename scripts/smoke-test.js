@@ -7,6 +7,7 @@ const dataFile = path.join(os.tmpdir(), `astir-smoke-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
 process.env.JWT_SECRET = "astir-smoke-test-secret";
 process.env.REQUIRE_AUTH = "true";
+process.env.OTP_DEFAULT_CODE = "123456";
 
 const { createServer } = await import("../app/server.js");
 
@@ -73,11 +74,47 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 try {
+  const parentEmail = `smoke-${Date.now()}@example.com`;
+  const unverifiedRegistration = await requestWithStatus(baseUrl, "/v1/auth/register", {
+    method: "POST",
+    body: {
+      name: "Smoke Parent",
+      email: parentEmail,
+      password: "password123",
+      pin: "1234"
+    }
+  });
+
+  assert.equal(unverifiedRegistration.status, 401);
+  assert.equal(unverifiedRegistration.body.error.code, "OTP_REQUIRED");
+
+  const otpRequest = await request(baseUrl, "/v1/auth/otp/request", {
+    method: "POST",
+    body: {
+      email: parentEmail
+    }
+  });
+
+  assert.equal(otpRequest.email, parentEmail);
+  assert.equal(otpRequest.emailExists, false);
+  assert.equal(otpRequest.debugCode, "123456");
+
+  const otpVerification = await request(baseUrl, "/v1/auth/otp/verify", {
+    method: "POST",
+    body: {
+      email: parentEmail,
+      code: "123456"
+    }
+  });
+
+  assert.equal(otpVerification.verified, true);
+  assert.equal(otpVerification.emailExists, false);
+
   const registration = await request(baseUrl, "/v1/auth/register", {
     method: "POST",
     body: {
       name: "Smoke Parent",
-      email: `smoke-${Date.now()}@example.com`,
+      email: parentEmail,
       password: "password123",
       pin: "1234"
     }

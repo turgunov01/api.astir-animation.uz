@@ -18,6 +18,8 @@ export function createContainer({ store = defaultStore } = {}) {
   const services = {};
 
   services.auth = createAuthService({
+    config,
+    otpCodes: repositories.otpCodes,
     parents: repositories.parents
   });
   services.children = createChildService({

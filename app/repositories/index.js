@@ -4,6 +4,7 @@ import { createContentMovieRepository } from "./contentMovieRepository.js";
 import { createDeviceRepository } from "./deviceRepository.js";
 import { createPairingSessionRepository } from "./pairingSessionRepository.js";
 import { createParentRepository } from "./parentRepository.js";
+import { createOtpCodeRepository } from "./otpCodeRepository.js";
 import { createSubscriptionRepository } from "./subscriptionRepository.js";
 import { createTariffRepository } from "./tariffRepository.js";
 import { createWatchLimitRepository } from "./watchLimitRepository.js";
@@ -15,6 +16,7 @@ export function createRepositories(store) {
     contentCategories: createContentCategoryRepository(store),
     contentMovies: createContentMovieRepository(store),
     devices: createDeviceRepository(store),
+    otpCodes: createOtpCodeRepository(store),
     pairingSessions: createPairingSessionRepository(store),
     parents: createParentRepository(store),
     subscriptions: createSubscriptionRepository(store),

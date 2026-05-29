@@ -11,6 +11,8 @@ const scopes = [
     description: "Parent account, child profiles, limits, and pairing approval.",
     operations: [
       "GET /health",
+      "POST /v1/auth/otp/request",
+      "POST /v1/auth/otp/verify",
       "POST /v1/auth/register",
       "POST /v1/auth/login",
       "GET /v1/auth/me",

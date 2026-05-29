@@ -82,7 +82,52 @@ GET /health
 
 Use this before testing the rest of the API.
 
-## 2. Register A Parent
+## 2. Request Registration OTP
+
+Request:
+
+```text
+POST /v1/auth/otp/request
+```
+
+Body:
+
+```json
+{
+  "email": "parent@example.com"
+}
+```
+
+What happens:
+
+1. The backend checks that no parent account already uses the email.
+2. The backend sends a 6-digit OTP to that email.
+3. In local development, set `OTP_DEFAULT_CODE` to skip email sending and return `debugCode`.
+
+## 3. Verify Registration OTP
+
+Request:
+
+```text
+POST /v1/auth/otp/verify
+```
+
+Body:
+
+```json
+{
+  "email": "parent@example.com",
+  "code": "123456"
+}
+```
+
+What happens:
+
+1. The backend verifies the OTP for that email.
+2. The backend marks the email as verified for registration.
+3. The app can now show the PIN setup step.
+
+## 4. Register A Parent
 
 Request:
 
@@ -103,12 +148,13 @@ Body:
 
 What happens:
 
-1. The backend creates the parent account.
-2. The password is stored as a hash.
-3. The PIN is stored as a hash.
-4. The backend returns a parent token.
+1. The backend requires a recently verified registration OTP for the email.
+2. The backend creates the parent account.
+3. The password is stored as a hash.
+4. The PIN is stored as a hash.
+5. The backend returns a parent token.
 
-## 3. Login As Parent
+## 5. Login As Parent
 
 Request:
 
@@ -130,7 +176,7 @@ What happens:
 1. The backend checks the email and password.
 2. The backend returns a parent token.
 
-## 4. Verify Parent PIN
+## 6. Verify Parent PIN
 
 Request:
 
@@ -150,7 +196,7 @@ Body:
 
 Use this before actions that should be locked behind the parent PIN.
 
-## 5. Create A Child
+## 7. Create A Child
 
 Request:
 
@@ -175,7 +221,7 @@ What happens:
 2. The child belongs to the current parent.
 3. The backend creates default watch limits for the child.
 
-## 6. List Children
+## 8. List Children
 
 Request:
 
@@ -187,7 +233,7 @@ This request needs a parent token.
 
 Use this to show the children inside the parent app.
 
-## 7. Create A Pairing Session
+## 9. Create A Pairing Session
 
 Request:
 
@@ -213,7 +259,7 @@ What happens:
 3. The backend returns a setup token.
 4. The child app shows the code or QR payload on screen.
 
-## 8. Approve Pairing
+## 10. Approve Pairing
 
 Request:
 
@@ -239,7 +285,7 @@ What happens:
 4. The backend creates a device token.
 5. The pairing session becomes approved.
 
-## 9. Poll Pairing Status
+## 11. Poll Pairing Status
 
 Request:
 
@@ -261,7 +307,7 @@ What happens:
 2. If approved, the backend returns the device token.
 3. The child device saves the device token locally.
 
-## 10. Get Device Config
+## 12. Get Device Config
 
 Request:
 
@@ -277,7 +323,7 @@ What happens:
 2. The backend returns the child profile.
 3. The backend returns the current watch limits.
 
-## 11. Update Watch Limits
+## 13. Update Watch Limits
 
 Request:
 
@@ -303,7 +349,7 @@ What happens:
 1. The parent updates the child rules.
 2. The child device receives the new rules the next time it loads config.
 
-## 12. List Content
+## 14. List Content
 
 Request:
 
@@ -317,7 +363,7 @@ The first version returns fake content only.
 Real content can be connected later.
 Each content title includes `en`, `ru`, and `uz`.
 
-## 13. List Tariffs
+## 15. List Tariffs
 
 Request:
 
@@ -333,7 +379,7 @@ What happens:
 2. `free` is the default tariff.
 3. `premium` can watch all free and premium content.
 
-## 14. Get One Tariff
+## 16. Get One Tariff
 
 Request:
 
@@ -348,7 +394,7 @@ What happens:
 1. The backend finds the tariff by id.
 2. The backend returns tariff details.
 
-## 15. Create A Tariff
+## 17. Create A Tariff
 
 Request:
 
@@ -384,7 +430,7 @@ What happens:
 2. The backend creates the tariff.
 3. If `id` is not sent, the backend generates one.
 
-## 16. Update A Tariff
+## 18. Update A Tariff
 
 Request:
 
@@ -413,7 +459,7 @@ Body can include:
 }
 ```
 
-## 17. Delete A Tariff
+## 19. Delete A Tariff
 
 Request:
 
@@ -430,7 +476,7 @@ What happens:
 3. The backend does not delete a tariff used by parent accounts.
 4. The backend deletes the tariff if it is safe.
 
-## 18. Get Current Tariff
+## 20. Get Current Tariff
 
 Request:
 
@@ -446,7 +492,7 @@ What happens:
 2. If no tariff is saved, the backend uses `free`.
 3. The response shows whether premium content can be watched.
 
-## 19. Change Current Tariff
+## 21. Change Current Tariff
 
 Request:
 
@@ -470,7 +516,7 @@ What happens:
 2. The backend checks that the tariff exists.
 3. The backend saves the selected tariff on the parent account.
 
-## 20. Get Current Subscription
+## 22. Get Current Subscription
 
 Request:
 
@@ -486,7 +532,7 @@ What happens:
 2. The backend returns the latest active subscription.
 3. If there is no active subscription, `subscription` is `null`.
 
-## 21. Verify Apple Purchase
+## 23. Verify Apple Purchase
 
 The local version validates the required fields and stores the subscription.
 In production, this step should also call Apple before saving the subscription.
@@ -517,7 +563,7 @@ What happens:
 3. The backend creates or updates the parent subscription.
 4. The parent can watch premium content while the subscription is active.
 
-## 22. Verify Google Play Purchase
+## 24. Verify Google Play Purchase
 
 The local version validates the required fields and stores the subscription.
 In production, this step should also call Google Play before saving the subscription.
@@ -548,7 +594,7 @@ What happens:
 3. The backend creates or updates the parent subscription.
 4. The parent can watch premium content while the subscription is active.
 
-## 23. Apple Subscription Webhook
+## 25. Apple Subscription Webhook
 
 Request:
 
@@ -572,7 +618,7 @@ What happens:
 2. The backend updates the local subscription status.
 3. Expired or cancelled subscriptions stop unlocking premium content.
 
-## 24. Google Play Subscription Webhook
+## 26. Google Play Subscription Webhook
 
 Request:
 
@@ -596,7 +642,7 @@ What happens:
 2. The backend updates the local subscription status.
 3. Expired or cancelled subscriptions stop unlocking premium content.
 
-## 25. List Content Categories
+## 27. List Content Categories
 
 Request:
 
@@ -611,7 +657,7 @@ What happens:
 1. The backend checks the token.
 2. The backend returns all content categories.
 
-## 26. Get One Content Category
+## 28. Get One Content Category
 
 Request:
 
@@ -627,7 +673,7 @@ What happens:
 2. The backend finds the category by id.
 3. The backend returns the category.
 
-## 27. Create A Content Category
+## 29. Create A Content Category
 
 Request:
 
@@ -660,7 +706,7 @@ What happens:
 2. The backend checks that the category title is not already used.
 3. The backend creates the category.
 
-## 28. Update A Content Category
+## 30. Update A Content Category
 
 Request:
 
@@ -693,7 +739,7 @@ What happens:
 2. The backend finds the category.
 3. The backend updates the fields that were sent.
 
-## 29. Delete A Content Category
+## 31. Delete A Content Category
 
 Request:
 
@@ -709,7 +755,7 @@ What happens:
 2. The backend finds the category.
 3. The backend deletes the category.
 
-## 30. List Movies
+## 32. List Movies
 
 Request:
 
@@ -727,7 +773,7 @@ What happens:
 4. The `premium` tariff returns all movies.
 5. Each movie includes playback status.
 
-## 31. Get One Movie
+## 33. Get One Movie
 
 Request:
 
@@ -745,7 +791,7 @@ What happens:
 4. If HLS is ready, the response includes `playback.hls_url`.
 5. If HLS is not ready, the response includes the current playback status.
 
-## 32. List Movie Series
+## 34. List Movie Series
 
 Request:
 
@@ -761,7 +807,7 @@ What happens:
 2. The backend reads the movie `series` array.
 3. The backend returns the linked series movies.
 
-## 33. Create Or Upload A Movie
+## 35. Create Or Upload A Movie
 
 Request:
 
@@ -796,7 +842,7 @@ For video upload, send `multipart/form-data`:
 1. `metadata` - JSON string with the same fields.
 2. `video` - uploaded video file.
 
-## 34. Update A Movie
+## 36. Update A Movie
 
 Request:
 
@@ -823,7 +869,7 @@ Body can include:
 }
 ```
 
-## 35. Add Movie To Series
+## 37. Add Movie To Series
 
 Request:
 
@@ -837,7 +883,7 @@ The body is the same as movie creation.
 The backend creates a new movie and links it to the parent movie series.
 The backend generates the new series movie `id` as a UUID.
 
-## 36. Delete A Movie
+## 38. Delete A Movie
 
 Request:
 
@@ -852,7 +898,7 @@ What happens:
 1. The backend deletes the movie record.
 2. The backend removes uploaded source and HLS files for that movie.
 
-## 37. Start A Watch Session
+## 39. Start A Watch Session
 
 Request:
 
@@ -879,7 +925,7 @@ What happens:
 5. The backend checks if the daily limit is already used.
 6. If all checks pass, the watch session starts.
 
-## 38. Stop A Watch Session
+## 40. Stop A Watch Session
 
 Request:
 

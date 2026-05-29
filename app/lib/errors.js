@@ -26,6 +26,10 @@ export function conflict(message, code = "CONFLICT") {
   return new AppError(409, code, message);
 }
 
+export function serviceUnavailable(message, code = "SERVICE_UNAVAILABLE") {
+  return new AppError(503, code, message);
+}
+
 export function asyncHandler(handler) {
   return (request, response, next) => {
     Promise.resolve(handler(request, response, next)).catch(next);

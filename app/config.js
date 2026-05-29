@@ -21,5 +21,16 @@ export const config = {
   mediaRoot: process.env.MEDIA_ROOT || "media",
   maxVideoUploadMb: Number(process.env.MAX_VIDEO_UPLOAD_MB || 2048),
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
-  transcoderEnabled: parseBoolean(process.env.TRANSCODER_ENABLED, true)
+  transcoderEnabled: parseBoolean(process.env.TRANSCODER_ENABLED, true),
+  otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
+  otpDefaultCode: process.env.OTP_DEFAULT_CODE || "",
+  otpDebug: parseBoolean(process.env.OTP_DEBUG, false),
+  smtp: {
+    host: process.env.SMTP_HOST || "",
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: parseBoolean(process.env.SMTP_SECURE, false),
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+    from: process.env.SMTP_FROM || ""
+  }
 };

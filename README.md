@@ -111,12 +111,13 @@ http://127.0.0.1:2048/pairing-docs
 http://127.0.0.1:2048/watch-docs
 ```
 
-5. Use `POST /v1/auth/register` or `POST /v1/auth/login` first.
-6. Copy the returned token.
-7. Click `Authorize` in Swagger.
-8. Paste the token for parent requests.
-9. Use the pairing flow to get a device token.
-10. Paste the device token for device requests.
+5. For new accounts, use `POST /v1/auth/otp/request`, `POST /v1/auth/otp/verify`, then `POST /v1/auth/register`.
+6. For existing accounts, use `POST /v1/auth/login`.
+7. Copy the returned token.
+8. Click `Authorize` in Swagger.
+9. Paste the token for parent requests.
+10. Use the pairing flow to get a device token.
+11. Paste the device token for device requests.
 
 ## Legacy Streaming API
 

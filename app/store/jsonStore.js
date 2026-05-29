@@ -5,6 +5,7 @@ import { config } from "../config.js";
 
 const emptyData = {
   parents: [],
+  otpCodes: [],
   children: [],
   devices: [],
   contentCategories: [],

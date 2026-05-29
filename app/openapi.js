@@ -245,10 +245,91 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/auth/otp/request": {
+      post: {
+        tags: ["Auth"],
+        summary: "Request registration OTP",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: { type: "string", example: "parent@example.com" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OTP sent",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    email: { type: "string", example: "parent@example.com" },
+                    emailExists: { type: "boolean", example: false },
+                    expiresAt: { type: "string", format: "date-time" },
+                    debugCode: { type: "string", example: "" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          409: { $ref: "#/components/responses/Conflict" },
+          503: { $ref: "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/auth/otp/verify": {
+      post: {
+        tags: ["Auth"],
+        summary: "Verify registration OTP",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "code"],
+                properties: {
+                  email: { type: "string", example: "parent@example.com" },
+                  code: { type: "string", example: "123456" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OTP verified",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    email: { type: "string", example: "parent@example.com" },
+                    verified: { type: "boolean", example: true },
+                    emailExists: { type: "boolean", example: false }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/v1/auth/register": {
       post: {
         tags: ["Auth"],
-        summary: "Register a parent",
+        summary: "Register a parent after OTP verification",
         requestBody: {
           required: true,
           content: {
@@ -282,6 +363,7 @@ export const openApiDocument = {
             }
           },
           400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
           409: { $ref: "#/components/responses/Conflict" }
         }
       }
@@ -1707,6 +1789,14 @@ openApiDocument.components.responses = {
   },
   Conflict: {
     description: "Conflict",
+    content: {
+      "application/json": {
+        schema: { $ref: "#/components/schemas/ErrorResponse" }
+      }
+    }
+  },
+  ServiceUnavailable: {
+    description: "Service unavailable",
     content: {
       "application/json": {
         schema: { $ref: "#/components/schemas/ErrorResponse" }

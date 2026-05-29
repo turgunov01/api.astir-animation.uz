@@ -94,6 +94,16 @@ export function pin(body, field = "pin") {
   return value;
 }
 
+export function otpCode(body, field = "code") {
+  const value = requiredString(body, field);
+
+  if (!/^\d{6}$/.test(value)) {
+    throw badRequest(`${field} must be a 6-digit code`, "VALIDATION_ERROR");
+  }
+
+  return value;
+}
+
 export function optionalInteger(body, field, options = {}) {
   const value = body?.[field];
 
