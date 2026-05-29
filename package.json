@@ -5,8 +5,8 @@
   "type": "module",
   "description": "",
   "scripts": {
-    ".": "node run.js",
-    "start": "node run.js",
+    ".": "nodemon run.js",
+    "start": "nodemon run.js",
     "dev": "nodemon run.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/db-seed.js",
