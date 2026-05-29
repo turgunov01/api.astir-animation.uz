@@ -29,11 +29,35 @@ npm run .
 3. Open the health check.
 
 ```text
-http://127.0.0.1:3000/health
+http://127.0.0.1:2048/health
 ```
 
-`npm run .` uses `nodemon` for local development.
+`npm run .` starts `run.js` with Node.
+For local auto-reload while developing, run:
+
+```bash
+npm run dev
+```
+
+`npm run dev` uses `nodemon`.
 It watches app code and ignores local data files.
+
+## Run On Server With PM2
+
+1. Install dependencies.
+
+```bash
+npm install
+```
+
+2. Start the PM2 process.
+
+```bash
+pm2 start ecosystem.config.cjs --env production
+```
+
+The ecosystem config runs `npm run .` and binds the server to `0.0.0.0`.
+Set `PORT` in the server environment or `.env`.
 
 ## Auth Switch
 
@@ -65,7 +89,7 @@ npm run .
 2. Open Swagger in the browser.
 
 ```text
-http://127.0.0.1:3000/index.html
+http://127.0.0.1:2048/index.html
 ```
 
 The index page links to every Swagger page.
@@ -73,18 +97,18 @@ The index page links to every Swagger page.
 3. Open the full Swagger page if you need every endpoint.
 
 ```text
-http://127.0.0.1:3000/api-docs
+http://127.0.0.1:2048/api-docs
 ```
 
 4. Open a smaller Swagger page if you only need one area.
 
 ```text
-http://127.0.0.1:3000/parent-docs
-http://127.0.0.1:3000/device-docs
-http://127.0.0.1:3000/tariffs-docs
-http://127.0.0.1:3000/content-docs
-http://127.0.0.1:3000/pairing-docs
-http://127.0.0.1:3000/watch-docs
+http://127.0.0.1:2048/parent-docs
+http://127.0.0.1:2048/device-docs
+http://127.0.0.1:2048/tariffs-docs
+http://127.0.0.1:2048/content-docs
+http://127.0.0.1:2048/pairing-docs
+http://127.0.0.1:2048/watch-docs
 ```
 
 5. Use `POST /v1/auth/register` or `POST /v1/auth/login` first.
@@ -99,9 +123,9 @@ http://127.0.0.1:3000/watch-docs
 The old Astir Streaming API is mounted separately from the local `/v1` API.
 
 ```text
-http://127.0.0.1:3000/api/v1
-http://127.0.0.1:3000/legacy-api-docs
-http://127.0.0.1:3000/legacy-doc.json
+http://127.0.0.1:2048/api/v1
+http://127.0.0.1:2048/legacy-api-docs
+http://127.0.0.1:2048/legacy-doc.json
 ```
 
 The legacy runtime uses PostgreSQL. Configure `DATABASE_URL`, then run:
