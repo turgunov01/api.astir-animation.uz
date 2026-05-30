@@ -34,6 +34,11 @@ export const openApiDocument = {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT"
+      },
+      legacyBearer: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT"
       }
     },
     schemas: {
@@ -69,6 +74,128 @@ export const openApiDocument = {
           tariff: { type: "string", example: "free" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyUser: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          email: { type: "string", example: "parent@example.com" },
+          name: { type: "string", example: "Parent" },
+          last_name: { type: "string", example: "User" },
+          phone: { type: "string", nullable: true },
+          role: { type: "string", example: "parent" },
+          active: { type: "boolean", example: true },
+          avatar_url: { type: "string", example: "" },
+          last_login_at: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyTokenPair: {
+        type: "object",
+        properties: {
+          access_token: { type: "string" },
+          access_expires_at: { type: "string", format: "date-time" },
+          refresh_token: { type: "string" },
+          refresh_expires_at: { type: "string", format: "date-time" },
+          user: { $ref: "#/components/schemas/LegacyUser" }
+        }
+      },
+      LegacyI18nMessage: {
+        type: "object",
+        properties: {
+          uz: { type: "string", example: "Email yoki parol noto'g'ri. Iltimos, qayta tekshiring." },
+          ru: { type: "string", example: "Неверный email или пароль. Пожалуйста, проверьте данные." },
+          en: { type: "string", example: "Incorrect email or password. Please check your credentials." }
+        }
+      },
+      LegacyErrorResponse: {
+        type: "object",
+        properties: {
+          error: { type: "string", example: "invalid credentials" },
+          message: { $ref: "#/components/schemas/LegacyI18nMessage" }
+        }
+      },
+      LegacyOkResponse: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "ok" }
+        }
+      },
+      LegacyOtpRequestResult: {
+        type: "object",
+        properties: {
+          debug_code: { type: "string", example: "" },
+          email: { type: "string", example: "user@example.com" },
+          expires_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyOtpVerifyResult: {
+        type: "object",
+        properties: {
+          access_expires_at: { type: "string", format: "date-time" },
+          access_token: { type: "string" },
+          email: { type: "string", example: "user@example.com" },
+          refresh_expires_at: { type: "string", format: "date-time" },
+          refresh_token: { type: "string" },
+          user: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/LegacyUser" }]
+          },
+          user_exists: { type: "boolean", example: true }
+        }
+      },
+      LegacyChild: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+          parent_id: { type: "string", example: "5ca2bf5b-6e18-472e-b7c0-ed37b951e76d" },
+          name: { type: "string", example: "Child" },
+          age: { type: "integer", example: 7 },
+          avatar_url: { type: "string", example: "" },
+          active: { type: "boolean", example: true },
+          extended_until: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyPairingTicket: {
+        type: "object",
+        properties: {
+          device_id: { type: "string", example: "3c52a843-0681-433c-a51e-c2f399dc4f29" },
+          code: { type: "string", example: "XsqboTdpHD9Qiv4Q3W3VHQxufUpa2ykm" },
+          qr_base64: { type: "string", example: "iVBORw0KGgoAAAANSUhEUgAA..." },
+          qr_payload: {
+            type: "string",
+            example: "https://api.astir-animation.uz/child/pair?code=XsqboTdpHD9Qiv4Q3W3VHQxufUpa2ykm"
+          },
+          expires_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyChildPairingStatus: {
+        type: "object",
+        properties: {
+          device_id: { type: "string", example: "3c52a843-0681-433c-a51e-c2f399dc4f29" },
+          status: { type: "string", example: "pending" },
+          expires_at: { type: "string", format: "date-time" },
+          access_token: { type: "string" },
+          refresh_token: { type: "string" },
+          refresh_expires_at: { type: "string", format: "date-time" },
+          child: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/LegacyChild" }]
+          }
+        }
+      },
+      LegacyChildConfirmResult: {
+        type: "object",
+        properties: {
+          action: { type: "string", example: "pairing" },
+          device_id: { type: "string", example: "3c52a843-0681-433c-a51e-c2f399dc4f29" },
+          ticket_id: { type: "string" },
+          extends_until: { type: "string", format: "date-time" },
+          child: { $ref: "#/components/schemas/LegacyChild" }
         }
       },
       Child: {
@@ -245,103 +372,35 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/auth/otp/request": {
+    "/api/v1/auth/register": {
       post: {
         tags: ["Auth"],
-        summary: "Request registration OTP",
+        summary: "Register a parent account",
+        description: "Legacy PostgreSQL API endpoint. Creates a parent account after OTP verification and returns an access/refresh token pair.",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["email"],
+                required: ["email", "name", "password"],
                 properties: {
-                  email: { type: "string", example: "parent@example.com" }
-                }
-              }
-            }
-          }
-        },
-        responses: {
-          200: {
-            description: "OTP sent",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    email: { type: "string", example: "parent@example.com" },
-                    emailExists: { type: "boolean", example: false },
-                    expiresAt: { type: "string", format: "date-time" },
-                    debugCode: { type: "string", example: "" }
+                  email: {
+                    type: "string",
+                    example: "m86688628@gmail.com"
+                  },
+                  last_name: {
+                    type: "string",
+                    example: "asdasd"
+                  },
+                  name: {
+                    type: "string",
+                    example: "Alisher"
+                  },
+                  password: {
+                    type: "string",
+                    example: "wi3eZ2L*A+,7&L2FH3fM"
                   }
-                }
-              }
-            }
-          },
-          400: { $ref: "#/components/responses/BadRequest" },
-          409: { $ref: "#/components/responses/Conflict" },
-          503: { $ref: "#/components/responses/ServiceUnavailable" }
-        }
-      }
-    },
-    "/v1/auth/otp/verify": {
-      post: {
-        tags: ["Auth"],
-        summary: "Verify registration OTP",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "code"],
-                properties: {
-                  email: { type: "string", example: "parent@example.com" },
-                  code: { type: "string", example: "123456" }
-                }
-              }
-            }
-          }
-        },
-        responses: {
-          200: {
-            description: "OTP verified",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    email: { type: "string", example: "parent@example.com" },
-                    verified: { type: "boolean", example: true },
-                    emailExists: { type: "boolean", example: false }
-                  }
-                }
-              }
-            }
-          },
-          400: { $ref: "#/components/responses/BadRequest" },
-          401: { $ref: "#/components/responses/Unauthorized" }
-        }
-      }
-    },
-    "/v1/auth/register": {
-      post: {
-        tags: ["Auth"],
-        summary: "Register a parent after OTP verification",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["name", "email", "password", "pin"],
-                properties: {
-                  name: { type: "string", example: "Parent" },
-                  email: { type: "string", example: "parent@example.com" },
-                  password: { type: "string", example: "password123" },
-                  pin: { type: "string", example: "1234" }
                 }
               }
             }
@@ -349,29 +408,103 @@ export const openApiDocument = {
         },
         responses: {
           201: {
-            description: "Parent created",
+            description: "Created",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    parent: { $ref: "#/components/schemas/Parent" },
-                    token: { type: "string" }
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          409: {
+            description: "Conflict",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/google": {
+      post: {
+        tags: ["Auth"],
+        summary: "Sign in with Google",
+        description: "Legacy PostgreSQL API endpoint. Accepts a Google ID token, verifies it with Google, finds or creates a parent user, and returns a legacy token pair.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["id_token"],
+                properties: {
+                  id_token: {
+                    type: "string",
+                    example: "eyJhbGci..."
                   }
                 }
               }
             }
+          }
+        },
+        responses: {
+          200: {
+            description: "Parent signed in",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
+              }
+            }
           },
-          400: { $ref: "#/components/responses/BadRequest" },
-          401: { $ref: "#/components/responses/Unauthorized" },
-          409: { $ref: "#/components/responses/Conflict" }
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          503: {
+            description: "Service unavailable",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
         }
       }
     },
-    "/v1/auth/login": {
+    "/api/v1/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "Login as parent",
+        summary: "Log in",
+        description: "Legacy PostgreSQL API endpoint. Logs in staff users and returns an access/refresh token pair.",
         requestBody: {
           required: true,
           content: {
@@ -380,8 +513,14 @@ export const openApiDocument = {
                 type: "object",
                 required: ["email", "password"],
                 properties: {
-                  email: { type: "string", example: "parent@example.com" },
-                  password: { type: "string", example: "password123" }
+                  email: {
+                    type: "string",
+                    example: "admin@example.com"
+                  },
+                  password: {
+                    type: "string",
+                    example: "string"
+                  }
                 }
               }
             }
@@ -389,60 +528,45 @@ export const openApiDocument = {
         },
         responses: {
           200: {
-            description: "Parent logged in",
+            description: "OK",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    parent: { $ref: "#/components/schemas/Parent" },
-                    token: { type: "string" }
-                  }
-                }
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
               }
             }
           },
-          401: { $ref: "#/components/responses/Unauthorized" }
-        }
-      }
-    },
-    "/v1/auth/me": {
-      get: {
-        tags: ["Auth"],
-        summary: "Get current parent",
-        security: [{ parentToken: [] }],
-        responses: {
-          200: {
-            description: "Current parent",
+          401: {
+            description: "Unauthorized",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    parent: { $ref: "#/components/schemas/Parent" }
-                  }
-                }
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
               }
             }
-          },
-          401: { $ref: "#/components/responses/Unauthorized" }
+          }
         }
       }
     },
-    "/v1/auth/pin/verify": {
+    "/api/v1/auth/otp/login": {
       post: {
         tags: ["Auth"],
-        summary: "Verify parent PIN",
-        security: [{ parentToken: [] }],
+        summary: "Parent login",
+        description: "Legacy PostgreSQL API endpoint. Logs in a parent with email and password and returns an access/refresh token pair.",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["pin"],
+                required: ["email", "password"],
                 properties: {
-                  pin: { type: "string", example: "1234" }
+                  email: {
+                    type: "string",
+                    example: "botirjonz777zz@gmail.com"
+                  },
+                  password: {
+                    type: "string",
+                    example: "Muhammadamin88"
+                  }
                 }
               }
             }
@@ -450,19 +574,747 @@ export const openApiDocument = {
         },
         responses: {
           200: {
-            description: "PIN verified",
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/apple": {
+      post: {
+        tags: ["Auth"],
+        summary: "Sign in with Apple",
+        description: "Legacy PostgreSQL API endpoint. Accepts an Apple identity token, verifies it with Apple, finds or creates a parent user, and returns a legacy token pair.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                oneOf: [
+                  { required: ["identity_token"] },
+                  { required: ["id_token"] }
+                ],
+                properties: {
+                  identity_token: {
+                    type: "string",
+                    example: "eyJhbGci..."
+                  },
+                  id_token: {
+                    type: "string",
+                    example: "eyJhbGci..."
+                  },
+                  given_name: {
+                    type: "string",
+                    example: "Alisher"
+                  },
+                  family_name: {
+                    type: "string",
+                    example: "Karimov"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Parent signed in",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          503: {
+            description: "Service unavailable",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      post: {
+        tags: ["Auth"],
+        summary: "Log out",
+        description: "Legacy PostgreSQL API endpoint. Revokes the refresh token when one is provided and returns ok.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["refresh_token"],
+                properties: {
+                  refresh_token: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      post: {
+        tags: ["Auth"],
+        summary: "Refresh an access token",
+        description: "Legacy PostgreSQL API endpoint. Exchanges a valid refresh token for a new access/refresh token pair.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["refresh_token"],
+                properties: {
+                  refresh_token: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTokenPair" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp/request": {
+      post: {
+        tags: ["Auth"],
+        summary: "Request OTP",
+        description: "Legacy PostgreSQL API endpoint. Sends an OTP code to the provided email address.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: {
+                    type: "string",
+                    example: "user@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOtpRequestResult" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      post: {
+        tags: ["Auth"],
+        summary: "Verify OTP",
+        description: "Legacy PostgreSQL API endpoint. Verifies an OTP code and returns token fields when a user already exists.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "code"],
+                properties: {
+                  email: {
+                    type: "string",
+                    example: "user@example.com"
+                  },
+                  code: {
+                    type: "string",
+                    example: "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOtpVerifyResult" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Start password reset",
+        description: "Legacy PostgreSQL API endpoint. Sends an OTP to an existing user's email for password reset.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: {
+                    type: "string",
+                    example: "user@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOtpRequestResult" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    verified: { type: "boolean", example: true }
+                  allOf: [{ $ref: "#/components/schemas/LegacyErrorResponse" }],
+                  example: {
+                    error: "not found",
+                    message: {
+                      uz: "So'ralgan ma'lumot topilmadi.",
+                      ru: "Запрашиваемые данные не найдены.",
+                      en: "The requested resource was not found."
+                    }
                   }
                 }
               }
             }
           },
-          401: { $ref: "#/components/responses/Unauthorized" }
+          503: {
+            description: "Service unavailable",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Reset password",
+        description: "Legacy PostgreSQL API endpoint. Sets a new password after the email has a verified reset-password OTP.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password"],
+                properties: {
+                  email: {
+                    type: "string",
+                    example: "user@example.com"
+                  },
+                  password: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me/avatar": {
+      post: {
+        tags: ["Auth"],
+        summary: "Upload profile avatar",
+        description: "Legacy PostgreSQL API endpoint. Uploads a profile avatar image for the current authenticated user.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: {
+                    type: "string",
+                    format: "binary",
+                    description: "Avatar image (jpg/png/webp)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      get: {
+        tags: ["Auth"],
+        summary: "Get current legacy user",
+        description: "Legacy PostgreSQL API endpoint. Returns the current user including avatar_url. Use this instead of downloading /api/v1/users/{id}/avatar.",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      put: {
+        tags: ["Auth"],
+        summary: "Update current legacy user",
+        description: "Legacy PostgreSQL API endpoint. Updates the current user's profile fields.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  last_name: {
+                    type: "string",
+                    example: "string"
+                  },
+                  name: {
+                    type: "string",
+                    example: "string"
+                  },
+                  phone: {
+                    type: "string",
+                    example: "+998901234567"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/child/init": {
+      post: {
+        tags: ["Auth"],
+        summary: "Initialize child device pairing",
+        description: "Legacy PostgreSQL API endpoint. The child app calls this first and shows the returned QR. The parent scans the QR and confirms the device with POST /api/v1/auth/child/confirm.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["device_fingerprint", "device_name"],
+                properties: {
+                  device_fingerprint: {
+                    type: "string",
+                    example: "string"
+                  },
+                  device_name: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyPairingTicket" }
+              }
+            }
+          },
+          500: {
+            description: "Internal Server Error",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/child/{device_id}/status": {
+      get: {
+        tags: ["Auth"],
+        summary: "Check child pairing status",
+        description: "Legacy PostgreSQL API endpoint. The child app polls this endpoint until the parent confirms the pairing.",
+        parameters: [
+          {
+            name: "device_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Device ID returned by /api/v1/auth/child/init."
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyChildPairingStatus" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/child/confirm": {
+      post: {
+        tags: ["Auth"],
+        summary: "Confirm child device pairing",
+        description: "Legacy PostgreSQL API endpoint. Parent scans the child QR and links the pending device to an existing child profile.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["code"],
+                properties: {
+                  code: {
+                    type: "string",
+                    example: "XsqboTdpHD9Qiv4Q3W3VHQxufUpa2ykm"
+                  },
+                  child_id: {
+                    type: "string",
+                    example: "b219a2f6-0670-44ed-8e18-57f887bd4e94"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyChildConfirmResult" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          410: {
+            description: "Gone",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children": {
+      get: {
+        tags: ["Children"],
+        summary: "List legacy child profiles",
+        description: "Legacy PostgreSQL API endpoint. Lists child profiles for the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyChild" }
+                }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Children"],
+        summary: "Create a legacy child profile",
+        description: "Legacy PostgreSQL API endpoint. Creates a child profile that can later be paired to a child device.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: {
+                    type: "string",
+                    example: "Child"
+                  },
+                  age: {
+                    type: "integer",
+                    example: 7
+                  },
+                  avatar_url: {
+                    type: "string",
+                    example: ""
+                  },
+                  active: {
+                    type: "boolean",
+                    example: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyChild" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
         }
       }
     },

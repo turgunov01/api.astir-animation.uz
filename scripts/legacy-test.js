@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-delete process.env.DATABASE_URL;
+process.env.DATABASE_URL = "";
 process.env.REQUIRE_AUTH = "true";
 process.env.JWT_SECRET = "astir-legacy-test-secret";
 
@@ -61,7 +61,7 @@ try {
   assert.equal(doc.host, `127.0.0.1:${port}`);
   assert.deepEqual(doc.schemes, ["http"]);
   assert.equal(Object.keys(doc.paths).length, Object.keys(legacyRaw.paths).length);
-  assert.equal(countOperations(doc), 140);
+  assert.equal(countOperations(doc), 139);
   assert.equal(Object.keys(doc.definitions).length, Object.keys(legacyRaw.definitions).length);
 
   const uiResponse = await fetch(`${baseUrl}/legacy-api-docs/`);

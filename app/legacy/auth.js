@@ -27,7 +27,7 @@ function bearerToken(request) {
   const [scheme, token] = header.split(" ");
 
   if (scheme !== "Bearer" || !token) {
-    throw legacyError(401, "unauthorized", "Bearer token is required");
+    throw legacyError(401, "missing bearer token", "missing bearer token");
   }
 
   return token;
@@ -198,7 +198,7 @@ export async function verifyOtp(db, email, code) {
   const otp = result.rows.find((row) => verifySecret(code, row.code_hash));
 
   if (!otp) {
-    throw legacyError(401, "invalid_otp", "invalid OTP code");
+    throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   await db.query("UPDATE otp_codes SET verified_at = now() WHERE id = $1", [otp.id]);
@@ -329,11 +329,11 @@ export async function refreshTokenPair(db, refreshToken) {
   try {
     payload = jwt.verify(refreshToken, jwtSecret());
   } catch {
-    throw legacyError(401, "unauthorized", "invalid refresh token");
+    throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   if (payload.kind !== "refresh") {
-    throw legacyError(401, "unauthorized", "invalid refresh token");
+    throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   const stored = await db.one(
@@ -342,7 +342,7 @@ export async function refreshTokenPair(db, refreshToken) {
   );
 
   if (!stored) {
-    throw legacyError(401, "unauthorized", "refresh token not found");
+    throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   await db.query("UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1", [stored.id]);
@@ -350,7 +350,7 @@ export async function refreshTokenPair(db, refreshToken) {
   const user = await db.one("SELECT * FROM users WHERE id = $1 AND active = true", [payload.user_id]);
 
   if (!user) {
-    throw legacyError(401, "unauthorized", "user not found");
+    throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   return issueTokenPair(db, user);
@@ -362,9 +362,15 @@ export async function verifyGoogleToken(idToken) {
   }
 
   const jwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-  const { payload } = await jwtVerify(idToken, jwks, {
-    audience: process.env.GOOGLE_CLIENT_ID
-  });
+  let payload;
+
+  try {
+    ({ payload } = await jwtVerify(idToken, jwks, {
+      audience: process.env.GOOGLE_CLIENT_ID
+    }));
+  } catch {
+    throw legacyError(401, "invalid credentials", "invalid credentials");
+  }
 
   return {
     provider: "google",
@@ -381,10 +387,16 @@ export async function verifyAppleToken(identityToken, body = {}) {
   }
 
   const jwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
-  const { payload } = await jwtVerify(identityToken, jwks, {
-    audience: process.env.APPLE_CLIENT_ID,
-    issuer: "https://appleid.apple.com"
-  });
+  let payload;
+
+  try {
+    ({ payload } = await jwtVerify(identityToken, jwks, {
+      audience: process.env.APPLE_CLIENT_ID,
+      issuer: "https://appleid.apple.com"
+    }));
+  } catch {
+    throw legacyError(401, "invalid credentials", "invalid credentials");
+  }
 
   return {
     provider: "apple",

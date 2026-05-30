@@ -31,6 +31,7 @@ import {
   localizeRecord,
   parseJsonBodyField,
   parseLimitOffset,
+  randomAlphaNumericCode,
   randomCode,
   requestedLang,
   requireFields,
@@ -56,6 +57,25 @@ function requireClickEnv() {
 
 function nowPlus(minutes) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+function requestPublicOrigin(request) {
+  const forwardedProto = (request.get("x-forwarded-proto") || "").split(",")[0].trim();
+  const forwardedHost = (request.get("x-forwarded-host") || "").split(",")[0].trim();
+  const host = forwardedHost || request.get("host");
+  const protocol = forwardedProto || (host?.endsWith("astir-animation.uz") ? "https" : request.protocol);
+
+  return `${protocol}://${host}`;
+}
+
+async function qrPngBase64(payload) {
+  const dataUrl = await QRCode.toDataURL(payload, {
+    type: "image/png",
+    width: 320,
+    margin: 1
+  });
+
+  return dataUrl.replace(/^data:image\/png;base64,/, "");
 }
 
 function normalizeI18n(value, fallback = "") {
@@ -244,6 +264,19 @@ async function saveMediaAsset(db, media, ownerTable, ownerId) {
   });
 }
 
+function tokenUserWithAvatar(request, media, user) {
+  const serialized = tokenUser(user);
+
+  if (!serialized) {
+    return serialized;
+  }
+
+  return {
+    ...serialized,
+    avatar_url: user.avatar_path ? media.publicUrl(request, user.avatar_path) : serialized.avatar_url
+  };
+}
+
 async function maybeStartTranscode(db, config, content) {
   if (!content.source_path) {
     return null;
@@ -342,7 +375,14 @@ export function createLegacyRoutes({ config, media }) {
 
   router.post("/auth/forgot-password", asyncHandler(async (request, response) => {
     requireFields(request.body, ["email"]);
-    response.json(await createOtp(request.legacyDb, request.body.email, "reset_password"));
+    const email = request.body.email.toLowerCase();
+    const user = await request.legacyDb.one("SELECT id FROM users WHERE email = $1 AND active = true", [email]);
+
+    if (!user) {
+      throw legacyError(404, "not found", "not found");
+    }
+
+    response.json(await createOtp(request.legacyDb, email, "reset_password"));
   }));
 
   router.post("/auth/otp/verify", asyncHandler(async (request, response) => {
@@ -371,12 +411,14 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/auth/otp/login", asyncHandler(async (request, response) => {
-    requireFields(request.body, ["email", "code"]);
-    await verifyOtp(request.legacyDb, request.body.email, request.body.code);
-    const user = await request.legacyDb.one("SELECT * FROM users WHERE email = $1 AND active = true", [request.body.email.toLowerCase()]);
+    requireFields(request.body, ["email", "password"]);
+    const user = await request.legacyDb.one(
+      "SELECT * FROM users WHERE email = $1 AND active = true AND role = 'parent'",
+      [request.body.email.toLowerCase()]
+    );
 
-    if (!user) {
-      throw legacyError(404, "user_not_found", "user not found");
+    if (!user || !verifySecret(request.body.password, user.password_hash)) {
+      throw legacyError(401, "invalid credentials", "invalid credentials");
     }
 
     await request.legacyDb.query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
@@ -388,7 +430,7 @@ export function createLegacyRoutes({ config, media }) {
     const existing = await request.legacyDb.one("SELECT id FROM users WHERE email = $1", [request.body.email.toLowerCase()]);
 
     if (existing) {
-      throw legacyError(409, "email_exists", "email already exists");
+      throw legacyError(409, "invalid credentials", "invalid credentials");
     }
 
     const verified = await request.legacyDb.one(
@@ -397,7 +439,7 @@ export function createLegacyRoutes({ config, media }) {
     );
 
     if (!verified) {
-      throw legacyError(401, "otp_required", "OTP verification is required");
+      throw legacyError(401, "invalid credentials", "invalid credentials");
     }
 
     const user = await insertRow(request.legacyDb, "users", {
@@ -412,6 +454,39 @@ export function createLegacyRoutes({ config, media }) {
     response.status(201).json(await issueTokenPair(request.legacyDb, user));
   }));
 
+  router.post("/auth/reset-password", asyncHandler(async (request, response) => {
+    requireFields(request.body, ["email", "password"]);
+    const email = request.body.email.toLowerCase();
+    const verified = await request.legacyDb.one(
+      `
+        SELECT id FROM otp_codes
+        WHERE email = $1
+          AND purpose = 'reset_password'
+          AND verified_at IS NOT NULL
+          AND expires_at > now()
+        ORDER BY verified_at DESC
+        LIMIT 1
+      `,
+      [email]
+    );
+
+    if (!verified) {
+      throw legacyError(401, "invalid credentials", "invalid credentials");
+    }
+
+    const user = await request.legacyDb.one(
+      "UPDATE users SET password_hash = $2 WHERE email = $1 AND active = true RETURNING id",
+      [email, hashSecret(request.body.password)]
+    );
+
+    if (!user) {
+      throw legacyError(401, "invalid credentials", "invalid credentials");
+    }
+
+    await request.legacyDb.query("DELETE FROM otp_codes WHERE id = $1", [verified.id]);
+    response.json({ message: "ok" });
+  }));
+
   router.post("/auth/login", asyncHandler(async (request, response) => {
     requireFields(request.body, ["email", "password"]);
     const user = await request.legacyDb.one(
@@ -420,7 +495,7 @@ export function createLegacyRoutes({ config, media }) {
     );
 
     if (!user || !verifySecret(request.body.password, user.password_hash)) {
-      throw legacyError(401, "invalid_credentials", "invalid credentials");
+      throw legacyError(401, "invalid credentials", "invalid credentials");
     }
 
     await request.legacyDb.query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
@@ -449,16 +524,16 @@ export function createLegacyRoutes({ config, media }) {
     response.json(await refreshTokenPair(request.legacyDb, request.body.refresh_token));
   }));
 
-  router.post("/auth/logout", requireUser, asyncHandler(async (request, response) => {
+  router.post("/auth/logout", asyncHandler(async (request, response) => {
     const refreshToken = request.body.refresh_token;
     if (refreshToken) {
       await request.legacyDb.query("UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1", [sha256(refreshToken)]);
     }
-    response.json(messageResponse("logged out"));
+    response.json({ message: "ok" });
   }));
 
   router.get("/auth/me", requireUser, asyncHandler(async (request, response) => {
-    response.json(tokenUser(request.legacyUser));
+    response.json(tokenUserWithAvatar(request, media, request.legacyUser));
   }));
 
   router.put("/auth/me", requireUser, asyncHandler(async (request, response) => {
@@ -467,7 +542,7 @@ export function createLegacyRoutes({ config, media }) {
       last_name: request.body.last_name,
       phone: request.body.phone
     });
-    response.json(tokenUser(user));
+    response.json(tokenUserWithAvatar(request, media, user));
   }));
 
   router.post("/auth/me/avatar", requireUser, avatarUpload, asyncHandler(async (request, response) => {
@@ -480,15 +555,7 @@ export function createLegacyRoutes({ config, media }) {
       avatar_path: stored.path,
       avatar_url: stored.url
     });
-    response.json(tokenUser(user));
-  }));
-
-  router.get("/users/:id/avatar", asyncHandler(async (request, response) => {
-    const user = await getById(request.legacyDb, "users", request.params.id);
-    if (!user.avatar_path) {
-      throw legacyError(404, "avatar_not_found", "avatar not found");
-    }
-    response.sendFile(media.resolve(user.avatar_path));
+    response.json(tokenUserWithAvatar(request, media, user));
   }));
 
   router.get("/users", requireSuperAdmin, asyncHandler(async (request, response) => {
@@ -710,7 +777,7 @@ export function createLegacyRoutes({ config, media }) {
 
   router.post("/auth/child/init", asyncHandler(async (request, response) => {
     requireFields(request.body, ["device_name", "device_fingerprint"]);
-    const code = randomCode(6);
+    const code = randomAlphaNumericCode(32);
     const expiresAt = nowPlus(5);
     const device = await insertRow(request.legacyDb, "child_devices", {
       device_name: request.body.device_name,
@@ -719,13 +786,13 @@ export function createLegacyRoutes({ config, media }) {
       pairing_expires_at: expiresAt,
       status: "pending"
     });
-    const qrPayload = JSON.stringify({ type: "child_pairing", code, device_id: device.id });
+    const qrPayload = `${requestPublicOrigin(request)}/child/pair?code=${encodeURIComponent(code)}`;
     response.json({
       device_id: device.id,
       code,
       expires_at: expiresAt,
       qr_payload: qrPayload,
-      qr_base64: await QRCode.toDataURL(qrPayload)
+      qr_base64: await qrPngBase64(qrPayload)
     });
   }));
 
@@ -768,7 +835,7 @@ export function createLegacyRoutes({ config, media }) {
         "UPDATE child_extension_tickets SET status = 'confirmed', extended_until = $1 WHERE id = $2",
         [extendedUntil, extension.id]
       );
-      response.json({ action: "extend", ticket_id: extension.id, extends_until: extendedUntil });
+      response.json({ action: "extension", ticket_id: extension.id, extends_until: extendedUntil });
       return;
     }
 
@@ -784,7 +851,7 @@ export function createLegacyRoutes({ config, media }) {
     if (!device) {
       throw legacyError(410, "pairing_expired", "pairing code expired");
     }
-    response.json({ action: "pair", device_id: device.id, child });
+    response.json({ action: "pairing", device_id: device.id, child });
   }));
 
   router.post("/children/:id/extend/init", requireActor, asyncHandler(async (request, response) => {
@@ -800,7 +867,7 @@ export function createLegacyRoutes({ config, media }) {
       ticket_id: ticket.id,
       expires_at: expiresAt,
       qr_payload: qrPayload,
-      qr_base64: await QRCode.toDataURL(qrPayload)
+      qr_base64: await qrPngBase64(qrPayload)
     });
   }));
 

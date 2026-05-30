@@ -565,7 +565,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "children"
+                    "auth"
                 ],
                 "summary": "Parent scans a child QR — handles both device pairing and session extension",
                 "parameters": [
@@ -709,6 +709,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -5156,37 +5162,6 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/domain.User"
-                        }
-                    }
-                }
-            }
-        },
-        "/users/{id}/avatar": {
-            "get": {
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Serve a user's profile avatar (public)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }

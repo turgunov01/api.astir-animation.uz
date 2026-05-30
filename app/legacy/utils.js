@@ -34,6 +34,17 @@ export function randomCode(length = 6) {
   return String(crypto.randomInt(min, max + 1));
 }
 
+export function randomAlphaNumericCode(length = 32) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let code = "";
+
+  for (let index = 0; index < length; index += 1) {
+    code += alphabet[crypto.randomInt(0, alphabet.length)];
+  }
+
+  return code;
+}
+
 export function publicId() {
   return randomUUID();
 }
@@ -69,6 +80,30 @@ export function i18n(value, fallback = "") {
       uz: String(value.uz || value.en || value.ru || fallback),
       ru: String(value.ru || value.en || value.uz || fallback),
       en: String(value.en || value.ru || value.uz || fallback)
+    };
+  }
+
+  if (value === "invalid credentials") {
+    return {
+      uz: "Email yoki parol noto'g'ri. Iltimos, qayta tekshiring.",
+      ru: "Неверный email или пароль. Пожалуйста, проверьте данные.",
+      en: "Incorrect email or password. Please check your credentials."
+    };
+  }
+
+  if (value === "not found") {
+    return {
+      uz: "So'ralgan ma'lumot topilmadi.",
+      ru: "Запрашиваемые данные не найдены.",
+      en: "The requested resource was not found."
+    };
+  }
+
+  if (value === "missing bearer token") {
+    return {
+      uz: "Kirish uchun avtorizatsiya tokeni talab qilinadi. Iltimos, tizimga kiring.",
+      ru: "Для доступа необходим токен авторизации. Пожалуйста, войдите в систему.",
+      en: "An authorization token is required. Please sign in to continue."
     };
   }
 
