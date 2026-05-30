@@ -49,6 +49,10 @@ export function publicId() {
   return randomUUID();
 }
 
+export function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
 export function parseLimitOffset(query, defaultLimit = 20, maxLimit = 200) {
   const limit = Math.min(
     Math.max(Number.parseInt(query.limit || defaultLimit, 10) || defaultLimit, 1),
@@ -104,6 +108,38 @@ export function i18n(value, fallback = "") {
       uz: "Kirish uchun avtorizatsiya tokeni talab qilinadi. Iltimos, tizimga kiring.",
       ru: "Для доступа необходим токен авторизации. Пожалуйста, войдите в систему.",
       en: "An authorization token is required. Please sign in to continue."
+    };
+  }
+
+  if (value === "invalid device_id") {
+    return {
+      uz: "Identifikator formati noto'g'ri.",
+      ru: "Неверный формат идентификатора.",
+      en: "The identifier format is invalid."
+    };
+  }
+
+  if (value === "invalid child_id") {
+    return {
+      uz: "Identifikator formati noto'g'ri.",
+      ru: "Неверный формат идентификатора.",
+      en: "The identifier format is invalid."
+    };
+  }
+
+  if (value === "invalid ticket_id") {
+    return {
+      uz: "Identifikator formati noto'g'ri.",
+      ru: "Неверный формат идентификатора.",
+      en: "The identifier format is invalid."
+    };
+  }
+
+  if (value === "invalid rule_id") {
+    return {
+      uz: "Identifikator formati noto'g'ri.",
+      ru: "Неверный формат идентификатора.",
+      en: "The identifier format is invalid."
     };
   }
 

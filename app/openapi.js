@@ -188,14 +188,48 @@ export const openApiDocument = {
           }
         }
       },
+      LegacyChildDevice: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "3c52a843-0681-433c-a51e-c2f399dc4f29" },
+          child_id: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+          device_fingerprint: { type: "string", example: "string" },
+          device_name: { type: "string", example: "string" },
+          pairing_expires_at: { type: "string", format: "date-time" },
+          paired_at: { type: "string", format: "date-time", nullable: true },
+          revoked_at: { type: "string", format: "date-time", nullable: true },
+          last_seen_at: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyChildPermission: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          child_id: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+          mode: { type: "string", example: "allow" },
+          category_id: { type: "string", nullable: true },
+          content_id: { type: "string", nullable: true },
+          watch_from_min: { type: "integer", nullable: true, example: 0 },
+          watch_until_min: { type: "integer", nullable: true, example: 1320 },
+          weekday_mask: { type: "integer", nullable: true, example: 127 },
+          daily_limit_minutes: { type: "integer", nullable: true, example: 0 },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
       LegacyChildConfirmResult: {
         type: "object",
         properties: {
           action: { type: "string", example: "pairing" },
-          device_id: { type: "string", example: "3c52a843-0681-433c-a51e-c2f399dc4f29" },
+          device: { $ref: "#/components/schemas/LegacyChildDevice" },
           ticket_id: { type: "string" },
           extends_until: { type: "string", format: "date-time" },
-          child: { $ref: "#/components/schemas/LegacyChild" }
+          permissions: {
+            type: "array",
+            items: { $ref: "#/components/schemas/LegacyChildPermission" }
+          }
         }
       },
       Child: {
@@ -1146,6 +1180,24 @@ export const openApiDocument = {
               }
             }
           },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: {
+                  allOf: [{ $ref: "#/components/schemas/LegacyErrorResponse" }],
+                  example: {
+                    error: "invalid device_id",
+                    message: {
+                      uz: "Identifikator formati noto'g'ri.",
+                      ru: "Неверный формат идентификатора.",
+                      en: "The identifier format is invalid."
+                    }
+                  }
+                }
+              }
+            }
+          },
           404: {
             description: "Not Found",
             content: {
@@ -1178,6 +1230,21 @@ export const openApiDocument = {
                   child_id: {
                     type: "string",
                     example: "b219a2f6-0670-44ed-8e18-57f887bd4e94"
+                  },
+                  permissions: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        category_id: { type: "string", example: "string" },
+                        content_id: { type: "string", example: "string" },
+                        daily_limit_minutes: { type: "integer", example: 0 },
+                        mode: { type: "string", example: "allow" },
+                        watch_from_min: { type: "integer", example: 0 },
+                        watch_until_min: { type: "integer", example: 1320 },
+                        weekday_mask: { type: "integer", example: 127 }
+                      }
+                    }
                   }
                 }
               }
@@ -1318,45 +1385,519 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/children": {
-      get: {
+    "/api/v1/children/{id}": {
+      put: {
         tags: ["Children"],
-        summary: "List children",
-        security: [{ parentToken: [] }],
-        responses: {
-          200: {
-            description: "Children list",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    children: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/Child" }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          401: { $ref: "#/components/responses/Unauthorized" }
-        }
-      },
-      post: {
-        tags: ["Children"],
-        summary: "Create a child",
-        security: [{ parentToken: [] }],
+        summary: "Update a legacy child profile",
+        description: "Legacy PostgreSQL API endpoint. Updates a child profile for the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["name", "birthYear"],
                 properties: {
-                  name: { type: "string", example: "Child" },
-                  birthYear: { type: "integer", example: 2018 }
+                  active: {
+                    type: "boolean",
+                    example: true
+                  },
+                  age: {
+                    type: "integer",
+                    example: 0
+                  },
+                  avatar_url: {
+                    type: "string",
+                    example: "string"
+                  },
+                  name: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyChild" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      delete: {
+        tags: ["Children"],
+        summary: "Delete a legacy child profile",
+        description: "Legacy PostgreSQL API endpoint. Deletes a child profile for the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/devices": {
+      get: {
+        tags: ["Children"],
+        summary: "List paired child devices",
+        description: "Legacy PostgreSQL API endpoint. Lists paired devices for a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyChildDevice" }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/devices/{device_id}": {
+      delete: {
+        tags: ["Children"],
+        summary: "Revoke a paired child device",
+        description: "Legacy PostgreSQL API endpoint. Revokes a paired child device for a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "device_id",
+            in: "path",
+            required: true,
+            description: "Device ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/extend/init": {
+      post: {
+        tags: ["Children"],
+        summary: "Initialize child watch extension",
+        description: "Legacy PostgreSQL API endpoint. Creates a QR ticket for extending a child's watch time.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ticket_id: { type: "string" },
+                    expires_at: { type: "string", format: "date-time" },
+                    qr_payload: { type: "string" },
+                    qr_base64: { type: "string" }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/extend/pin": {
+      post: {
+        tags: ["Children"],
+        summary: "Extend child watch time by PIN",
+        description: "Legacy PostgreSQL API endpoint. Extends a child's watch time when a valid child PIN is provided.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["pin"],
+                properties: {
+                  pin: {
+                    type: "string",
+                    example: "1234"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/extend/{ticket_id}/status": {
+      get: {
+        tags: ["Children"],
+        summary: "Get child watch extension status",
+        description: "Legacy PostgreSQL API endpoint. Returns the status for a child watch-extension ticket.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "ticket_id",
+            in: "path",
+            required: true,
+            description: "Ticket ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ticket_id: { type: "string" },
+                    status: { type: "string" },
+                    extends_until: { type: "string", format: "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/permissions": {
+      get: {
+        tags: ["Children"],
+        summary: "List child permissions",
+        description: "Legacy PostgreSQL API endpoint. Lists allow/deny permission rules for a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyChildPermission" }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Children"],
+        summary: "Create a child permission",
+        description: "Legacy PostgreSQL API endpoint. Attaches an allow/deny permission rule to a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  category_id: { type: "string", example: "string" },
+                  content_id: { type: "string", example: "string" },
+                  daily_limit_minutes: { type: "integer", example: 0 },
+                  mode: { type: "string", example: "allow" },
+                  watch_from_min: { type: "integer", example: 0 },
+                  watch_until_min: { type: "integer", example: 1320 },
+                  weekday_mask: { type: "integer", example: 127 }
                 }
               }
             }
@@ -1364,94 +1905,59 @@ export const openApiDocument = {
         },
         responses: {
           201: {
-            description: "Child created",
+            description: "Created",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    child: { $ref: "#/components/schemas/Child" }
-                  }
-                }
+                schema: { $ref: "#/components/schemas/LegacyChildPermission" }
               }
             }
           },
-          400: { $ref: "#/components/responses/BadRequest" },
-          401: { $ref: "#/components/responses/Unauthorized" }
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
         }
       }
     },
-    "/v1/children/{childId}": {
-      get: {
-        tags: ["Children"],
-        summary: "Get one child",
-        security: [{ parentToken: [] }],
-        parameters: [
-          {
-            name: "childId",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: {
-            description: "Child",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    child: { $ref: "#/components/schemas/Child" }
-                  }
-                }
-              }
-            }
-          },
-          404: { $ref: "#/components/responses/NotFound" }
-        }
-      }
-    },
-    "/v1/children/{childId}/limits": {
-      get: {
-        tags: ["Children"],
-        summary: "Get child limits",
-        security: [{ parentToken: [] }],
-        parameters: [
-          {
-            name: "childId",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: {
-            description: "Child limits",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    limit: { $ref: "#/components/schemas/WatchLimit" }
-                  }
-                }
-              }
-            }
-          },
-          403: { $ref: "#/components/responses/Forbidden" },
-          404: { $ref: "#/components/responses/NotFound" }
-        }
-      },
+    "/api/v1/children/{id}/permissions/{rule_id}": {
       put: {
         tags: ["Children"],
-        summary: "Update child limits",
-        security: [{ parentToken: [] }],
+        summary: "Update a child permission",
+        description: "Legacy PostgreSQL API endpoint. Updates an allow/deny permission rule for a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
         parameters: [
           {
-            name: "childId",
+            name: "id",
             in: "path",
             required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "rule_id",
+            in: "path",
+            required: true,
+            description: "Permission rule ID.",
             schema: { type: "string" }
           }
         ],
@@ -1461,16 +1967,14 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["dailyMinutes", "allowedFrom", "allowedTo", "allowedDays"],
                 properties: {
-                  dailyMinutes: { type: "integer", example: 60 },
-                  allowedFrom: { type: "string", example: "08:00" },
-                  allowedTo: { type: "string", example: "20:00" },
-                  allowedDays: {
-                    type: "array",
-                    items: { type: "integer" },
-                    example: [1, 2, 3, 4, 5, 6, 7]
-                  }
+                  category_id: { type: "string", example: "string" },
+                  content_id: { type: "string", example: "string" },
+                  daily_limit_minutes: { type: "integer", example: 0 },
+                  mode: { type: "string", example: "allow" },
+                  watch_from_min: { type: "integer", example: 0 },
+                  watch_until_min: { type: "integer", example: 1320 },
+                  weekday_mask: { type: "integer", example: 127 }
                 }
               }
             }
@@ -1478,19 +1982,37 @@ export const openApiDocument = {
         },
         responses: {
           200: {
-            description: "Limits updated",
+            description: "OK",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    limit: { $ref: "#/components/schemas/WatchLimit" }
-                  }
-                }
+                schema: { $ref: "#/components/schemas/LegacyChildPermission" }
               }
             }
           },
-          400: { $ref: "#/components/responses/BadRequest" }
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
         }
       }
     },

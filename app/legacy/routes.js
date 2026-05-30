@@ -26,6 +26,7 @@ import {
   asyncHandler,
   buildUpdate,
   i18n,
+  isUuid,
   legacyError,
   legacyErrorMiddleware,
   localizeRecord,
@@ -667,6 +668,10 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.put("/children/:id", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
     const child = await request.legacyDb.one(
       "UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age), avatar_url = COALESCE($3, avatar_url), active = COALESCE($4, active) WHERE id = $5 AND parent_id = $6 RETURNING *",
       [request.body.name, toInteger(request.body.age, null), request.body.avatar_url, request.body.active, request.params.id, request.legacyUser.id]
@@ -678,8 +683,18 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.delete("/children/:id", requireParent, asyncHandler(async (request, response) => {
-    await request.legacyDb.query("DELETE FROM children WHERE id = $1 AND parent_id = $2", [request.params.id, request.legacyUser.id]);
-    response.json(messageResponse("deleted"));
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const result = await request.legacyDb.one(
+      "DELETE FROM children WHERE id = $1 AND parent_id = $2 RETURNING *",
+      [request.params.id, request.legacyUser.id]
+    );
+    if (!result) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+    response.json({ message: "ok" });
   }));
 
   router.put("/children/:id/pin", requireParent, asyncHandler(async (request, response) => {
@@ -695,6 +710,18 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.get("/children/:id/devices", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
     response.json(await request.legacyDb.many(
       "SELECT d.* FROM child_devices d JOIN children c ON c.id = d.child_id WHERE c.id = $1 AND c.parent_id = $2 ORDER BY d.created_at DESC",
       [request.params.id, request.legacyUser.id]
@@ -702,14 +729,45 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.delete("/children/:id/devices/:device_id", requireParent, asyncHandler(async (request, response) => {
-    await request.legacyDb.query(
-      "UPDATE child_devices SET revoked_at = now() WHERE id = $1 AND child_id = $2",
-      [request.params.device_id, request.params.id]
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+    if (!isUuid(request.params.device_id)) {
+      throw legacyError(400, "invalid device_id", "invalid device_id");
+    }
+
+    const device = await request.legacyDb.one(
+      `
+        UPDATE child_devices d
+        SET revoked_at = now()
+        FROM children c
+        WHERE d.id = $1
+          AND d.child_id = c.id
+          AND c.id = $2
+          AND c.parent_id = $3
+        RETURNING d.*
+      `,
+      [request.params.device_id, request.params.id, request.legacyUser.id]
     );
-    response.json(messageResponse("revoked"));
+    if (!device) {
+      throw legacyError(404, "device_not_found", "device not found");
+    }
+    response.json({ message: "ok" });
   }));
 
   router.get("/children/:id/permissions", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
     response.json(await request.legacyDb.many(
       "SELECT p.* FROM child_permissions p JOIN children c ON c.id = p.child_id WHERE p.child_id = $1 AND c.parent_id = $2 ORDER BY p.created_at DESC",
       [request.params.id, request.legacyUser.id]
@@ -717,6 +775,10 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/children/:id/permissions", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
     const child = await request.legacyDb.one("SELECT * FROM children WHERE id = $1 AND parent_id = $2", [request.params.id, request.legacyUser.id]);
     if (!child) {
       throw legacyError(404, "child_not_found", "child not found");
@@ -735,6 +797,13 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.put("/children/:id/permissions/:rule_id", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+    if (!isUuid(request.params.rule_id)) {
+      throw legacyError(400, "invalid rule_id", "invalid rule_id");
+    }
+
     const permission = await request.legacyDb.one(
       `
         UPDATE child_permissions p
@@ -797,6 +866,10 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.get("/auth/child/:device_id/status", asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.device_id)) {
+      throw legacyError(400, "invalid device_id", "invalid device_id");
+    }
+
     const device = await getById(request.legacyDb, "child_devices", request.params.device_id);
 
     if (device.status !== "confirmed" || !device.child_id) {
@@ -851,10 +924,34 @@ export function createLegacyRoutes({ config, media }) {
     if (!device) {
       throw legacyError(410, "pairing_expired", "pairing code expired");
     }
-    response.json({ action: "pairing", device_id: device.id, child });
+
+    const permissions = [];
+    for (const permission of Array.isArray(request.body.permissions) ? request.body.permissions : []) {
+      permissions.push(await insertRow(request.legacyDb, "child_permissions", {
+        child_id: child.id,
+        mode: permission.mode || "allow",
+        category_id: permission.category_id || null,
+        content_id: permission.content_id || null,
+        watch_from_min: toInteger(permission.watch_from_min, null),
+        watch_until_min: toInteger(permission.watch_until_min, null),
+        weekday_mask: toInteger(permission.weekday_mask, null),
+        daily_limit_minutes: toInteger(permission.daily_limit_minutes, null)
+      }));
+    }
+
+    response.json({ action: "pairing", device, permissions });
   }));
 
   router.post("/children/:id/extend/init", requireActor, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1", [request.params.id]);
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
     const code = randomCode(6);
     const expiresAt = nowPlus(5);
     const ticket = await insertRow(request.legacyDb, "child_extension_tickets", {
@@ -873,16 +970,35 @@ export function createLegacyRoutes({ config, media }) {
 
   router.post("/children/:id/extend/pin", requireActor, asyncHandler(async (request, response) => {
     requireFields(request.body, ["pin"]);
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
     const child = await getById(request.legacyDb, "children", request.params.id);
     if (!child.pin_hash || !verifySecret(request.body.pin, child.pin_hash)) {
       throw legacyError(401, "invalid_pin", "invalid PIN");
     }
     const extendedUntil = nowPlus(120);
-    response.json(await updateById(request.legacyDb, "children", child.id, { extended_until: extendedUntil }));
+    await updateById(request.legacyDb, "children", child.id, { extended_until: extendedUntil });
+    response.json({ message: "ok" });
   }));
 
   router.get("/children/:id/extend/:ticket_id/status", requireActor, asyncHandler(async (request, response) => {
-    const ticket = await getById(request.legacyDb, "child_extension_tickets", request.params.ticket_id);
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+    if (!isUuid(request.params.ticket_id)) {
+      throw legacyError(400, "invalid ticket_id", "invalid ticket_id");
+    }
+
+    const ticket = await request.legacyDb.one(
+      "SELECT * FROM child_extension_tickets WHERE id = $1 AND child_id = $2",
+      [request.params.ticket_id, request.params.id]
+    );
+    if (!ticket) {
+      throw legacyError(404, "ticket_not_found", "ticket not found");
+    }
+
     response.json({
       ticket_id: ticket.id,
       status: ticket.status,
