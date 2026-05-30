@@ -16,9 +16,16 @@ export const openApiDocument = {
     { name: "Auth" },
     { name: "Children" },
     { name: "Pairing" },
+    { name: "TV" },
+    { name: "Admin" },
+    { name: "Users" },
+    { name: "Support" },
+    { name: "FAQ" },
+    { name: "Billing" },
+    { name: "Cards" },
+    { name: "Series" },
     { name: "Device" },
     { name: "Tariffs" },
-    { name: "Billing" },
     { name: "Movies" },
     { name: "Categories" },
     { name: "Watch Sessions" }
@@ -232,6 +239,104 @@ export const openApiDocument = {
           }
         }
       },
+      LegacyTVChildProfile: {
+        type: "object",
+        properties: {
+          active: { type: "boolean" },
+          age: { type: "integer" },
+          avatar_url: { type: "string" },
+          id: { type: "string" },
+          name: { type: "string" }
+        }
+      },
+      LegacyTVParentProfile: {
+        type: "object",
+        properties: {
+          avatar_url: { type: "string" },
+          id: { type: "string" },
+          last_name: { type: "string" },
+          name: { type: "string" }
+        }
+      },
+      LegacyTVProfileList: {
+        type: "object",
+        properties: {
+          children: {
+            type: "array",
+            items: { $ref: "#/components/schemas/LegacyTVChildProfile" }
+          },
+          parent: { $ref: "#/components/schemas/LegacyTVParentProfile" }
+        }
+      },
+      LegacyTVStatusResult: {
+        type: "object",
+        properties: {
+          device_token: { type: "string" },
+          profiles: { $ref: "#/components/schemas/LegacyTVProfileList" },
+          status: { type: "string", example: "pending" },
+          token_expires_at: { type: "string" }
+        }
+      },
+      LegacyTVStreamSession: {
+        type: "object",
+        properties: {
+          access_token: { type: "string" },
+          expires_at: { type: "string", format: "date-time" },
+          profile: {},
+          profile_type: {
+            type: "string",
+            example: "parent"
+          },
+          profiles: { $ref: "#/components/schemas/LegacyTVProfileList" }
+        }
+      },
+      LegacyTVDevice: {
+        type: "object",
+        properties: {
+          confirmed_at: { type: "string", format: "date-time" },
+          created_at: { type: "string", format: "date-time" },
+          device_fingerprint: { type: "string" },
+          device_name: { type: "string" },
+          id: { type: "string" },
+          last_seen_at: { type: "string", format: "date-time" },
+          pairing_expires_at: { type: "string", format: "date-time" },
+          parent_id: { type: "string" },
+          revoked_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyAdminCardView: {
+        type: "object",
+        properties: {
+          brand: { type: "string" },
+          created_at: { type: "string", format: "date-time" },
+          expiry_month: { type: "integer" },
+          expiry_year: { type: "integer" },
+          holder_name: { type: "string" },
+          id: { type: "string" },
+          is_default: { type: "boolean" },
+          masked_pan: { type: "string" },
+          provider: {
+            type: "string",
+            enum: ["click", "payme", "stripe", "manual"]
+          },
+          token_hash: { type: "string" },
+          user_id: { type: "string" },
+          verified_at: { type: "string", format: "date-time" }
+        }
+      },
+      LegacyAdminCardListResponse: {
+        type: "object",
+        properties: {
+          data: {
+            type: "array",
+            items: { $ref: "#/components/schemas/LegacyAdminCardView" }
+          },
+          limit: { type: "integer" },
+          offset: { type: "integer" },
+          total: { type: "integer" }
+        }
+      },
       Child: {
         type: "object",
         properties: {
@@ -320,6 +425,43 @@ export const openApiDocument = {
           }
         }
       },
+      ContentStatus: {
+        type: "string",
+        enum: ["uploaded", "transcoding", "ready", "failed"],
+        example: "uploaded"
+      },
+      Content: {
+        type: "object",
+        properties: {
+          age_rating: { type: "integer" },
+          category_id: { type: "string" },
+          created_at: { type: "string", format: "date-time" },
+          created_by_id: { type: "string" },
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          duration_sec: { type: "integer" },
+          episode_number: { type: "integer" },
+          id: { type: "string" },
+          poster_url: { type: "string" },
+          published: { type: "boolean" },
+          published_at: { type: "string", format: "date-time" },
+          season_number: { type: "integer" },
+          series_id: { type: "string" },
+          slug: { type: "string" },
+          source_path: {
+            type: "string",
+            description: "relative under STORAGE_PATH"
+          },
+          status: { $ref: "#/components/schemas/ContentStatus" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          updated_at: { type: "string", format: "date-time" },
+          views_count: {
+            type: "integer",
+            description:
+              "ViewsCount is incremented atomically each time a stream grant is issued. It counts grant events (play button presses), not individual HLS segments."
+          },
+          year: { type: "integer" }
+        }
+      },
       Tariff: {
         type: "object",
         properties: {
@@ -380,6 +522,288 @@ export const openApiDocument = {
               can_watch_premium: { type: "boolean", example: true }
             }
           }
+        }
+      },
+      PaymentProvider: {
+        type: "string",
+        enum: ["click", "payme", "stripe", "manual"],
+        example: "click"
+      },
+      TransactionKind: {
+        type: "string",
+        enum: ["subscription", "topup", "refund"],
+        example: "subscription"
+      },
+      TransactionStatus: {
+        type: "string",
+        enum: ["pending", "succeeded", "failed", "refunded", "canceled"],
+        example: "pending"
+      },
+      Card: {
+        type: "object",
+        properties: {
+          brand: { type: "string", example: "visa" },
+          created_at: { type: "string", format: "date-time" },
+          expiry_month: { type: "integer", example: 3 },
+          expiry_year: { type: "integer", example: 2027 },
+          holder_name: { type: "string", example: "Alisher Karimov" },
+          id: { type: "string" },
+          is_default: { type: "boolean", example: true },
+          masked_pan: { type: "string", example: "8600****1234" },
+          provider: { $ref: "#/components/schemas/PaymentProvider" },
+          updated_at: { type: "string", format: "date-time" },
+          user_id: { type: "string" },
+          verified_at: { type: "string", format: "date-time" }
+        }
+      },
+      Transaction: {
+        type: "object",
+        properties: {
+          amount_cents: { type: "integer", example: 10000 },
+          card_id: { type: "string" },
+          created_at: { type: "string", format: "date-time" },
+          currency: { type: "string", example: "UZS" },
+          description: { type: "string" },
+          fiscal_sent_at: { type: "string", format: "date-time" },
+          id: { type: "string" },
+          kind: { $ref: "#/components/schemas/TransactionKind" },
+          plan_id: { type: "string" },
+          processed_at: { type: "string", format: "date-time" },
+          provider: { $ref: "#/components/schemas/PaymentProvider" },
+          provider_ref: { type: "string" },
+          status: { $ref: "#/components/schemas/TransactionStatus" },
+          subscription_id: { type: "string" },
+          updated_at: { type: "string", format: "date-time" },
+          user_id: { type: "string" }
+        }
+      },
+      TxListResponse: {
+        type: "object",
+        properties: {
+          data: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Transaction" }
+          },
+          limit: { type: "integer" },
+          offset: { type: "integer" },
+          total: { type: "integer" }
+        }
+      },
+      CardTokenRequestResult: {
+        type: "object",
+        properties: {
+          card_id: { type: "string" },
+          phone_number: { type: "string" }
+        }
+      },
+      CheckoutResult: {
+        type: "object",
+        properties: {
+          checkout_url: { type: "string" },
+          subscription: { $ref: "#/components/schemas/Subscription" },
+          transaction: { $ref: "#/components/schemas/Transaction" }
+        }
+      },
+      ClickPaymentStatusResult: {
+        type: "object",
+        properties: {
+          paymentID: { type: "integer" },
+          paymentStatus: { type: "integer" }
+        }
+      },
+      SeriesKind: {
+        type: "string",
+        enum: ["seasons", "episodes"],
+        example: "seasons"
+      },
+      Series: {
+        type: "object",
+        properties: {
+          active: { type: "boolean", example: true },
+          created_at: { type: "string", format: "date-time" },
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          id: { type: "string" },
+          kind: { $ref: "#/components/schemas/SeriesKind" },
+          poster_url: { type: "string" },
+          slug: { type: "string" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      SeriesRequest: {
+        type: "object",
+        required: ["title"],
+        properties: {
+          active: { type: "boolean" },
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          kind: { $ref: "#/components/schemas/SeriesKind" },
+          title: { $ref: "#/components/schemas/LocalizedText" }
+        }
+      },
+      FAQ: {
+        type: "object",
+        properties: {
+          active: { type: "boolean" },
+          answer: { $ref: "#/components/schemas/LocalizedText" },
+          created_at: { type: "string", format: "date-time" },
+          id: { type: "string" },
+          question: { $ref: "#/components/schemas/LocalizedText" },
+          sort_order: { type: "integer" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      LocalizedFAQ: {
+        type: "object",
+        properties: {
+          answer: { type: "string" },
+          id: { type: "string" },
+          question: { type: "string" },
+          sort_order: { type: "integer" }
+        }
+      },
+      FAQRequest: {
+        type: "object",
+        required: ["answer", "question"],
+        properties: {
+          active: { type: "boolean" },
+          answer: { $ref: "#/components/schemas/LocalizedText" },
+          question: { $ref: "#/components/schemas/LocalizedText" },
+          sort_order: { type: "integer" }
+        }
+      },
+      SupportSenderRole: {
+        type: "string",
+        enum: ["user", "admin"],
+        example: "user"
+      },
+      SupportChat: {
+        type: "object",
+        properties: {
+          admin_unread_count: { type: "integer" },
+          created_at: { type: "string", format: "date-time" },
+          id: { type: "string" },
+          last_message_at: { type: "string", format: "date-time" },
+          last_message_preview: { type: "string" },
+          updated_at: { type: "string", format: "date-time" },
+          user: { $ref: "#/components/schemas/LegacyUser" },
+          user_id: { type: "string" },
+          user_unread_count: { type: "integer" }
+        }
+      },
+      SupportMessage: {
+        type: "object",
+        properties: {
+          attachment_name: { type: "string" },
+          attachment_size: { type: "integer" },
+          attachment_type: { type: "string" },
+          attachment_url: { type: "string" },
+          body: { type: "string" },
+          chat_id: { type: "string" },
+          created_at: { type: "string", format: "date-time" },
+          id: { type: "string" },
+          sender: { $ref: "#/components/schemas/LegacyUser" },
+          sender_id: { type: "string" },
+          sender_role: { $ref: "#/components/schemas/SupportSenderRole" },
+          updated_at: { type: "string", format: "date-time" }
+        }
+      },
+      UsersListResponse: {
+        type: "object",
+        properties: {
+          data: {
+            type: "array",
+            items: { $ref: "#/components/schemas/LegacyUser" }
+          },
+          limit: { type: "integer" },
+          offset: { type: "integer" },
+          total: { type: "integer" }
+        }
+      },
+      CreateStaffRequest: {
+        type: "object",
+        required: ["email", "name", "password", "role"],
+        properties: {
+          email: { type: "string" },
+          name: { type: "string" },
+          password: { type: "string", minLength: 8 },
+          role: { type: "string", enum: ["admin", "super_admin"] }
+        }
+      },
+      UpdateUserRequest: {
+        type: "object",
+        required: ["last_name", "name", "role"],
+        properties: {
+          last_name: { type: "string" },
+          name: { type: "string" },
+          role: { type: "string", enum: ["super_admin", "admin", "parent"] }
+        }
+      },
+      AssignPlanRequest: {
+        type: "object",
+        required: ["plan_id"],
+        properties: {
+          duration_days: { type: "integer" },
+          plan_id: { type: "string" }
+        }
+      },
+      CardRequest: {
+        type: "object",
+        required: ["expiry_month", "expiry_year", "holder_name", "pan", "provider"],
+        properties: {
+          cvc: { type: "string" },
+          expiry_month: { type: "integer" },
+          expiry_year: { type: "integer" },
+          holder_name: { type: "string" },
+          pan: { type: "string", example: "8600123412341234" },
+          provider: {
+            type: "string",
+            enum: ["click", "payme", "stripe"],
+            example: "click"
+          }
+        }
+      },
+      ClickCardTokenRequestBody: {
+        type: "object",
+        required: ["expire_date", "pan"],
+        properties: {
+          expire_date: { type: "string", example: "0327" },
+          pan: { type: "string", example: "8600550000003244" }
+        }
+      },
+      ClickCardTokenVerifyBody: {
+        type: "object",
+        required: ["card_id", "sms_code"],
+        properties: {
+          card_id: { type: "string" },
+          sms_code: { type: "integer" }
+        }
+      },
+      CheckoutRequest: {
+        type: "object",
+        required: ["plan_id", "provider"],
+        properties: {
+          card_id: { type: "string" },
+          plan_id: { type: "string" },
+          provider: {
+            type: "string",
+            enum: ["click", "payme", "stripe"],
+            example: "click"
+          }
+        }
+      },
+      DeeplinkCheckoutRequest: {
+        type: "object",
+        required: ["plan_id"],
+        properties: {
+          plan_id: { type: "string" }
+        }
+      },
+      RecurringChargeRequest: {
+        type: "object",
+        required: ["card_id", "plan_id"],
+        properties: {
+          card_id: { type: "string" },
+          plan_id: { type: "string" }
         }
       }
     }
@@ -1295,6 +1719,384 @@ export const openApiDocument = {
         }
       }
     },
+    "/api/v1/auth/tv/confirm": {
+      post: {
+        tags: ["Auth"],
+        summary: "TV: parent confirms pairing by scanning QR",
+        description: "Legacy PostgreSQL API endpoint. Authenticated parent confirms the TV pairing code and receives the TV profile list.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["code"],
+                properties: {
+                  code: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTVStatusResult" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          410: {
+            description: "Gone",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/tv/init": {
+      post: {
+        tags: ["TV"],
+        summary: "TV: generate pairing QR",
+        description: "Legacy PostgreSQL API endpoint. The TV app calls this on first launch and displays the returned QR. The parent scans it with POST /api/v1/auth/tv/confirm.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["device_fingerprint", "device_name"],
+                properties: {
+                  device_fingerprint: {
+                    type: "string",
+                    example: "string"
+                  },
+                  device_name: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyPairingTicket" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/tv/profile": {
+      post: {
+        tags: ["TV"],
+        summary: "TV: select who is watching",
+        description: "Legacy PostgreSQL API endpoint. The TV app uses its device token to switch between parent and child playback and receives a short-lived streaming access token.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  child_id: {
+                    type: "string",
+                    example: "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTVStreamSession" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/tv/profiles": {
+      get: {
+        tags: ["TV"],
+        summary: "TV: get current profile list",
+        description: "Legacy PostgreSQL API endpoint. The TV app refreshes the list of available profiles using its device token.",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTVProfileList" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/tv/{device_id}/status": {
+      get: {
+        tags: ["TV"],
+        summary: "TV: poll for pairing confirmation",
+        description: "Legacy PostgreSQL API endpoint. The TV app polls this after showing the QR. While pending, the response stays unauthenticated and returns a status payload.",
+        parameters: [
+          {
+            name: "device_id",
+            in: "path",
+            required: true,
+            description: "Device ID returned by /api/v1/auth/tv/init.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyTVStatusResult" }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: {
+                  allOf: [{ $ref: "#/components/schemas/LegacyErrorResponse" }],
+                  example: {
+                    error: "invalid device_id",
+                    message: {
+                      uz: "Qurilma identifikatori noto'g'ri.",
+                      ru: "Идентификатор устройства некорректен.",
+                      en: "The device ID is invalid."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          404: {
+            description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tv-devices": {
+      get: {
+        tags: ["TV"],
+        summary: "List paired TV devices",
+        description: "Legacy PostgreSQL API endpoint. Lists all TV devices linked to the authenticated parent account.",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyTVDevice" }
+                }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tv-devices/{id}": {
+      delete: {
+        tags: ["TV"],
+        summary: "Revoke a paired TV device",
+        description: "Legacy PostgreSQL API endpoint. Revokes a TV device so it can no longer select profiles or stream.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "TV Device ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/cards": {
+      get: {
+        tags: ["Admin"],
+        summary: "List all cards (admin)",
+        description: "Legacy PostgreSQL API endpoint. Returns all saved cards platform-wide and optionally filters by user_id.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "user_id",
+            in: "query",
+            required: false,
+            description: "Filter by user UUID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            description: "Page size.",
+            schema: { type: "integer" }
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            description: "Offset.",
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyAdminCardListResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          403: {
+            description: "Forbidden",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/children": {
       get: {
         tags: ["Children"],
@@ -1382,6 +2184,1348 @@ export const openApiDocument = {
               }
             }
           }
+        }
+      }
+    },
+    "/api/v1/users": {
+      get: {
+        tags: ["Users"],
+        summary: "List users (super_admin only)",
+        description: "Legacy PostgreSQL API endpoint. Returns staff and parent accounts with pagination.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "role",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["super_admin", "admin", "parent"]
+            }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UsersListResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      },
+      post: {
+        tags: ["Users"],
+        summary: "Create an admin or super_admin (super_admin only)",
+        description: "Legacy PostgreSQL API endpoint. Creates a staff account.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateStaffRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/users/{id}": {
+      get: {
+        tags: ["Users"],
+        summary: "Get a user by ID (super_admin only)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      put: {
+        tags: ["Users"],
+        summary: "Update a user's profile and role (super_admin only)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Users"],
+        summary: "Delete a user",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/users/{id}/active": {
+      patch: {
+        tags: ["Users"],
+        summary: "Activate or deactivate a user",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["active"],
+                properties: {
+                  active: { type: "boolean", example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyUser" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/users/{id}/plan": {
+      post: {
+        tags: ["Users"],
+        summary: "Assign a plan to a user (super_admin)",
+        description: "Legacy PostgreSQL API endpoint. Cancels current subscriptions and creates a new active subscription.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AssignPlanRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Subscription" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/users/{id}/subscriptions": {
+      get: {
+        tags: ["Users"],
+        summary: "List a user's subscriptions (super_admin)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Subscription" }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/users/{id}/cards": {
+      get: {
+        tags: ["Cards"],
+        summary: "List cards for a specific user (admin)",
+        description: "Returns all saved cards belonging to the given user. Token hash is included; the raw token is never exposed.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyAdminCardView" }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/faqs": {
+      get: {
+        tags: ["FAQ"],
+        summary: "List public FAQs",
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LocalizedFAQ" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/faqs": {
+      get: {
+        tags: ["FAQ"],
+        summary: "List all FAQs (admin)",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/FAQ" }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      },
+      post: {
+        tags: ["FAQ"],
+        summary: "Create a FAQ entry",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/FAQRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/FAQ" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/admin/faqs/{id}": {
+      put: {
+        tags: ["FAQ"],
+        summary: "Update a FAQ entry",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/FAQRequest" }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/FAQ" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["FAQ"],
+        summary: "Delete a FAQ entry",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/support/attachments/{path}": {
+      get: {
+        tags: ["Support"],
+        summary: "Serve a support chat attachment",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "path",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK"
+          },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/support/chat": {
+      get: {
+        tags: ["Support"],
+        summary: "Get the current user's support chat",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SupportChat" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/support/chat/messages": {
+      get: {
+        tags: ["Support"],
+        summary: "List messages in the current user's support chat",
+        description: "Returns messages ordered ascending by time. Use after to poll for new messages or before to load older history.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          },
+          {
+            name: "before",
+            in: "query",
+            required: false,
+            schema: { type: "string" }
+          },
+          {
+            name: "after",
+            in: "query",
+            required: false,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  additionalProperties: true
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      },
+      post: {
+        tags: ["Support"],
+        summary: "Send a message in the current user's support chat",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: false,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  body: { type: "string" },
+                  file: { type: "string", format: "binary" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SupportMessage" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/support/chat/read": {
+      post: {
+        tags: ["Support"],
+        summary: "Mark the user's support chat as read",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/admin/support/chats": {
+      get: {
+        tags: ["Support"],
+        summary: "List support chats (admin)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  additionalProperties: true
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/admin/support/chats/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get a support chat (admin)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SupportChat" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/admin/support/chats/{id}/messages": {
+      get: {
+        tags: ["Support"],
+        summary: "List messages in a support chat (admin)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          },
+          {
+            name: "before",
+            in: "query",
+            required: false,
+            schema: { type: "string" }
+          },
+          {
+            name: "after",
+            in: "query",
+            required: false,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  additionalProperties: true
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Support"],
+        summary: "Reply in a support chat (admin)",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  body: { type: "string" },
+                  file: { type: "string", format: "binary" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SupportMessage" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/admin/support/chats/{id}/read": {
+      post: {
+        tags: ["Support"],
+        summary: "Mark a support chat as read on the admin side",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/cards": {
+      get: {
+        tags: ["Cards"],
+        summary: "List my cards",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Card" }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      },
+      post: {
+        tags: ["Cards"],
+        summary: "Tokenise and save a card",
+        description: "Only brand + masked PAN + provider token are stored; raw PAN is never persisted.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CardRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Card" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/cards/{id}": {
+      delete: {
+        tags: ["Cards"],
+        summary: "Delete a card",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/cards/{id}/default": {
+      post: {
+        tags: ["Cards"],
+        summary: "Set a card as default",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/billing/subscriptions": {
+      get: {
+        tags: ["Billing"],
+        summary: "My subscriptions",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Subscription" }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/billing/transactions": {
+      get: {
+        tags: ["Billing"],
+        summary: "My transactions",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TxListResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/billing/checkout": {
+      post: {
+        tags: ["Billing"],
+        summary: "Start a subscription checkout",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CheckoutRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/billing/checkout/deeplink": {
+      post: {
+        tags: ["Billing"],
+        summary: "Start a deeplink / hosted-page checkout",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/DeeplinkCheckoutRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/billing/charge/recurring": {
+      post: {
+        tags: ["Billing"],
+        summary: "Charge a verified card token (recurring / subscription renewal)",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RecurringChargeRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/payments/click/card/request": {
+      post: {
+        tags: ["Cards"],
+        summary: "Step 1 - request a Click card token",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ClickCardTokenRequestBody" }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CardTokenRequestResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/payments/click/card/verify": {
+      post: {
+        tags: ["Cards"],
+        summary: "Step 2 - verify card token with SMS OTP",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ClickCardTokenVerifyBody" }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Card" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/payments/click/mock-pay": {
+      get: {
+        tags: ["Billing"],
+        summary: "DEV ONLY - mark a pending Click transaction as paid",
+        parameters: [
+          {
+            name: "ref",
+            in: "query",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Transaction" }
+              }
+            }
+          },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/payments/click/payment/{payment_id}/reversal": {
+      delete: {
+        tags: ["Billing"],
+        summary: "Reverse (refund) a Click payment",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "payment_id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/payments/click/payment/{payment_id}/status": {
+      get: {
+        tags: ["Billing"],
+        summary: "Check Click payment status",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "payment_id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ClickPaymentStatusResult" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/series": {
+      get: {
+        tags: ["Series"],
+        summary: "List all active series",
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Series" }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Series"],
+        summary: "Create a series",
+        description: "`kind` must be \"seasons\" or \"episodes\". Defaults to \"episodes\" if omitted.",
+        security: [{ legacyBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SeriesRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Series" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/series/{id}": {
+      get: {
+        tags: ["Series"],
+        summary: "Get a series by ID",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Series" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      put: {
+        tags: ["Series"],
+        summary: "Update a series",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SeriesRequest" }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Series" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Series"],
+        summary: "Delete a series",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/episodes": {
+      get: {
+        tags: ["Series"],
+        summary: "List episodes of a series ordered by season/episode number",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Content" }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/poster": {
+      get: {
+        tags: ["Series"],
+        summary: "Serve a series poster image (public)",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK"
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Series"],
+        summary: "Upload a poster for a series",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: { type: "string", format: "binary" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Series" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
         }
       }
     },
