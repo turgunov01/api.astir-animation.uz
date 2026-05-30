@@ -31,6 +31,7 @@ const scopes = [
       "POST /api/v1/children",
       "PUT /api/v1/children/{id}",
       "DELETE /api/v1/children/{id}",
+      "PUT /api/v1/children/{id}/pin",
       "GET /api/v1/children/{id}/devices",
       "DELETE /api/v1/children/{id}/devices/{device_id}",
       "POST /api/v1/children/{id}/extend/init",
@@ -50,6 +51,19 @@ const scopes = [
       "POST /v1/billing/apple/verify",
       "POST /v1/billing/google/verify",
       "POST /v1/pairing/sessions/{sessionId}/approve"
+    ]
+  },
+  {
+    key: "admin",
+    docsPath: "/admin-docs",
+    jsonPath: "/admin-openapi.json",
+    title: "Astir Admin API",
+    description: "Admin child management for parent accounts.",
+    operations: [
+      "GET /health",
+      "GET /api/v1/users/{id}/children",
+      "DELETE /api/v1/users/{user_id}/children/{child_id}",
+      "PATCH /api/v1/users/{user_id}/children/{child_id}/active"
     ]
   },
   {

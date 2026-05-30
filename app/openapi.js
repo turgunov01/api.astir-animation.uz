@@ -1513,6 +1513,58 @@ export const openApiDocument = {
         }
       }
     },
+    "/api/v1/children/{id}/pin": {
+      put: {
+        tags: ["Children"],
+        summary: "Set or replace child PIN",
+        description: "Legacy PostgreSQL API endpoint. Sets the 4-digit PIN for a child profile owned by the authenticated parent.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["pin"],
+                properties: {
+                  pin: {
+                    type: "string",
+                    example: "1234"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyOkResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/children/{id}/devices": {
       get: {
         tags: ["Children"],
@@ -1558,6 +1610,150 @@ export const openApiDocument = {
           },
           404: {
             description: "Not Found",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/children": {
+      get: {
+        tags: ["Children"],
+        summary: "List children for any parent (admin)",
+        description: "Legacy PostgreSQL API endpoint. Lists child profiles for the specified parent user.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "Parent user ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LegacyChild" }
+                }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/children/{child_id}": {
+      delete: {
+        tags: ["Children"],
+        summary: "Delete a child (admin)",
+        description: "Legacy PostgreSQL API endpoint. Deletes a child profile for the specified parent user.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "user_id",
+            in: "path",
+            required: true,
+            description: "Parent user ID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    message: { type: "string", example: "deleted" }
+                  }
+                }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/children/{child_id}/active": {
+      patch: {
+        tags: ["Children"],
+        summary: "Activate or deactivate a child (admin)",
+        description: "Legacy PostgreSQL API endpoint. Updates the active flag for a child profile that belongs to the specified parent user.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "user_id",
+            in: "path",
+            required: true,
+            description: "Parent user ID.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "path",
+            required: true,
+            description: "Child ID.",
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["active"],
+                properties: {
+                  active: {
+                    type: "boolean",
+                    example: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyChild" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/LegacyErrorResponse" }

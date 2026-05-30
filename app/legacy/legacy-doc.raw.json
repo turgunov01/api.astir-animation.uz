@@ -449,6 +449,12 @@
                         "schema": {
                             "$ref": "#/definitions/handler.MessageResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -5446,6 +5452,12 @@
                                 "$ref": "#/definitions/domain.Child"
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -5574,6 +5586,12 @@
                         "schema": {
                             "$ref": "#/definitions/handler.MessageResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -5625,6 +5643,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/domain.Child"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
