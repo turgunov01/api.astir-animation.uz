@@ -18,6 +18,13 @@ function jwtSecret() {
   return process.env.JWT_SECRET || "astir-local-development-secret";
 }
 
+function envList(name) {
+  return String(process.env[name] || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function isoFromNow(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
@@ -357,7 +364,9 @@ export async function refreshTokenPair(db, refreshToken) {
 }
 
 export async function verifyGoogleToken(idToken) {
-  if (!process.env.GOOGLE_CLIENT_ID) {
+  const audiences = envList("GOOGLE_CLIENT_ID");
+
+  if (!audiences.length) {
     throw legacyError(503, "google_auth_unavailable", "GOOGLE_CLIENT_ID is required");
   }
 
@@ -366,7 +375,7 @@ export async function verifyGoogleToken(idToken) {
 
   try {
     ({ payload } = await jwtVerify(idToken, jwks, {
-      audience: process.env.GOOGLE_CLIENT_ID
+      audience: audiences
     }));
   } catch {
     throw legacyError(401, "invalid credentials", "invalid credentials");
@@ -382,7 +391,9 @@ export async function verifyGoogleToken(idToken) {
 }
 
 export async function verifyAppleToken(identityToken, body = {}) {
-  if (!process.env.APPLE_CLIENT_ID) {
+  const audiences = envList("APPLE_CLIENT_ID");
+
+  if (!audiences.length) {
     throw legacyError(503, "apple_auth_unavailable", "APPLE_CLIENT_ID is required");
   }
 
@@ -391,7 +402,7 @@ export async function verifyAppleToken(identityToken, body = {}) {
 
   try {
     ({ payload } = await jwtVerify(identityToken, jwks, {
-      audience: process.env.APPLE_CLIENT_ID,
+      audience: audiences,
       issuer: "https://appleid.apple.com"
     }));
   } catch {
