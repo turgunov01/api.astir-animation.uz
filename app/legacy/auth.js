@@ -18,11 +18,10 @@ function jwtSecret() {
   return process.env.JWT_SECRET || "astir-local-development-secret";
 }
 
-function envList(name) {
-  return String(process.env[name] || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+function envList(...names) {
+  const values = names.flatMap((name) => String(process.env[name] || "").split(","));
+
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function isoFromNow(seconds) {
@@ -364,10 +363,10 @@ export async function refreshTokenPair(db, refreshToken) {
 }
 
 export async function verifyGoogleToken(idToken) {
-  const audiences = envList("GOOGLE_CLIENT_ID");
+  const audiences = envList("GOOGLE_CLIENT_IDS", "GOOGLE_CLIENT_ID");
 
   if (!audiences.length) {
-    throw legacyError(503, "google_auth_unavailable", "GOOGLE_CLIENT_ID is required");
+    throw legacyError(503, "google_auth_unavailable", "GOOGLE_CLIENT_IDS or GOOGLE_CLIENT_ID is required");
   }
 
   const jwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
@@ -375,7 +374,8 @@ export async function verifyGoogleToken(idToken) {
 
   try {
     ({ payload } = await jwtVerify(idToken, jwks, {
-      audience: audiences
+      audience: audiences,
+      issuer: ["accounts.google.com", "https://accounts.google.com"]
     }));
   } catch {
     throw legacyError(401, "invalid credentials", "invalid credentials");
@@ -391,10 +391,10 @@ export async function verifyGoogleToken(idToken) {
 }
 
 export async function verifyAppleToken(identityToken, body = {}) {
-  const audiences = envList("APPLE_CLIENT_ID");
+  const audiences = envList("APPLE_CLIENT_IDS", "APPLE_CLIENT_ID");
 
   if (!audiences.length) {
-    throw legacyError(503, "apple_auth_unavailable", "APPLE_CLIENT_ID is required");
+    throw legacyError(503, "apple_auth_unavailable", "APPLE_CLIENT_IDS or APPLE_CLIENT_ID is required");
   }
 
   const jwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
@@ -419,13 +419,13 @@ export async function verifyAppleToken(identityToken, body = {}) {
 }
 
 export async function findOrCreateOAuthUser(db, profile) {
-  requireFields(profile, ["provider", "subject", "email"]);
+  requireFields(profile, ["provider", "subject"]);
   let user = await db.one(
     "SELECT * FROM users WHERE auth_provider = $1 AND auth_subject = $2",
     [profile.provider, profile.subject]
   );
 
-  if (!user) {
+  if (!user && profile.email) {
     user = await db.one("SELECT * FROM users WHERE email = $1", [profile.email.toLowerCase()]);
   }
 
@@ -441,6 +441,8 @@ export async function findOrCreateOAuthUser(db, profile) {
     );
     return updated;
   }
+
+  requireFields(profile, ["email"]);
 
   return db.one(
     `
