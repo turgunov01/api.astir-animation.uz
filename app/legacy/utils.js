@@ -95,6 +95,14 @@ export function i18n(value, fallback = "") {
     };
   }
 
+  if (value === "email already exists") {
+    return {
+      uz: "Bu email bilan akkaunt allaqachon mavjud.",
+      ru: "Account with this email already exists.",
+      en: "An account with this email already exists."
+    };
+  }
+
   if (value === "not found") {
     return {
       uz: "So'ralgan ma'lumot topilmadi.",

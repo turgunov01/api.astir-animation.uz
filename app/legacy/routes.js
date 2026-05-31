@@ -431,7 +431,7 @@ export function createLegacyRoutes({ config, media }) {
     const existing = await request.legacyDb.one("SELECT id FROM users WHERE email = $1", [request.body.email.toLowerCase()]);
 
     if (existing) {
-      throw legacyError(409, "invalid credentials", "invalid credentials");
+      throw legacyError(409, "email already exists", "email already exists");
     }
 
     const verified = await request.legacyDb.one(
@@ -491,7 +491,7 @@ export function createLegacyRoutes({ config, media }) {
   router.post("/auth/login", asyncHandler(async (request, response) => {
     requireFields(request.body, ["email", "password"]);
     const user = await request.legacyDb.one(
-      "SELECT * FROM users WHERE email = $1 AND active = true AND role IN ('admin', 'super_admin')",
+      "SELECT * FROM users WHERE email = $1 AND active = true AND role IN ('parent', 'admin', 'super_admin')",
       [request.body.email.toLowerCase()]
     );
 

@@ -11,7 +11,9 @@ const scopes = [
     description: "Parent account, child profiles, limits, and pairing approval.",
     operations: [
       "GET /health",
+      "POST /v1/auth/login",
       "POST /api/v1/auth/register",
+      "POST /api/v1/auth/login",
       "POST /api/v1/auth/otp/login",
       "POST /api/v1/auth/google",
       "POST /api/v1/auth/apple",
@@ -68,6 +70,7 @@ const scopes = [
     description: "Admin user, parent-account, card, and child management.",
     operations: [
       "GET /health",
+      "POST /api/v1/auth/login",
       "GET /api/v1/users",
       "POST /api/v1/users",
       "GET /api/v1/users/{id}",

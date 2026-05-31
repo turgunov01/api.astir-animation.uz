@@ -830,6 +830,66 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/auth/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "Log in as parent",
+        description: "Local API endpoint. Logs in a parent with email and password and returns a parent token.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password"],
+                properties: {
+                  email: {
+                    type: "string",
+                    example: "parent@example.com"
+                  },
+                  password: {
+                    type: "string",
+                    example: "password123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    parent: { $ref: "#/components/schemas/Parent" },
+                    token: { type: "string" }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Bad Request",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/register": {
       post: {
         tags: ["Auth"],
@@ -965,8 +1025,8 @@ export const openApiDocument = {
     "/api/v1/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "Log in",
-        description: "Legacy PostgreSQL API endpoint. Logs in staff users and returns an access/refresh token pair.",
+        summary: "Email/password login",
+        description: "Legacy PostgreSQL API endpoint. Logs in a parent, admin, or super_admin user with email and password and returns an access/refresh token pair.",
         requestBody: {
           required: true,
           content: {
@@ -977,11 +1037,11 @@ export const openApiDocument = {
                 properties: {
                   email: {
                     type: "string",
-                    example: "admin@example.com"
+                    example: "parent@example.com"
                   },
                   password: {
                     type: "string",
-                    example: "string"
+                    example: "password123"
                   }
                 }
               }

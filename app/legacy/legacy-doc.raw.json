@@ -800,7 +800,7 @@
         },
         "/auth/login": {
             "post": {
-                "description": "Exchange email+password for an access/refresh token pair. Parents use the OTP flow.",
+                "description": "Exchange parent or staff email+password for an access/refresh token pair.",
                 "consumes": [
                     "application/json"
                 ],
@@ -810,10 +810,10 @@
                 "tags": [
                     "auth"
                 ],
-                "summary": "Log in (staff only — super_admin, admin)",
+                "summary": "Log in with email and password",
                 "parameters": [
                     {
-                        "description": "Staff credentials",
+                        "description": "Email + password",
                         "name": "body",
                         "in": "body",
                         "required": true,
