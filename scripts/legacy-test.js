@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import jwt from "jsonwebtoken";
 
 process.env.DATABASE_URL = "";
 process.env.REQUIRE_AUTH = "true";
@@ -8,6 +9,7 @@ process.env.JWT_SECRET = "astir-legacy-test-secret";
 
 const { createServer } = await import("../app/server.js");
 const { openApiDocument } = await import("../app/openapi.js");
+const { requireAdmin, requireParent, requireSuperAdmin } = await import("../app/legacy/auth.js");
 
 const legacyRaw = JSON.parse(fs.readFileSync(path.resolve("app/legacy/legacy-doc.raw.json"), "utf8"));
 const server = createServer();
@@ -48,6 +50,41 @@ function countOperations(document) {
   return count;
 }
 
+function legacyUserToken(user) {
+  return jwt.sign(
+    {
+      sub: user.id,
+      user_id: user.id,
+      role: user.role,
+      kind: "user"
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+}
+
+function runLegacyGuard(guard, user) {
+  const token = legacyUserToken(user);
+  const request = {
+    get(name) {
+      return name.toLowerCase() === "authorization" ? `Bearer ${token}` : "";
+    },
+    legacyDb: {
+      one(sql, values) {
+        assert.match(sql, /FROM users/);
+        assert.deepEqual(values, [user.id]);
+        return user;
+      }
+    }
+  };
+
+  return new Promise((resolve) => {
+    guard(request, {}, (error) => {
+      resolve({ error, request });
+    });
+  });
+}
+
 const port = await listen();
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -79,6 +116,30 @@ try {
   const indexHtml = await indexResponse.text();
   assert.match(indexHtml, /\/legacy-api-docs/);
   assert.match(indexHtml, /\/legacy-doc\.json/);
+
+  const superAdmin = {
+    id: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",
+    email: "super-admin@example.com",
+    name: "Super Admin",
+    role: "super_admin",
+    active: true
+  };
+  const parentGuard = await runLegacyGuard(requireParent, superAdmin);
+  assert.equal(parentGuard.error, undefined);
+  assert.equal(parentGuard.request.legacyUser.role, "super_admin");
+
+  const adminGuard = await runLegacyGuard(requireAdmin, superAdmin);
+  assert.equal(adminGuard.error, undefined);
+
+  const superAdminGuard = await runLegacyGuard(requireSuperAdmin, superAdmin);
+  assert.equal(superAdminGuard.error, undefined);
+
+  const adminAsParent = await runLegacyGuard(requireParent, {
+    ...superAdmin,
+    id: "7a893ccb-7b3a-42dd-a5e6-2ab1d5f6f8a1",
+    role: "admin"
+  });
+  assert.equal(adminAsParent.error.statusCode, 403);
 
   const gatedResponse = await fetch(`${baseUrl}/api/v1/plans`);
   assert.equal(gatedResponse.status, 503);

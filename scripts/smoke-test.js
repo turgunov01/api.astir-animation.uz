@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import jwt from "jsonwebtoken";
 
 const dataFile = path.join(os.tmpdir(), `astir-smoke-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
@@ -123,6 +124,23 @@ try {
   assert.equal(typeof registration.token, "string");
   assert.equal(registration.parent.tariff, "free");
   const parentToken = registration.token;
+  const superAdminToken = jwt.sign(
+    {
+      sub: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",
+      user_id: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",
+      kind: "user",
+      role: "super_admin"
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+
+  const superAdminMe = await request(baseUrl, "/v1/auth/me", {
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(superAdminMe.parent.role, "super_admin");
+  assert.equal(superAdminMe.parent.tariff, "premium");
 
   const pinVerification = await request(baseUrl, "/v1/auth/pin/verify", {
     method: "POST",
@@ -143,6 +161,13 @@ try {
 
   assert.equal(defaultTariff.tariff.code, "free");
   assert.equal(defaultTariff.access.can_watch_premium, false);
+
+  const superAdminTariff = await request(baseUrl, "/v1/tariffs/current", {
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(superAdminTariff.tariff.code, "premium");
+  assert.equal(superAdminTariff.access.can_watch_premium, true);
 
   const categoryResponse = await request(baseUrl, "/v1/content/categories/create", {
     method: "POST",
@@ -251,6 +276,12 @@ try {
 
   assert.equal(blockedPremiumMovie.status, 403);
   assert.equal(blockedPremiumMovie.body.error.code, "PREMIUM_TARIFF_REQUIRED");
+
+  const superAdminPremiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(superAdminPremiumMovie.movie.id, premiumMovieId);
 
   const movies = await request(baseUrl, "/v1/content/movies", {
     headers: { authorization: `Bearer ${parentToken}` }

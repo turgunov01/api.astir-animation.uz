@@ -59,6 +59,24 @@ function serializeUser(user) {
   };
 }
 
+function isSuperAdmin(actor) {
+  return actor.kind === "user" && actor.user.role === "super_admin";
+}
+
+function requireUserRole(actor, role) {
+  if (actor.kind !== "user") {
+    throw legacyError(403, "forbidden", "user token is required");
+  }
+
+  if (isSuperAdmin(actor)) {
+    return;
+  }
+
+  if (actor.user.role !== role) {
+    throw legacyError(403, "forbidden", `${role} role is required`);
+  }
+}
+
 async function storeRefreshToken(db, userId, refreshToken) {
   const expiresAt = isoFromNow(refreshTtlSeconds);
 
@@ -299,9 +317,7 @@ export function requireUser(request, response, next) {
 export function requireParent(request, response, next) {
   authenticateRequest(request)
     .then((actor) => {
-      if (actor.kind !== "user" || actor.user.role !== "parent") {
-        throw legacyError(403, "forbidden", "parent role is required");
-      }
+      requireUserRole(actor, "parent");
       next();
     })
     .catch(next);
@@ -310,9 +326,7 @@ export function requireParent(request, response, next) {
 export function requireAdmin(request, response, next) {
   authenticateRequest(request)
     .then((actor) => {
-      if (actor.kind !== "user" || !["admin", "super_admin"].includes(actor.user.role)) {
-        throw legacyError(403, "forbidden", "admin role is required");
-      }
+      requireUserRole(actor, "admin");
       next();
     })
     .catch(next);

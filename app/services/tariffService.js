@@ -208,7 +208,7 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       const tariff = getTariffRecord(tariffId);
       const updatedParent = parents.update(parent.id, {
         tariff: tariff.id
-      });
+      }) || { ...parent, tariff: tariff.id };
       const currentTariff = currentTariffForParent(updatedParent);
 
       return tariffResponse(

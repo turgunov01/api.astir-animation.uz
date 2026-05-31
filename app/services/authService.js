@@ -10,6 +10,7 @@ function serializeParent(parent) {
     id: parent.id,
     name: parent.name,
     email: parent.email,
+    role: parent.role || "parent",
     tariff: parent.tariff || "free",
     createdAt: parent.createdAt,
     updatedAt: parent.updatedAt

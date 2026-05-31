@@ -5,6 +5,7 @@ import { verifyToken } from "../lib/tokens.js";
 const localParentEmail = "local-parent@astir.dev";
 const localChildName = "Local Child";
 const localDeviceName = "Local Device";
+const superAdminRole = "super_admin";
 
 function bearerToken(request) {
   const header = request.get("authorization") || "";
@@ -24,6 +25,21 @@ function verifyRequestToken(request) {
   } catch (error) {
     throw unauthorized("Invalid or expired token");
   }
+}
+
+function isLegacySuperAdminPayload(payload) {
+  return payload.kind === "user" && payload.role === superAdminRole && Boolean(payload.user_id || payload.sub);
+}
+
+function legacySuperAdminParent(payload) {
+  return {
+    id: payload.user_id || payload.sub,
+    name: payload.name || "Super Admin",
+    email: payload.email || "",
+    role: superAdminRole,
+    tariff: "premium",
+    active: true
+  };
 }
 
 export function createAuthMiddleware({ children, config, devices, parents, watchLimits }) {
@@ -115,6 +131,12 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
     try {
       const { payload } = verifyRequestToken(request);
 
+      if (isLegacySuperAdminPayload(payload)) {
+        request.parent = legacySuperAdminParent(payload);
+        next();
+        return;
+      }
+
       if (payload.type !== "parent") {
         throw unauthorized("Parent token is required");
       }
@@ -163,6 +185,15 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
         if (!parent) {
           throw unauthorized("Parent account no longer exists");
         }
+
+        request.parent = parent;
+        request.actor = { type: "parent", parent };
+        next();
+        return;
+      }
+
+      if (isLegacySuperAdminPayload(payload)) {
+        const parent = legacySuperAdminParent(payload);
 
         request.parent = parent;
         request.actor = { type: "parent", parent };
