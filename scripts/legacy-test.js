@@ -7,6 +7,7 @@ process.env.REQUIRE_AUTH = "true";
 process.env.JWT_SECRET = "astir-legacy-test-secret";
 
 const { createServer } = await import("../app/server.js");
+const { openApiDocument } = await import("../app/openapi.js");
 
 const legacyRaw = JSON.parse(fs.readFileSync(path.resolve("app/legacy/legacy-doc.raw.json"), "utf8"));
 const server = createServer();
@@ -63,6 +64,11 @@ try {
   assert.equal(Object.keys(doc.paths).length, Object.keys(legacyRaw.paths).length);
   assert.equal(countOperations(doc), 139);
   assert.equal(Object.keys(doc.definitions).length, Object.keys(legacyRaw.definitions).length);
+  assert.deepEqual(doc.definitions["handler.RegisterRequest"].required, ["email", "name", "password", "pin"]);
+  assert.deepEqual(
+    openApiDocument.paths["/api/v1/auth/register"].post.requestBody.content["application/json"].schema.required,
+    ["email", "name", "password", "pin"]
+  );
 
   const uiResponse = await fetch(`${baseUrl}/legacy-api-docs/`);
   assert.equal(uiResponse.status, 200);

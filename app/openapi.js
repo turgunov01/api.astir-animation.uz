@@ -834,14 +834,14 @@ export const openApiDocument = {
       post: {
         tags: ["Auth"],
         summary: "Register a parent account",
-        description: "Legacy PostgreSQL API endpoint. Creates a parent account after OTP verification and returns an access/refresh token pair.",
+        description: "Legacy PostgreSQL API endpoint. Creates a parent account after OTP verification and returns an access/refresh token pair. Requires the verified email, name, password, and 4-digit PIN.",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["email", "name", "password"],
+                required: ["email", "name", "password", "pin"],
                 properties: {
                   email: {
                     type: "string",
@@ -858,6 +858,10 @@ export const openApiDocument = {
                   password: {
                     type: "string",
                     example: "wi3eZ2L*A+,7&L2FH3fM"
+                  },
+                  pin: {
+                    type: "string",
+                    example: "1234"
                   }
                 }
               }
