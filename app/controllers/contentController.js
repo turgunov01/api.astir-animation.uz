@@ -43,6 +43,14 @@ function cleanupUploadedFile(file) {
   }
 }
 
+function logMovieUpload(request, event, details = {}) {
+  console.info(JSON.stringify({
+    event: `movie_upload.${event}`,
+    requestId: request.id,
+    ...details
+  }));
+}
+
 function withUploadCleanup(request, work) {
   try {
     return work();
@@ -64,30 +72,75 @@ export function createContentController({ contentService }) {
     },
 
     addSeriesMovie(request, response) {
-      const body = payload(request);
+      const result = withUploadCleanup(request, () => {
+        const body = payload(request);
 
-      const result = withUploadCleanup(request, () => contentService.addSeriesMovie(request.params.movie_id, {
-        title: requiredLocalizedText(body, "title"),
-        description: requiredLocalizedText(body, "description"),
-        is_premium: optionalBoolean(body, "is_premium", false),
-        file: request.file || null
-      }));
+        return contentService.addSeriesMovie(request.params.movie_id, {
+          title: requiredLocalizedText(body, "title"),
+          description: requiredLocalizedText(body, "description"),
+          is_premium: optionalBoolean(body, "is_premium", false),
+          file: request.file || null
+        });
+      });
 
       response.status(201).json(result);
     },
 
     createMovie(request, response) {
-      const body = payload(request);
+      const movie = withUploadCleanup(request, () => {
+        logMovieUpload(request, "started", {
+          contentType: request.get("content-type") || null,
+          hasVideo: Boolean(request.file)
+        });
 
-      const movie = withUploadCleanup(request, () => contentService.createMovie({
-        title: requiredLocalizedText(body, "title"),
-        description: requiredLocalizedText(body, "description"),
-        series: optionalStringArray(body, "series", []),
-        is_premium: optionalBoolean(body, "is_premium", false),
-        file: request.file || null
-      }));
+        const body = payload(request);
 
-      response.status(201).json({ movie });
+        logMovieUpload(request, "metadata_parsed", {
+          hasTitle: Boolean(body.title),
+          hasDescription: Boolean(body.description),
+          seriesCount: Array.isArray(body.series) ? body.series.length : 0
+        });
+
+        if (request.file) {
+          logMovieUpload(request, "file_stored", {
+            path: request.file.path,
+            fileName: request.file.filename,
+            originalName: request.file.originalname,
+            mimeType: request.file.mimetype,
+            size: request.file.size
+          });
+        }
+
+        const createdMovie = contentService.createMovie({
+          title: requiredLocalizedText(body, "title"),
+          description: requiredLocalizedText(body, "description"),
+          series: optionalStringArray(body, "series", []),
+          is_premium: optionalBoolean(body, "is_premium", false),
+          file: request.file || null
+        });
+
+        if (!createdMovie?.id) {
+          throw new Error("Movie record was not created");
+        }
+
+        logMovieUpload(request, "record_created", {
+          movieId: createdMovie.id
+        });
+
+        if (createdMovie.transcode_job_id) {
+          logMovieUpload(request, "transcode_queued", {
+            movieId: createdMovie.id,
+            jobId: createdMovie.transcode_job_id
+          });
+        }
+
+        return createdMovie;
+      });
+
+      response.status(201).json({
+        data: movie,
+        movie
+      });
     },
 
     deleteCategory(request, response) {
@@ -105,7 +158,12 @@ export function createContentController({ contentService }) {
     },
 
     getMovie(request, response) {
-      response.json(contentService.getMovie(request.actor, request.params.movie_id));
+      const result = contentService.getMovie(request.actor, request.params.movie_id);
+
+      response.json({
+        data: result.movie,
+        ...result
+      });
     },
 
     getMovieSeries(request, response) {
@@ -160,7 +218,12 @@ export function createContentController({ contentService }) {
         throw badRequest("At least one field is required", "VALIDATION_ERROR");
       }
 
-      response.json(contentService.updateMovie(request.params.movie_id, attributes));
+      const result = contentService.updateMovie(request.params.movie_id, attributes);
+
+      response.json({
+        data: result.movie,
+        ...result
+      });
     }
   };
 }

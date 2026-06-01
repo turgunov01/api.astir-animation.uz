@@ -842,6 +842,36 @@ For video upload, send `multipart/form-data`:
 1. `metadata` - JSON string with the same fields.
 2. `video` - uploaded video file.
 
+Success response:
+
+```json
+{
+  "data": {
+    "id": "movie-id",
+    "title": {
+      "en": "Movie title",
+      "ru": "Movie title RU",
+      "uz": "Movie title UZ"
+    },
+    "description": {
+      "en": "Movie description",
+      "ru": "Movie description RU",
+      "uz": "Movie description UZ"
+    },
+    "series": [],
+    "is_premium": false,
+    "source": "/media/uploads/movie.mp4",
+    "video_url": "/media/uploads/movie.mp4",
+    "storage_path": "/absolute/storage/path/movie.mp4",
+    "transcode_status": "queued",
+    "duration": null,
+    "createdAt": "2026-06-01T00:00:00.000Z"
+  }
+}
+```
+
+The response also includes `movie` with the same object for compatibility with older clients.
+
 ## 36. Update A Movie
 
 Request:

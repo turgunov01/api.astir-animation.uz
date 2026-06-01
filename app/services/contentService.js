@@ -1,3 +1,4 @@
+import path from "node:path";
 import { conflict, notFound } from "../lib/errors.js";
 
 const catalog = [
@@ -60,22 +61,47 @@ function serializeCategory(category) {
   };
 }
 
+function sourceUrl(source) {
+  if (source?.url) {
+    return source.url;
+  }
+
+  const fileName = source?.fileName || (source?.path ? path.basename(source.path) : null);
+
+  if (!fileName) {
+    return null;
+  }
+
+  return `/media/uploads/${encodeURIComponent(fileName)}`;
+}
+
 function serializeMovie(movie, series = []) {
+  const videoUrl = sourceUrl(movie.source);
+  const transcodeStatus = movie.transcode?.status || "missing_source";
+
   return {
     id: movie.id,
     title: toLocalizedText(movie.title),
     description: toLocalizedText(movie.description),
     series: series.length > 0 ? series.map((item) => serializeMovie(item)) : movie.series || [],
     is_premium: Boolean(movie.is_premium),
+    source: videoUrl,
+    video_url: videoUrl,
+    storage_path: movie.source?.path || null,
+    transcode_status: transcodeStatus,
+    duration: movie.duration ?? null,
+    createdAt: movie.createdAt || null,
+    updatedAt: movie.updatedAt || null,
     media: {
       has_source: Boolean(movie.source?.path),
       original_name: movie.source?.originalName || null,
       mime_type: movie.source?.mimeType || null,
-      size: movie.source?.size || null
+      size: movie.source?.size || null,
+      storage_path: movie.source?.path || null
     },
     playback: {
       type: "hls",
-      status: movie.transcode?.status || "missing_source",
+      status: transcodeStatus,
       hls_url: movie.transcode?.hlsUrl || null,
       error: movie.transcode?.error || null
     }
@@ -92,7 +118,8 @@ function createSourceFromFile(file) {
     fileName: file.filename,
     originalName: file.originalname,
     mimeType: file.mimetype,
-    size: file.size
+    size: file.size,
+    url: `/media/uploads/${encodeURIComponent(file.filename)}`
   };
 }
 
@@ -108,7 +135,7 @@ function initialTranscode(file) {
   }
 
   return {
-    status: "pending",
+    status: "queued",
     error: null,
     hlsPath: null,
     hlsUrl: null,
@@ -199,9 +226,23 @@ export function createContentService({ contentCategories, contentMovies, tariffS
     },
 
     createMovie(attributes) {
-      const movie = contentMovies.create(movieAttributes(attributes));
+      let movie = null;
 
-      return serializeMovie(movie);
+      try {
+        movie = contentMovies.create(movieAttributes(attributes));
+        const transcodeJob = transcoder.queueMovieTranscode(movie);
+
+        return {
+          ...serializeMovie(movie),
+          transcode_job_id: transcodeJob?.id || null
+        };
+      } catch (error) {
+        if (movie?.id) {
+          contentMovies.delete(movie.id);
+        }
+
+        throw error;
+      }
     },
 
     getCategory(categoryId) {

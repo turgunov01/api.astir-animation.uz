@@ -4,6 +4,7 @@ import path from "node:path";
 
 export function createTranscoderService({ config, contentMovies }) {
   const runningJobs = new Map();
+  const queuedJobs = new Set();
 
   function hlsDirectory(movieId) {
     return path.resolve(config.mediaRoot, "hls", movieId);
@@ -139,6 +140,47 @@ export function createTranscoderService({ config, contentMovies }) {
     return contentMovies.findById(movie.id);
   }
 
+  function queueMovieTranscode(movie) {
+    if (!config.transcoderEnabled || !movie.source?.path) {
+      return null;
+    }
+
+    if (runningJobs.has(movie.id) || queuedJobs.has(movie.id)) {
+      return {
+        id: movie.id,
+        movieId: movie.id,
+        sourcePath: movie.source.path
+      };
+    }
+
+    queuedJobs.add(movie.id);
+
+    setImmediate(() => {
+      queuedJobs.delete(movie.id);
+
+      const currentMovie = contentMovies.findById(movie.id);
+
+      if (currentMovie) {
+        try {
+          ensureMovieTranscoded(currentMovie);
+        } catch (error) {
+          updateTranscode(currentMovie.id, {
+            status: "failed",
+            error: error.message,
+            hlsPath: null,
+            hlsUrl: null
+          });
+        }
+      }
+    });
+
+    return {
+      id: movie.id,
+      movieId: movie.id,
+      sourcePath: movie.source.path
+    };
+  }
+
   function removeMovieFiles(movie) {
     const runningJob = runningJobs.get(movie.id);
 
@@ -146,6 +188,8 @@ export function createTranscoderService({ config, contentMovies }) {
       runningJob.kill("SIGTERM");
       runningJobs.delete(movie.id);
     }
+
+    queuedJobs.delete(movie.id);
 
     if (movie.source?.path) {
       fs.rmSync(path.resolve(movie.source.path), { force: true });
@@ -157,6 +201,7 @@ export function createTranscoderService({ config, contentMovies }) {
   return {
     ensureMovieTranscoded,
     hlsUrl,
+    queueMovieTranscode,
     removeMovieFiles
   };
 }

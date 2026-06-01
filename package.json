@@ -10,7 +10,8 @@
     "dev": "nodemon run.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/db-seed.js",
-    "test": "node scripts/smoke-test.js",
+    "test": "node scripts/smoke-test.js && node scripts/content-upload-test.js",
+    "test:content-upload": "node scripts/content-upload-test.js",
     "test:auth-off": "node scripts/auth-toggle-test.js",
     "test:legacy": "node scripts/legacy-test.js"
   },

@@ -405,20 +405,28 @@ export const openApiDocument = {
             }
           },
           is_premium: { type: "boolean", example: false },
+          source: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
+          video_url: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
+          storage_path: { type: "string", nullable: true },
+          transcode_status: { type: "string", example: "queued" },
+          duration: { type: "number", nullable: true, example: null },
+          createdAt: { type: "string", format: "date-time", nullable: true },
+          updatedAt: { type: "string", format: "date-time", nullable: true },
           media: {
             type: "object",
             properties: {
               has_source: { type: "boolean", example: true },
               original_name: { type: "string", nullable: true, example: "movie.mp4" },
               mime_type: { type: "string", nullable: true, example: "video/mp4" },
-              size: { type: "integer", nullable: true, example: 1024000 }
+              size: { type: "integer", nullable: true, example: 1024000 },
+              storage_path: { type: "string", nullable: true }
             }
           },
           playback: {
             type: "object",
             properties: {
               type: { type: "string", example: "hls" },
-              status: { type: "string", example: "pending" },
+              status: { type: "string", example: "queued" },
               hls_url: { type: "string", nullable: true, example: "/media/hls/movie_id/master.m3u8" },
               error: { type: "string", nullable: true }
             }
@@ -5045,6 +5053,7 @@ export const openApiDocument = {
                 schema: {
                   type: "object",
                   properties: {
+                    data: { $ref: "#/components/schemas/ContentMovie" },
                     movie: { $ref: "#/components/schemas/ContentMovie" }
                   }
                 }
@@ -5089,6 +5098,7 @@ export const openApiDocument = {
                 schema: {
                   type: "object",
                   properties: {
+                    data: { $ref: "#/components/schemas/ContentMovie" },
                     movie: { $ref: "#/components/schemas/ContentMovie" }
                   }
                 }
@@ -5276,6 +5286,7 @@ export const openApiDocument = {
                 schema: {
                   type: "object",
                   properties: {
+                    data: { $ref: "#/components/schemas/ContentMovie" },
                     movie: { $ref: "#/components/schemas/ContentMovie" }
                   }
                 }
