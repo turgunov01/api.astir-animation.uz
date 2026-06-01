@@ -297,7 +297,7 @@ Rules:
 4. `series` stores ids of linked movies or episodes.
 5. `is_premium` marks content that needs the `premium` tariff.
 6. `source` stores uploaded file details.
-7. `transcode` stores HLS status and playback URL.
+7. `transcode` stores HLS status, the auto master playlist URL, and rendition playlist URLs.
 
 Example:
 

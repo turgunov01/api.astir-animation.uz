@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,7 +18,103 @@ process.env.FFMPEG_PATH = "__astir_missing_ffmpeg_for_tests__";
 
 const { createServer } = await import("../app/server.js");
 const { createContainer } = await import("../app/bootstrap/createContainer.js");
+const { buildHlsMasterPlaylist, hlsRenditionProfiles } = await import("../app/lib/hlsProfiles.js");
+const { createTranscoderService } = await import("../app/services/transcoderService.js");
 const { JsonStore } = await import("../app/store/jsonStore.js");
+
+const masterPlaylist = buildHlsMasterPlaylist(hlsRenditionProfiles.map((profile) => ({
+  ...profile,
+  playlistFile: `${profile.directory}/index.m3u8`
+})));
+assert.match(masterPlaylist, /#EXT-X-STREAM-INF:BANDWIDTH=1000000/);
+assert.match(masterPlaylist, /360p\/index\.m3u8/);
+assert.match(masterPlaylist, /1080p\/index\.m3u8/);
+
+async function waitForTranscode(getMovie) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const movieRecord = getMovie();
+
+    if (movieRecord.transcode?.status === "ready" || movieRecord.transcode?.status === "failed") {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+
+  throw new Error("Timed out waiting for fake transcode");
+}
+
+function fakeFfmpegSpawn(command, args) {
+  const childProcess = new EventEmitter();
+  const playlistPath = args[args.length - 1];
+
+  childProcess.kill = () => {
+    childProcess.emit("close", 143);
+  };
+
+  queueMicrotask(() => {
+    try {
+      assert.equal(command, "fake-ffmpeg");
+      fs.mkdirSync(path.dirname(playlistPath), { recursive: true });
+      fs.writeFileSync(playlistPath, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n");
+      childProcess.emit("close", 0);
+    } catch (error) {
+      childProcess.emit("error", error);
+    }
+  });
+
+  return childProcess;
+}
+
+async function assertMultiRenditionTranscode() {
+  const sourcePath = path.join(testRoot, "source.mp4");
+  const transcodeMediaRoot = path.join(testRoot, "transcoded-media");
+  const movie = {
+    id: "movie-multi-rendition-test",
+    source: { path: sourcePath },
+    transcode: { status: "queued" }
+  };
+  const records = new Map([[movie.id, movie]]);
+  const contentMovies = {
+    findById(id) {
+      return records.get(id) || null;
+    },
+    update(id, attributes) {
+      const updated = {
+        ...records.get(id),
+        ...attributes
+      };
+      records.set(id, updated);
+      return updated;
+    }
+  };
+  const transcoder = createTranscoderService({
+    config: {
+      mediaRoot: transcodeMediaRoot,
+      ffmpegPath: "fake-ffmpeg",
+      transcoderEnabled: true
+    },
+    contentMovies,
+    spawnProcess: fakeFfmpegSpawn
+  });
+
+  fs.writeFileSync(sourcePath, "fake mp4 bytes");
+  transcoder.ensureMovieTranscoded(movie);
+  await waitForTranscode(() => records.get(movie.id));
+
+  const updatedMovie = records.get(movie.id);
+  const masterPath = path.join(transcodeMediaRoot, "hls", movie.id, "master.m3u8");
+
+  assert.equal(updatedMovie.transcode.status, "ready");
+  assert.equal(updatedMovie.transcode.hlsUrl, `/media/hls/${movie.id}/master.m3u8`);
+  assert.deepEqual(updatedMovie.transcode.renditions.map((rendition) => rendition.quality), ["360", "480", "720", "1080"]);
+  assert.equal(fs.existsSync(masterPath), true);
+  assert.match(fs.readFileSync(masterPath, "utf8"), /1080p\/index\.m3u8/);
+}
+
+await assertMultiRenditionTranscode();
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -132,6 +229,9 @@ try {
   assert.equal(createResponse.body.data.transcode_status, "queued");
   assert.equal(typeof createResponse.body.data.transcode_job_id, "string");
   assert.match(createResponse.body.data.video_url, /^\/media\/uploads\//);
+  assert.equal(createResponse.body.data.playback.hls_url, null);
+  assert.deepEqual(createResponse.body.data.playback.qualities, []);
+  assert.deepEqual(createResponse.body.data.playback.renditions, []);
   assert.equal(fs.existsSync(createResponse.body.data.storage_path), true);
 
   const movieId = createResponse.body.data.id;
@@ -159,6 +259,7 @@ try {
   assert.equal(metadataOnlyResponse.body.data.source, null);
   assert.equal(metadataOnlyResponse.body.data.video_url, null);
   assert.equal(metadataOnlyResponse.body.data.transcode_status, "missing_source");
+  assert.deepEqual(metadataOnlyResponse.body.data.playback.renditions, []);
 
   const filesBeforeInvalidMetadata = uploadFiles();
   const invalidMetadataResponse = await requestRaw(baseUrl, "/v1/content/movies/create", {

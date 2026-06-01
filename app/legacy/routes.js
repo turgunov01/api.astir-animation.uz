@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import { hashSecret, verifySecret } from "../lib/security.js";
+import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles.js";
 import {
   createOtp,
   findOrCreateOAuthUser,
@@ -278,6 +279,82 @@ function tokenUserWithAvatar(request, media, user) {
   };
 }
 
+function runLegacyFfmpeg(ffmpegPath, args) {
+  return new Promise((resolve, reject) => {
+    let childProcess;
+
+    try {
+      childProcess = spawn(ffmpegPath || "ffmpeg", args, { stdio: "ignore" });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    let settled = false;
+
+    childProcess.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
+    });
+
+    childProcess.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`ffmpeg exited with code ${code}`));
+    });
+  });
+}
+
+function legacyTranscodeArgs(sourcePath, rendition) {
+  return [
+    "-y",
+    "-i",
+    sourcePath,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    "-vf",
+    `scale=-2:${rendition.height}`,
+    "-c:v",
+    "h264",
+    "-b:v",
+    String(rendition.videoBitrate),
+    "-maxrate",
+    String(rendition.maxrate),
+    "-bufsize",
+    String(rendition.bufsize),
+    "-c:a",
+    "aac",
+    "-b:a",
+    String(rendition.audioBitrate),
+    "-f",
+    "hls",
+    "-hls_time",
+    "6",
+    "-hls_playlist_type",
+    "vod",
+    "-hls_flags",
+    "independent_segments",
+    "-hls_segment_filename",
+    path.join(path.dirname(rendition.playlistPath), "segment_%03d.ts"),
+    rendition.playlistPath
+  ];
+}
+
 async function maybeStartTranscode(db, config, content) {
   if (!content.source_path) {
     return null;
@@ -297,67 +374,63 @@ async function maybeStartTranscode(db, config, content) {
 
   const sourcePath = path.resolve(config.mediaRoot, "legacy", content.source_path);
   const outDir = path.resolve(config.mediaRoot, "legacy", "hls", content.id);
+  fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   const playlistPath = path.join(outDir, "master.m3u8");
+  const legacyRoot = path.resolve(config.mediaRoot, "legacy");
+  const renditions = hlsRenditionProfiles.map((profile) => {
+    const playlistPathForProfile = path.join(outDir, profile.directory, "index.m3u8");
+    const playlistRel = path.relative(legacyRoot, playlistPathForProfile).replaceAll(path.sep, "/");
+
+    return {
+      ...profile,
+      playlistPath: playlistPathForProfile,
+      playlistPathRel: playlistRel,
+      playlistUrl: `/api/v1/media/${playlistRel}`,
+      playlistFile: `${profile.directory}/index.m3u8`
+    };
+  });
 
   await updateById(db, "content", content.id, { status: "transcoding" });
   await updateById(db, "transcoding_jobs", job.id, { status: "running", started_at: new Date().toISOString() });
+  await db.query("DELETE FROM renditions WHERE content_id = $1", [content.id]).catch(() => {});
 
-  const process = spawn(config.ffmpegPath || "ffmpeg", [
-    "-y",
-    "-i",
-    sourcePath,
-    "-vf",
-    "scale=-2:720",
-    "-c:v",
-    "h264",
-    "-c:a",
-    "aac",
-    "-f",
-    "hls",
-    "-hls_time",
-    "6",
-    "-hls_playlist_type",
-    "vod",
-    "-hls_segment_filename",
-    path.join(outDir, "segment_%03d.ts"),
-    playlistPath
-  ], { stdio: "ignore" });
+  (async () => {
+    try {
+      for (const rendition of renditions) {
+        fs.mkdirSync(path.dirname(rendition.playlistPath), { recursive: true });
+        await runLegacyFfmpeg(config.ffmpegPath, legacyTranscodeArgs(sourcePath, rendition));
+      }
 
-  process.on("error", async (error) => {
-    await updateById(db, "content", content.id, { status: "failed" }).catch(() => {});
-    await updateById(db, "transcoding_jobs", job.id, {
-      status: "failed",
-      error: error.message,
-      finished_at: new Date().toISOString()
-    }).catch(() => {});
-  });
-
-  process.on("close", async (code) => {
-    if (code === 0 && fs.existsSync(playlistPath)) {
-      const playlistRel = path.relative(path.resolve(config.mediaRoot, "legacy"), playlistPath).replaceAll(path.sep, "/");
+      fs.writeFileSync(playlistPath, buildHlsMasterPlaylist(renditions));
       await updateById(db, "content", content.id, { status: "ready" }).catch(() => {});
-      await insertRow(db, "renditions", {
-        content_id: content.id,
-        label: "720p",
-        height: 720,
-        playlist_path: playlistRel,
-        playlist_url: `/api/v1/media/${playlistRel}`
-      }).catch(() => {});
+
+      for (const rendition of renditions) {
+        await insertRow(db, "renditions", {
+          content_id: content.id,
+          label: rendition.label,
+          width: rendition.width,
+          height: rendition.height,
+          bitrate: rendition.videoBitrate,
+          playlist_path: rendition.playlistPathRel,
+          playlist_url: rendition.playlistUrl
+        }).catch(() => {});
+      }
+
       await updateById(db, "transcoding_jobs", job.id, {
         status: "ready",
         finished_at: new Date().toISOString()
       }).catch(() => {});
       return;
+    } catch (error) {
+      await updateById(db, "content", content.id, { status: "failed" }).catch(() => {});
+      await updateById(db, "transcoding_jobs", job.id, {
+        status: "failed",
+        error: error.message,
+        finished_at: new Date().toISOString()
+      }).catch(() => {});
     }
-
-    await updateById(db, "content", content.id, { status: "failed" }).catch(() => {});
-    await updateById(db, "transcoding_jobs", job.id, {
-      status: "failed",
-      error: `ffmpeg exited with code ${code}`,
-      finished_at: new Date().toISOString()
-    }).catch(() => {});
-  });
+  })();
 
   return job;
 }
@@ -1608,9 +1681,9 @@ export function createLegacyRoutes({ config, media }) {
       "SELECT position_sec FROM watch_progress WHERE viewer_id = $1 AND viewer_kind = $2 AND content_id = $3",
       [actor.kind === "user" ? actor.user.id : actor.id, actor.kind, content.id]
     );
-    const renditionRows = await request.legacyDb.many("SELECT * FROM renditions WHERE content_id = $1", [content.id]);
+    const renditionRows = await request.legacyDb.many("SELECT * FROM renditions WHERE content_id = $1 ORDER BY height", [content.id]);
     const expires = Math.floor(Date.now() / 1000) + 3600;
-    const mediaPath = renditionRows[0]?.playlist_path || content.source_path || "";
+    const mediaPath = renditionRows.length > 0 ? `hls/${content.id}/master.m3u8` : content.source_path || "";
     const signature = mediaPath ? media.sign(mediaPath, expires) : "";
 
     response.json({

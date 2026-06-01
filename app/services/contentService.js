@@ -75,9 +75,25 @@ function sourceUrl(source) {
   return `/media/uploads/${encodeURIComponent(fileName)}`;
 }
 
+function serializeRenditions(renditions = []) {
+  return renditions.map((rendition) => ({
+    quality: rendition.quality || String(rendition.height || ""),
+    label: rendition.label || (rendition.height ? `${rendition.height}p` : ""),
+    width: rendition.width || null,
+    height: rendition.height || null,
+    bitrate: rendition.bitrate || null,
+    playlist_url: rendition.playlist_url || rendition.playlistUrl || null
+  }));
+}
+
 function serializeMovie(movie, series = []) {
   const videoUrl = sourceUrl(movie.source);
   const transcodeStatus = movie.transcode?.status || "missing_source";
+  const hlsUrl = movie.transcode?.hlsUrl || null;
+  const renditions = serializeRenditions(movie.transcode?.renditions);
+  const qualities = hlsUrl || renditions.length > 0
+    ? ["auto", ...renditions.map((rendition) => rendition.quality)]
+    : [];
 
   return {
     id: movie.id,
@@ -102,7 +118,10 @@ function serializeMovie(movie, series = []) {
     playback: {
       type: "hls",
       status: transcodeStatus,
-      hls_url: movie.transcode?.hlsUrl || null,
+      hls_url: hlsUrl,
+      auto_url: hlsUrl,
+      qualities,
+      renditions,
       error: movie.transcode?.error || null
     }
   };
@@ -130,6 +149,7 @@ function initialTranscode(file) {
       error: null,
       hlsPath: null,
       hlsUrl: null,
+      renditions: [],
       updatedAt: new Date().toISOString()
     };
   }
@@ -139,6 +159,7 @@ function initialTranscode(file) {
     error: null,
     hlsPath: null,
     hlsUrl: null,
+    renditions: [],
     updatedAt: new Date().toISOString()
   };
 }

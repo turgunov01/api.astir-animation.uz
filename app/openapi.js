@@ -428,6 +428,26 @@ export const openApiDocument = {
               type: { type: "string", example: "hls" },
               status: { type: "string", example: "queued" },
               hls_url: { type: "string", nullable: true, example: "/media/hls/movie_id/master.m3u8" },
+              auto_url: { type: "string", nullable: true, example: "/media/hls/movie_id/master.m3u8" },
+              qualities: {
+                type: "array",
+                items: { type: "string" },
+                example: ["auto", "360", "480", "720", "1080"]
+              },
+              renditions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    quality: { type: "string", example: "720" },
+                    label: { type: "string", example: "720p" },
+                    width: { type: "integer", nullable: true, example: 1280 },
+                    height: { type: "integer", nullable: true, example: 720 },
+                    bitrate: { type: "integer", nullable: true, example: 2800000 },
+                    playlist_url: { type: "string", nullable: true, example: "/media/hls/movie_id/720p/index.m3u8" }
+                  }
+                }
+              },
               error: { type: "string", nullable: true }
             }
           }

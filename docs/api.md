@@ -788,8 +788,10 @@ What happens:
 1. The backend finds the movie.
 2. If the movie is premium, the backend checks the current tariff.
 3. If the movie has an uploaded source file, the transcoder is checked.
-4. If HLS is ready, the response includes `playback.hls_url`.
-5. If HLS is not ready, the response includes the current playback status.
+4. If HLS is ready, the response includes `playback.hls_url` and `playback.auto_url`.
+5. `playback.hls_url` points to the master playlist for automatic quality selection.
+6. Manual quality options are listed in `playback.renditions` for `360`, `480`, `720`, and `1080`.
+7. If HLS is not ready, the response includes the current playback status.
 
 ## 34. List Movie Series
 
@@ -864,8 +866,39 @@ Success response:
     "video_url": "/media/uploads/movie.mp4",
     "storage_path": "/absolute/storage/path/movie.mp4",
     "transcode_status": "queued",
+    "playback": {
+      "type": "hls",
+      "status": "queued",
+      "hls_url": null,
+      "auto_url": null,
+      "qualities": [],
+      "renditions": [],
+      "error": null
+    },
     "duration": null,
     "createdAt": "2026-06-01T00:00:00.000Z"
+  }
+}
+```
+
+When transcoding finishes, `playback.hls_url` is the `auto` HLS master playlist and `playback.renditions`
+contains the generated manual playlists:
+
+```json
+{
+  "playback": {
+    "type": "hls",
+    "status": "ready",
+    "hls_url": "/media/hls/movie-id/master.m3u8",
+    "auto_url": "/media/hls/movie-id/master.m3u8",
+    "qualities": ["auto", "360", "480", "720", "1080"],
+    "renditions": [
+      { "quality": "360", "label": "360p", "playlist_url": "/media/hls/movie-id/360p/index.m3u8" },
+      { "quality": "480", "label": "480p", "playlist_url": "/media/hls/movie-id/480p/index.m3u8" },
+      { "quality": "720", "label": "720p", "playlist_url": "/media/hls/movie-id/720p/index.m3u8" },
+      { "quality": "1080", "label": "1080p", "playlist_url": "/media/hls/movie-id/1080p/index.m3u8" }
+    ],
+    "error": null
   }
 }
 ```
