@@ -48,6 +48,7 @@ const clickEnv = [
   "CLICK_SERVICE_ID",
   "CLICK_SECRET_KEY"
 ];
+const legacyTranscodeJobs = new Map();
 
 function requireClickEnv() {
   const missing = clickEnv.filter((name) => !process.env[name]);
@@ -266,6 +267,105 @@ async function saveMediaAsset(db, media, ownerTable, ownerId) {
   });
 }
 
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+function removeStoredMedia(media, storedPaths) {
+  for (const storedPath of uniquePaths(storedPaths)) {
+    try {
+      media.remove(storedPath);
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: "legacy_media.remove_failed",
+        path: storedPath,
+        error: error.message
+      }));
+    }
+  }
+}
+
+async function mediaAssetPaths(db, ownerTable, ownerId, kind = null) {
+  const rows = kind
+    ? await db.many(
+      "SELECT path FROM media_assets WHERE owner_table = $1 AND owner_id = $2 AND kind = $3",
+      [ownerTable, ownerId, kind]
+    )
+    : await db.many(
+      "SELECT path FROM media_assets WHERE owner_table = $1 AND owner_id = $2",
+      [ownerTable, ownerId]
+    );
+
+  return rows.map((row) => row.path);
+}
+
+async function deleteOwnerMediaAssets(db, ownerTable, ownerId, paths = []) {
+  if (paths.length > 0) {
+    await db.query(
+      "DELETE FROM media_assets WHERE owner_table = $1 AND owner_id = $2 AND path = ANY($3::text[])",
+      [ownerTable, ownerId, uniquePaths(paths)]
+    );
+    return;
+  }
+
+  await db.query(
+    "DELETE FROM media_assets WHERE owner_table = $1 AND owner_id = $2",
+    [ownerTable, ownerId]
+  );
+}
+
+async function deleteLegacyRecordWithMedia(db, media, table, id, mediaColumns = [], extraStoredPaths = []) {
+  const deletion = await db.transaction(async (client) => {
+    const recordResult = await client.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
+    const record = recordResult.rows[0];
+
+    if (!record) {
+      throw legacyError(404, "not_found", "record not found");
+    }
+
+    const assetResult = await client.query(
+      "SELECT path FROM media_assets WHERE owner_table = $1 AND owner_id = $2",
+      [table, id]
+    );
+
+    await client.query(
+      "DELETE FROM media_assets WHERE owner_table = $1 AND owner_id = $2",
+      [table, id]
+    );
+
+    const deleteResult = await client.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [id]);
+
+    return {
+      record: deleteResult.rows[0],
+      paths: [
+        ...mediaColumns.map((column) => record[column]),
+        ...assetResult.rows.map((row) => row.path),
+        ...extraStoredPaths
+      ]
+    };
+  });
+
+  removeStoredMedia(media, deletion.paths);
+
+  return deletion.record;
+}
+
+function cancelLegacyTranscode(contentId) {
+  const job = legacyTranscodeJobs.get(contentId);
+
+  if (!job) {
+    return;
+  }
+
+  job.cancelled = true;
+
+  if (job.process) {
+    job.process.kill("SIGTERM");
+  }
+
+  legacyTranscodeJobs.delete(contentId);
+}
+
 function tokenUserWithAvatar(request, media, user) {
   const serialized = tokenUser(user);
 
@@ -279,7 +379,7 @@ function tokenUserWithAvatar(request, media, user) {
   };
 }
 
-function runLegacyFfmpeg(ffmpegPath, args) {
+function runLegacyFfmpeg(ffmpegPath, args, job) {
   return new Promise((resolve, reject) => {
     let childProcess;
 
@@ -290,6 +390,14 @@ function runLegacyFfmpeg(ffmpegPath, args) {
       return;
     }
 
+    if (job) {
+      job.process = childProcess;
+
+      if (job.cancelled) {
+        childProcess.kill("SIGTERM");
+      }
+    }
+
     let settled = false;
 
     childProcess.on("error", (error) => {
@@ -298,6 +406,9 @@ function runLegacyFfmpeg(ffmpegPath, args) {
       }
 
       settled = true;
+      if (job?.process === childProcess) {
+        job.process = null;
+      }
       reject(error);
     });
 
@@ -307,6 +418,9 @@ function runLegacyFfmpeg(ffmpegPath, args) {
       }
 
       settled = true;
+      if (job?.process === childProcess) {
+        job.process = null;
+      }
 
       if (code === 0) {
         resolve();
@@ -360,6 +474,8 @@ async function maybeStartTranscode(db, config, content) {
     return null;
   }
 
+  cancelLegacyTranscode(content.id);
+
   const job = await insertRow(db, "transcoding_jobs", {
     content_id: content.id,
     status: "queued"
@@ -395,11 +511,25 @@ async function maybeStartTranscode(db, config, content) {
   await updateById(db, "transcoding_jobs", job.id, { status: "running", started_at: new Date().toISOString() });
   await db.query("DELETE FROM renditions WHERE content_id = $1", [content.id]).catch(() => {});
 
+  const runtimeJob = {
+    cancelled: false,
+    process: null
+  };
+  legacyTranscodeJobs.set(content.id, runtimeJob);
+
   (async () => {
     try {
       for (const rendition of renditions) {
+        if (runtimeJob.cancelled) {
+          return;
+        }
+
         fs.mkdirSync(path.dirname(rendition.playlistPath), { recursive: true });
-        await runLegacyFfmpeg(config.ffmpegPath, legacyTranscodeArgs(sourcePath, rendition));
+        await runLegacyFfmpeg(config.ffmpegPath, legacyTranscodeArgs(sourcePath, rendition), runtimeJob);
+      }
+
+      if (runtimeJob.cancelled) {
+        return;
       }
 
       fs.writeFileSync(playlistPath, buildHlsMasterPlaylist(renditions));
@@ -423,12 +553,20 @@ async function maybeStartTranscode(db, config, content) {
       }).catch(() => {});
       return;
     } catch (error) {
+      if (runtimeJob.cancelled) {
+        return;
+      }
+
       await updateById(db, "content", content.id, { status: "failed" }).catch(() => {});
       await updateById(db, "transcoding_jobs", job.id, {
         status: "failed",
         error: error.message,
         finished_at: new Date().toISOString()
       }).catch(() => {});
+    } finally {
+      if (legacyTranscodeJobs.get(content.id) === runtimeJob) {
+        legacyTranscodeJobs.delete(content.id);
+      }
     }
   })();
 
@@ -1118,7 +1256,7 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.delete("/categories/:id", requireAdmin, asyncHandler(async (request, response) => {
-    await deleteById(request.legacyDb, "categories", request.params.id);
+    await deleteLegacyRecordWithMedia(request.legacyDb, media, "categories", request.params.id, ["poster_path"]);
     response.json(messageResponse("deleted"));
   }));
 
@@ -1131,15 +1269,23 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/categories/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+    const category = await getById(request.legacyDb, "categories", request.params.id);
+    const oldPaths = await mediaAssetPaths(request.legacyDb, "categories", request.params.id, "category_poster");
     const stored = media.persistFile("category_poster", request.file, request);
     if (!stored) {
       throw legacyError(400, "file is required");
     }
     await saveMediaAsset(request.legacyDb, stored, "categories", request.params.id);
-    response.json(await updateById(request.legacyDb, "categories", request.params.id, {
+    const updatedCategory = await updateById(request.legacyDb, "categories", request.params.id, {
       poster_path: stored.path,
       poster_url: stored.url
-    }));
+    });
+    const replacedPaths = uniquePaths([category.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
+    if (replacedPaths.length > 0) {
+      await deleteOwnerMediaAssets(request.legacyDb, "categories", request.params.id, replacedPaths);
+    }
+    removeStoredMedia(media, replacedPaths);
+    response.json(updatedCategory);
   }));
 
   router.get("/tags", asyncHandler(async (request, response) => {
@@ -1263,7 +1409,7 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.delete("/series/:id", requireAdmin, asyncHandler(async (request, response) => {
-    await deleteById(request.legacyDb, "series", request.params.id);
+    await deleteLegacyRecordWithMedia(request.legacyDb, media, "series", request.params.id, ["poster_path"]);
     response.json(messageResponse("deleted"));
   }));
 
@@ -1285,15 +1431,23 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/series/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+    const row = await getById(request.legacyDb, "series", request.params.id);
+    const oldPaths = await mediaAssetPaths(request.legacyDb, "series", request.params.id, "series_poster");
     const stored = media.persistFile("series_poster", request.file, request);
     if (!stored) {
       throw legacyError(400, "file is required");
     }
     await saveMediaAsset(request.legacyDb, stored, "series", request.params.id);
-    response.json(await updateById(request.legacyDb, "series", request.params.id, {
+    const updatedSeries = await updateById(request.legacyDb, "series", request.params.id, {
       poster_path: stored.path,
       poster_url: stored.url
-    }));
+    });
+    const replacedPaths = uniquePaths([row.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
+    if (replacedPaths.length > 0) {
+      await deleteOwnerMediaAssets(request.legacyDb, "series", request.params.id, replacedPaths);
+    }
+    removeStoredMedia(media, replacedPaths);
+    response.json(updatedSeries);
   }));
 
   router.get("/content", requireActor, asyncHandler(async (request, response) => {
@@ -1451,7 +1605,8 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.delete("/content/:id", requireAdmin, asyncHandler(async (request, response) => {
-    await deleteById(request.legacyDb, "content", request.params.id);
+    cancelLegacyTranscode(request.params.id);
+    await deleteLegacyRecordWithMedia(request.legacyDb, media, "content", request.params.id, ["source_path", "poster_path"], [`hls/${request.params.id}`]);
     response.json(messageResponse("deleted"));
   }));
 
@@ -1464,27 +1619,44 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/content/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+    const row = await getById(request.legacyDb, "content", request.params.id);
+    const oldPaths = await mediaAssetPaths(request.legacyDb, "content", request.params.id, "content_poster");
     const stored = media.persistFile("content_poster", request.file, request);
     if (!stored) {
       throw legacyError(400, "file is required");
     }
     await saveMediaAsset(request.legacyDb, stored, "content", request.params.id);
-    response.json(await updateById(request.legacyDb, "content", request.params.id, {
+    const updatedContent = await updateById(request.legacyDb, "content", request.params.id, {
       poster_path: stored.path,
       poster_url: stored.url
-    }));
+    });
+    const replacedPaths = uniquePaths([row.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
+    if (replacedPaths.length > 0) {
+      await deleteOwnerMediaAssets(request.legacyDb, "content", request.params.id, replacedPaths);
+    }
+    removeStoredMedia(media, replacedPaths);
+    response.json(updatedContent);
   }));
 
   router.post("/content/:id/upload", requireAdmin, videoUpload, asyncHandler(async (request, response) => {
+    const existingContent = await getById(request.legacyDb, "content", request.params.id);
+    const oldPaths = await mediaAssetPaths(request.legacyDb, "content", request.params.id, "source_video");
     const stored = media.persistFile("source_video", request.file, request);
     if (!stored) {
       throw legacyError(400, "file is required");
     }
+    cancelLegacyTranscode(request.params.id);
     await saveMediaAsset(request.legacyDb, stored, "content", request.params.id);
     const row = await updateById(request.legacyDb, "content", request.params.id, {
       source_path: stored.path,
       status: "uploaded"
     });
+    const replacedPaths = uniquePaths([existingContent.source_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
+    if (replacedPaths.length > 0) {
+      await deleteOwnerMediaAssets(request.legacyDb, "content", request.params.id, replacedPaths);
+    }
+    removeStoredMedia(media, [...replacedPaths, `hls/${request.params.id}`]);
+    await request.legacyDb.query("DELETE FROM renditions WHERE content_id = $1", [request.params.id]).catch(() => {});
     await maybeStartTranscode(request.legacyDb, config, row);
     response.json(row);
   }));

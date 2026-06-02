@@ -297,7 +297,7 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
   }
 
   function removeMovieFiles(movie) {
-    const runningJob = runningJobs.get(movie.id);
+    const runningJob = movie.id ? runningJobs.get(movie.id) : null;
 
     if (runningJob) {
       runningJob.cancelled = true;
@@ -309,13 +309,17 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
       runningJobs.delete(movie.id);
     }
 
-    queuedJobs.delete(movie.id);
+    if (movie.id) {
+      queuedJobs.delete(movie.id);
+    }
 
     if (movie.source?.path) {
       fs.rmSync(path.resolve(movie.source.path), { force: true });
     }
 
-    fs.rmSync(hlsDirectory(movie.id), { recursive: true, force: true });
+    if (movie.id) {
+      fs.rmSync(hlsDirectory(movie.id), { recursive: true, force: true });
+    }
   }
 
   return {

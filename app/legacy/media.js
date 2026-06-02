@@ -18,6 +18,17 @@ export function createLegacyMedia({ mediaRoot, signingSecret }) {
   const root = path.resolve(mediaRoot || process.env.MEDIA_ROOT || "media", "legacy");
   fs.mkdirSync(root, { recursive: true });
 
+  function absoluteStoredPath(storedPath) {
+    const absolutePath = path.resolve(root, storedPath || "");
+    const relative = path.relative(root, absolutePath);
+
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw legacyError(403, "invalid_media_path", "invalid media path");
+    }
+
+    return absolutePath;
+  }
+
   function storageFor(kind) {
     const destination = path.join(root, kind);
     fs.mkdirSync(destination, { recursive: true });
@@ -99,11 +110,7 @@ export function createLegacyMedia({ mediaRoot, signingSecret }) {
   }
 
   function resolve(storedPath) {
-    const absolutePath = path.resolve(root, storedPath);
-
-    if (!absolutePath.startsWith(root)) {
-      throw legacyError(403, "invalid_media_path", "invalid media path");
-    }
+    const absolutePath = absoluteStoredPath(storedPath);
 
     if (!fs.existsSync(absolutePath)) {
       throw legacyError(404, "media_not_found", "media not found");
@@ -112,7 +119,23 @@ export function createLegacyMedia({ mediaRoot, signingSecret }) {
     return absolutePath;
   }
 
+  function remove(storedPath) {
+    if (!storedPath) {
+      return false;
+    }
+
+    const absolutePath = absoluteStoredPath(storedPath);
+
+    if (absolutePath === root) {
+      throw legacyError(403, "invalid_media_path", "invalid media path");
+    }
+
+    fs.rmSync(absolutePath, { recursive: true, force: true });
+    return true;
+  }
+
   return {
+    remove,
     root,
     persistFile,
     publicUrl,

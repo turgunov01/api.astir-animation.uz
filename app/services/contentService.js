@@ -210,6 +210,19 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       .filter(Boolean);
   }
 
+  function collectMovieTree(movie, seenMovieIds = new Set()) {
+    if (!movie || seenMovieIds.has(movie.id)) {
+      return [];
+    }
+
+    seenMovieIds.add(movie.id);
+
+    return [
+      movie,
+      ...listSeriesRecords(movie).flatMap((seriesMovie) => collectMovieTree(seriesMovie, seenMovieIds))
+    ];
+  }
+
   return {
     createCategory({ title, description }) {
       assertCategoryTitleAvailable(contentCategories, title);
@@ -236,14 +249,27 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
     addSeriesMovie(parentMovieId, attributes) {
       const parentMovie = getMovieRecord(parentMovieId);
-      const seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
-      const series = [...(parentMovie.series || []), seriesMovie.id];
-      const updatedParentMovie = contentMovies.update(parentMovie.id, { series });
+      let seriesMovie = null;
 
-      return {
-        movie: serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie)),
-        series_item: serializeMovie(seriesMovie)
-      };
+      try {
+        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
+        const transcodeJob = transcoder.queueMovieTranscode(seriesMovie);
+        const series = [...(parentMovie.series || []), seriesMovie.id];
+        const updatedParentMovie = contentMovies.update(parentMovie.id, { series });
+
+        return {
+          movie: serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie)),
+          series_item: serializeMovie(seriesMovie),
+          transcode_job_id: transcodeJob?.id || null
+        };
+      } catch (error) {
+        if (seriesMovie?.id) {
+          contentMovies.delete(seriesMovie.id);
+          transcoder.removeMovieFiles(seriesMovie);
+        }
+
+        throw error;
+      }
     },
 
     createMovie(attributes) {
@@ -260,6 +286,12 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       } catch (error) {
         if (movie?.id) {
           contentMovies.delete(movie.id);
+          transcoder.removeMovieFiles(movie);
+        } else if (attributes.file?.path) {
+          transcoder.removeMovieFiles({
+            id: null,
+            source: { path: attributes.file.path }
+          });
         }
 
         throw error;
@@ -318,9 +350,30 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
     deleteMovie(movieId) {
       const movie = getMovieRecord(movieId);
-      const deletedMovie = contentMovies.delete(movie.id);
+      const moviesToDelete = collectMovieTree(movie);
+      let deletedMovie = null;
 
-      transcoder.removeMovieFiles(movie);
+      for (const movieToDelete of moviesToDelete) {
+        const deleted = contentMovies.delete(movieToDelete.id);
+
+        if (deleted) {
+          transcoder.removeMovieFiles(movieToDelete);
+        }
+
+        if (movieToDelete.id === movie.id) {
+          deletedMovie = deleted;
+        }
+      }
+
+      const deletedMovieIds = new Set(moviesToDelete.map((movieToDelete) => movieToDelete.id));
+
+      for (const parentMovie of contentMovies.list()) {
+        if ((parentMovie.series || []).some((seriesMovieId) => deletedMovieIds.has(seriesMovieId))) {
+          contentMovies.update(parentMovie.id, {
+            series: parentMovie.series.filter((seriesMovieId) => !deletedMovieIds.has(seriesMovieId))
+          });
+        }
+      }
 
       return {
         deleted: true,

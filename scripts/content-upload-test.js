@@ -236,6 +236,7 @@ try {
 
   const movieId = createResponse.body.data.id;
   const videoUrl = createResponse.body.data.video_url;
+  const storagePath = createResponse.body.data.storage_path;
 
   const listedMovies = await requestJson(baseUrl, "/v1/content/movies");
   assert.equal(listedMovies.status, 200);
@@ -249,6 +250,32 @@ try {
   assert.equal(singleMovie.body.movie.id, movieId);
   assert.equal(singleMovie.body.movie.video_url, videoUrl);
 
+  const hlsDir = path.join(mediaRoot, "hls", movieId);
+  fs.mkdirSync(hlsDir, { recursive: true });
+  fs.writeFileSync(path.join(hlsDir, "master.m3u8"), "#EXTM3U\n");
+
+  const deleteMovieResponse = await requestJson(baseUrl, `/v1/content/movies/${movieId}`, {
+    method: "DELETE"
+  });
+
+  assert.equal(deleteMovieResponse.status, 200);
+  assert.equal(deleteMovieResponse.body.deleted, true);
+  assert.equal(fs.existsSync(storagePath), false);
+  assert.equal(fs.existsSync(hlsDir), false);
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 50);
+  });
+
+  assert.equal(fs.existsSync(storagePath), false);
+  assert.equal(fs.existsSync(hlsDir), false);
+
+  const moviesAfterDelete = await requestJson(baseUrl, "/v1/content/movies");
+  assert.equal(
+    moviesAfterDelete.body.movies.some((movie) => movie.id === movieId),
+    false
+  );
+
   const metadataOnlyResponse = await requestRaw(baseUrl, "/v1/content/movies/create", {
     method: "POST",
     body: multipartMovieBody(movieMetadata("metadata-only"), { video: false })
@@ -260,6 +287,38 @@ try {
   assert.equal(metadataOnlyResponse.body.data.video_url, null);
   assert.equal(metadataOnlyResponse.body.data.transcode_status, "missing_source");
   assert.deepEqual(metadataOnlyResponse.body.data.playback.renditions, []);
+
+  const metadataOnlyMovieId = metadataOnlyResponse.body.data.id;
+  const seriesUploadResponse = await requestRaw(baseUrl, `/v1/content/movies/${metadataOnlyMovieId}/series`, {
+    method: "POST",
+    body: multipartMovieBody(movieMetadata("series-upload"), { fileName: "series-upload.mp4" })
+  });
+
+  assert.equal(seriesUploadResponse.status, 201);
+  assert.equal(typeof seriesUploadResponse.body.series_item.id, "string");
+  assert.equal(seriesUploadResponse.body.series_item.media.has_source, true);
+  assert.equal(fs.existsSync(seriesUploadResponse.body.series_item.storage_path), true);
+
+  const seriesMovieId = seriesUploadResponse.body.series_item.id;
+  const seriesStoragePath = seriesUploadResponse.body.series_item.storage_path;
+  const seriesHlsDir = path.join(mediaRoot, "hls", seriesMovieId);
+  fs.mkdirSync(seriesHlsDir, { recursive: true });
+  fs.writeFileSync(path.join(seriesHlsDir, "master.m3u8"), "#EXTM3U\n");
+
+  const deleteParentMovieResponse = await requestJson(baseUrl, `/v1/content/movies/${metadataOnlyMovieId}`, {
+    method: "DELETE"
+  });
+
+  assert.equal(deleteParentMovieResponse.status, 200);
+  assert.equal(deleteParentMovieResponse.body.deleted, true);
+  assert.equal(fs.existsSync(seriesStoragePath), false);
+  assert.equal(fs.existsSync(seriesHlsDir), false);
+
+  const moviesAfterCascadeDelete = await requestJson(baseUrl, "/v1/content/movies");
+  assert.equal(
+    moviesAfterCascadeDelete.body.movies.some((movie) => movie.id === metadataOnlyMovieId || movie.id === seriesMovieId),
+    false
+  );
 
   const filesBeforeInvalidMetadata = uploadFiles();
   const invalidMetadataResponse = await requestRaw(baseUrl, "/v1/content/movies/create", {
