@@ -381,7 +381,43 @@ export const openApiDocument = {
         properties: {
           id: { type: "string" },
           title: { $ref: "#/components/schemas/LocalizedText" },
-          description: { $ref: "#/components/schemas/LocalizedText" }
+          description: { $ref: "#/components/schemas/LocalizedText" },
+          icon_url: {
+            type: "string",
+            nullable: true,
+            example: "/media/uploads/category-icon.png"
+          },
+          icon: {
+            type: "object",
+            nullable: true,
+            properties: {
+              url: {
+                type: "string",
+                nullable: true,
+                example: "/media/uploads/category-icon.png"
+              },
+              storage_path: {
+                type: "string",
+                nullable: true,
+                example: "/absolute/storage/path/category-icon.png"
+              },
+              original_name: {
+                type: "string",
+                nullable: true,
+                example: "category-icon.png"
+              },
+              mime_type: {
+                type: "string",
+                nullable: true,
+                example: "image/png"
+              },
+              size: {
+                type: "integer",
+                nullable: true,
+                example: 2048
+              }
+            }
+          }
         }
       },
       ContentMovie: {
@@ -5397,6 +5433,21 @@ export const openApiDocument = {
                   description: { $ref: "#/components/schemas/LocalizedText" }
                 }
               }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  metadata: {
+                    type: "string",
+                    description: "JSON with title and/or description"
+                  },
+                  icon: {
+                    type: "string",
+                    format: "binary"
+                  }
+                }
+              }
             }
           }
         },
@@ -5467,6 +5518,22 @@ export const openApiDocument = {
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" }
+                }
+              }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["metadata"],
+                properties: {
+                  metadata: {
+                    type: "string",
+                    description: "JSON with title and description"
+                  },
+                  icon: {
+                    type: "string",
+                    format: "binary"
+                  }
                 }
               }
             }

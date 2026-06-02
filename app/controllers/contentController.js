@@ -63,9 +63,14 @@ function withUploadCleanup(request, work) {
 export function createContentController({ contentService }) {
   return {
     createCategory(request, response) {
-      const category = contentService.createCategory({
-        title: requiredLocalizedText(request.body, "title"),
-        description: requiredLocalizedText(request.body, "description")
+      const category = withUploadCleanup(request, () => {
+        const body = payload(request);
+
+        return contentService.createCategory({
+          title: requiredLocalizedText(body, "title"),
+          description: requiredLocalizedText(body, "description"),
+          file: request.file || null
+        });
       });
 
       response.status(201).json({ category });
@@ -183,23 +188,30 @@ export function createContentController({ contentService }) {
     },
 
     updateCategory(request, response) {
-      const attributes = {};
+      const category = withUploadCleanup(request, () => {
+        const body = payload(request);
+        const attributes = {};
 
-      if (Object.hasOwn(request.body, "title")) {
-        attributes.title = requiredLocalizedText(request.body, "title");
-      }
+        if (Object.hasOwn(body, "title")) {
+          attributes.title = requiredLocalizedText(body, "title");
+        }
 
-      if (Object.hasOwn(request.body, "description")) {
-        attributes.description = optionalLocalizedText(request.body, "description");
-      }
+        if (Object.hasOwn(body, "description")) {
+          attributes.description = optionalLocalizedText(body, "description");
+        }
 
-      if (Object.keys(attributes).length === 0) {
-        throw badRequest("At least one field is required", "VALIDATION_ERROR");
-      }
+        if (request.file) {
+          attributes.file = request.file;
+        }
 
-      response.json({
-        category: contentService.updateCategory(request.params.category_id, attributes)
+        if (Object.keys(attributes).length === 0) {
+          throw badRequest("At least one field is required", "VALIDATION_ERROR");
+        }
+
+        return contentService.updateCategory(request.params.category_id, attributes);
       });
+
+      response.json({ category });
     },
 
     updateMovie(request, response) {

@@ -700,11 +700,17 @@ Body:
 }
 ```
 
+For icon upload, send `multipart/form-data`:
+
+1. `metadata` - JSON string with `title` and `description`.
+2. `icon` - uploaded image file.
+
 What happens:
 
 1. The backend checks the parent token.
 2. The backend checks that the category title is not already used.
 3. The backend creates the category.
+4. If an icon file was sent, the backend stores it and returns `icon_url` plus `icon` metadata.
 
 ## 30. Update A Content Category
 
@@ -733,11 +739,17 @@ Body:
 }
 ```
 
+For icon upload or replacement, send `multipart/form-data`:
+
+1. `metadata` - optional JSON string with `title` and/or `description`.
+2. `icon` - uploaded image file.
+
 What happens:
 
 1. The backend checks the parent token.
 2. The backend finds the category.
 3. The backend updates the fields that were sent.
+4. If a new icon file was sent, the backend replaces the old icon file.
 
 ## 31. Delete A Content Category
 

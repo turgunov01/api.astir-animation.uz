@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/errors.js";
 export function createContentRoutes({ authMiddleware, contentController, uploadMiddleware }) {
   const router = Router();
   const videoUpload = uploadMiddleware.single("video");
+  const iconUpload = uploadMiddleware.single("icon");
 
   router.get("/", authMiddleware.requireActor, asyncHandler(contentController.list));
   router.get("/movies", authMiddleware.requireActor, asyncHandler(contentController.listMovies));
@@ -36,11 +37,13 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
   router.post(
     "/categories/create",
     authMiddleware.requireParent,
+    iconUpload,
     asyncHandler(contentController.createCategory)
   );
   router.patch(
     "/categories/:category_id",
     authMiddleware.requireParent,
+    iconUpload,
     asyncHandler(contentController.updateCategory)
   );
   router.delete(

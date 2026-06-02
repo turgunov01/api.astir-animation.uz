@@ -29,8 +29,18 @@ export function createUploadMiddleware(config) {
       fileSize: config.maxVideoUploadMb * 1024 * 1024
     },
     fileFilter(request, file, callback) {
-      if (!file.mimetype.startsWith("video/")) {
+      if (file.fieldname === "video" && !file.mimetype.startsWith("video/")) {
         callback(new Error("Only video files are allowed"));
+        return;
+      }
+
+      if (file.fieldname === "icon" && !file.mimetype.startsWith("image/")) {
+        callback(new Error("Only image files are allowed"));
+        return;
+      }
+
+      if (!["video", "icon"].includes(file.fieldname)) {
+        callback(new Error("Unsupported upload field"));
         return;
       }
 

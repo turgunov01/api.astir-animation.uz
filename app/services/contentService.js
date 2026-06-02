@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { conflict, notFound } from "../lib/errors.js";
 
@@ -54,10 +55,22 @@ function toLocalizedText(value) {
 }
 
 function serializeCategory(category) {
+  const iconUrl = sourceUrl(category.icon);
+
   return {
     id: category.id,
     title: toLocalizedText(category.title || category.name),
-    description: toLocalizedText(category.description)
+    description: toLocalizedText(category.description),
+    icon_url: iconUrl,
+    icon: category.icon
+      ? {
+          url: iconUrl,
+          storage_path: category.icon.path || null,
+          original_name: category.icon.originalName || null,
+          mime_type: category.icon.mimeType || null,
+          size: category.icon.size || null
+        }
+      : null
   };
 }
 
@@ -139,6 +152,22 @@ function createSourceFromFile(file) {
     mimeType: file.mimetype,
     size: file.size,
     url: `/media/uploads/${encodeURIComponent(file.filename)}`
+  };
+}
+
+function removeStoredFile(source) {
+  if (!source?.path) {
+    return;
+  }
+
+  fs.rmSync(source.path, { force: true });
+}
+
+function categoryAttributes(attributes) {
+  return {
+    title: attributes.title,
+    description: attributes.description,
+    icon: createSourceFromFile(attributes.file)
   };
 }
 
@@ -224,18 +253,21 @@ export function createContentService({ contentCategories, contentMovies, tariffS
   }
 
   return {
-    createCategory({ title, description }) {
+    createCategory({ title, description, file }) {
       assertCategoryTitleAvailable(contentCategories, title);
 
-      return serializeCategory(contentCategories.create({
+      return serializeCategory(contentCategories.create(categoryAttributes({
         title,
-        description
-      }));
+        description,
+        file
+      })));
     },
 
     deleteCategory(categoryId) {
       const category = getCategory(categoryId);
       const deletedCategory = contentCategories.delete(category.id);
+
+      removeStoredFile(deletedCategory.icon);
 
       return {
         deleted: true,
@@ -383,12 +415,24 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
     updateCategory(categoryId, attributes) {
       const category = getCategory(categoryId);
+      const categoryUpdates = { ...attributes };
 
-      if (attributes.title) {
-        assertCategoryTitleAvailable(contentCategories, attributes.title, category.id);
+      if (categoryUpdates.title) {
+        assertCategoryTitleAvailable(contentCategories, categoryUpdates.title, category.id);
       }
 
-      return serializeCategory(contentCategories.update(category.id, attributes));
+      if (Object.hasOwn(categoryUpdates, "file")) {
+        categoryUpdates.icon = createSourceFromFile(categoryUpdates.file);
+        delete categoryUpdates.file;
+      }
+
+      const updatedCategory = contentCategories.update(category.id, categoryUpdates);
+
+      if (categoryUpdates.icon) {
+        removeStoredFile(category.icon);
+      }
+
+      return serializeCategory(updatedCategory);
     },
 
     updateMovie(movieId, attributes) {

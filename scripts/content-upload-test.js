@@ -184,8 +184,27 @@ function movieMetadata(suffix = Date.now()) {
   };
 }
 
+function categoryMetadata(suffix = Date.now()) {
+  return {
+    title: {
+      en: `Multipart Category ${suffix}`,
+      ru: `Multipart Category RU ${suffix}`,
+      uz: `Multipart Category UZ ${suffix}`
+    },
+    description: {
+      en: "Created by category icon upload test",
+      ru: "Created by category icon upload test RU",
+      uz: "Created by category icon upload test UZ"
+    }
+  };
+}
+
 function videoBlob() {
   return new Blob([Buffer.from("fake mp4 bytes")], { type: "video/mp4" });
+}
+
+function imageBlob() {
+  return new Blob([Buffer.from("fake png bytes")], { type: "image/png" });
 }
 
 function uploadFiles() {
@@ -204,6 +223,20 @@ function multipartMovieBody(metadata, options = {}) {
 
   if (options.video !== false) {
     form.append("video", videoBlob(), options.fileName || "upload-test.mp4");
+  }
+
+  return form;
+}
+
+function multipartCategoryBody(metadata, options = {}) {
+  const form = new FormData();
+
+  if (metadata !== null) {
+    form.append("metadata", typeof metadata === "string" ? metadata : JSON.stringify(metadata));
+  }
+
+  if (options.icon !== false) {
+    form.append("icon", imageBlob(), options.fileName || "category-icon.png");
   }
 
   return form;
@@ -320,6 +353,52 @@ try {
     false
   );
 
+  const categoryUploadResponse = await requestRaw(baseUrl, "/v1/content/categories/create", {
+    method: "POST",
+    body: multipartCategoryBody(categoryMetadata(), { fileName: "category-icon.png" })
+  });
+
+  assert.equal(categoryUploadResponse.status, 201);
+  assert.equal(typeof categoryUploadResponse.body.category.id, "string");
+  assert.match(categoryUploadResponse.body.category.icon_url, /^\/media\/uploads\//);
+  assert.equal(categoryUploadResponse.body.category.icon.original_name, "category-icon.png");
+  assert.equal(categoryUploadResponse.body.category.icon.mime_type, "image/png");
+  assert.equal(fs.existsSync(categoryUploadResponse.body.category.icon.storage_path), true);
+
+  const categoryId = categoryUploadResponse.body.category.id;
+  const firstIconPath = categoryUploadResponse.body.category.icon.storage_path;
+
+  const listedCategories = await requestJson(baseUrl, "/v1/content/categories");
+  assert.equal(
+    listedCategories.body.categories.some((category) => category.id === categoryId && category.icon_url),
+    true
+  );
+
+  const singleCategory = await requestJson(baseUrl, `/v1/content/categories/${categoryId}`);
+  assert.equal(singleCategory.status, 200);
+  assert.equal(singleCategory.body.category.id, categoryId);
+  assert.equal(singleCategory.body.category.icon_url, categoryUploadResponse.body.category.icon_url);
+
+  const replacementResponse = await requestRaw(baseUrl, `/v1/content/categories/${categoryId}`, {
+    method: "PATCH",
+    body: multipartCategoryBody(null, { fileName: "replacement-icon.png" })
+  });
+
+  assert.equal(replacementResponse.status, 200);
+  assert.equal(replacementResponse.body.category.id, categoryId);
+  assert.equal(replacementResponse.body.category.icon.original_name, "replacement-icon.png");
+  assert.equal(fs.existsSync(firstIconPath), false);
+  assert.equal(fs.existsSync(replacementResponse.body.category.icon.storage_path), true);
+
+  const replacementIconPath = replacementResponse.body.category.icon.storage_path;
+  const deleteCategoryResponse = await requestJson(baseUrl, `/v1/content/categories/${categoryId}`, {
+    method: "DELETE"
+  });
+
+  assert.equal(deleteCategoryResponse.status, 200);
+  assert.equal(deleteCategoryResponse.body.deleted, true);
+  assert.equal(fs.existsSync(replacementIconPath), false);
+
   const filesBeforeInvalidMetadata = uploadFiles();
   const invalidMetadataResponse = await requestRaw(baseUrl, "/v1/content/movies/create", {
     method: "POST",
@@ -333,10 +412,15 @@ try {
   const failingContainer = createContainer({ store: new JsonStore(failingDataFile) });
   failingContainer.middleware.upload = {
     single(fieldName) {
-      assert.equal(fieldName, "video");
+      assert.equal(["video", "icon"].includes(fieldName), true);
 
       return (request, response, next) => {
-        next(new Error("Simulated storage failure"));
+        if (fieldName === "video") {
+          next(new Error("Simulated storage failure"));
+          return;
+        }
+
+        next();
       };
     }
   };

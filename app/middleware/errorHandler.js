@@ -27,7 +27,12 @@ export function errorHandler(error, request, response, next) {
     return;
   }
 
-  if (error.name === "MulterError" || error.message === "Only video files are allowed") {
+  if (
+    error.name === "MulterError" ||
+    error.message === "Only video files are allowed" ||
+    error.message === "Only image files are allowed" ||
+    error.message === "Unsupported upload field"
+  ) {
     response.status(400).json({
       error: {
         code: "UPLOAD_ERROR",

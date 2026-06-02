@@ -245,8 +245,10 @@ Stored fields:
 1. `id`
 2. `title`
 3. `description`
-4. `createdAt`
-5. `updatedAt`
+4. `icon`
+5. `icon_url`
+6. `createdAt`
+7. `updatedAt`
 
 Rules:
 
@@ -257,6 +259,7 @@ Rules:
 5. Parent and paired device clients can read categories.
 6. `title` must include `en`, `ru`, and `uz`.
 7. `description` must include `en`, `ru`, and `uz`.
+8. `icon` is optional and stores uploaded image metadata.
 
 Example:
 
