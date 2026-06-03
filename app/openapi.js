@@ -382,6 +382,9 @@ export const openApiDocument = {
           id: { type: "string" },
           title: { $ref: "#/components/schemas/LocalizedText" },
           description: { $ref: "#/components/schemas/LocalizedText" },
+          type: { type: "string", example: "cartoon" },
+          slug: { type: "string", example: "cartoons" },
+          active: { type: "boolean", example: true },
           icon_url: {
             type: "string",
             nullable: true,
@@ -5430,7 +5433,10 @@ export const openApiDocument = {
                 type: "object",
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
-                  description: { $ref: "#/components/schemas/LocalizedText" }
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  type: { type: "string", example: "cartoon" },
+                  slug: { type: "string", example: "cartoons" },
+                  active: { type: "boolean", example: true }
                 }
               }
             },
@@ -5440,7 +5446,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title and/or description"
+                    description: "JSON with title, description, type, slug, and/or active"
                   },
                   icon: {
                     type: "string",
@@ -5517,7 +5523,10 @@ export const openApiDocument = {
                 required: ["title", "description"],
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
-                  description: { $ref: "#/components/schemas/LocalizedText" }
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  type: { type: "string", example: "cartoon" },
+                  slug: { type: "string", example: "cartoons" },
+                  active: { type: "boolean", example: true }
                 }
               }
             },
@@ -5528,7 +5537,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title and description"
+                    description: "JSON with title, description, type, slug, and active"
                   },
                   icon: {
                     type: "string",

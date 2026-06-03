@@ -3,6 +3,7 @@ import { badRequest } from "../lib/errors.js";
 import {
   optionalBoolean,
   optionalLocalizedText,
+  optionalString,
   optionalStringArray,
   requiredLocalizedText
 } from "../lib/validation.js";
@@ -60,6 +61,26 @@ function withUploadCleanup(request, work) {
   }
 }
 
+function optionalPresentString(body, field) {
+  const value = optionalString(body, field);
+
+  if (value === null) {
+    throw badRequest(`${field} must be a non-empty string`, "VALIDATION_ERROR");
+  }
+
+  return value;
+}
+
+function optionalPresentBoolean(body, field) {
+  const value = optionalBoolean(body, field);
+
+  if (value === null) {
+    throw badRequest(`${field} must be true or false`, "VALIDATION_ERROR");
+  }
+
+  return value;
+}
+
 export function createContentController({ contentService }) {
   return {
     createCategory(request, response) {
@@ -69,6 +90,9 @@ export function createContentController({ contentService }) {
         return contentService.createCategory({
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
+          type: optionalString(body, "type") || "other",
+          slug: optionalString(body, "slug"),
+          active: optionalBoolean(body, "active", true),
           file: request.file || null
         });
       });
@@ -198,6 +222,18 @@ export function createContentController({ contentService }) {
 
         if (Object.hasOwn(body, "description")) {
           attributes.description = optionalLocalizedText(body, "description");
+        }
+
+        if (Object.hasOwn(body, "type")) {
+          attributes.type = optionalPresentString(body, "type");
+        }
+
+        if (Object.hasOwn(body, "slug")) {
+          attributes.slug = optionalPresentString(body, "slug");
+        }
+
+        if (Object.hasOwn(body, "active")) {
+          attributes.active = optionalPresentBoolean(body, "active");
         }
 
         if (request.file) {

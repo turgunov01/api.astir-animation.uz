@@ -163,6 +163,9 @@ try {
 
   assert.equal(typeof category.category.id, "string");
   assert.equal(typeof category.category.title.en, "string");
+  assert.equal(category.category.type, "other");
+  assert.equal(category.category.active, true);
+  assert.equal(typeof category.category.slug, "string");
 
   const movie = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",

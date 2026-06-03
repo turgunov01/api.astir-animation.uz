@@ -61,6 +61,9 @@ function serializeCategory(category) {
     id: category.id,
     title: toLocalizedText(category.title || category.name),
     description: toLocalizedText(category.description),
+    type: category.type || category.kind || "other",
+    slug: category.slug || slugify(category.title || category.name, "category"),
+    active: category.active !== false,
     icon_url: iconUrl,
     icon: category.icon
       ? {
@@ -163,10 +166,53 @@ function removeStoredFile(source) {
   fs.rmSync(source.path, { force: true });
 }
 
+function slugify(value, fallback = "category") {
+  const source = typeof value === "string"
+    ? value
+    : value?.en || value?.ru || value?.uz || fallback;
+  const slug = String(source)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || fallback;
+}
+
+function assertCategorySlugAvailable(contentCategories, slug, currentCategoryId = null) {
+  const existingCategory = contentCategories.findBySlug(slug);
+
+  if (existingCategory && existingCategory.id !== currentCategoryId) {
+    throw conflict("A content category already exists with this slug", "CONTENT_CATEGORY_SLUG_EXISTS");
+  }
+}
+
+function uniqueCategorySlug(contentCategories, value, currentCategoryId = null) {
+  const baseSlug = slugify(value, "category");
+  let slug = baseSlug;
+  let suffix = 2;
+
+  while (true) {
+    const existingCategory = contentCategories.findBySlug(slug);
+
+    if (!existingCategory || existingCategory.id === currentCategoryId) {
+      return slug;
+    }
+
+    slug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+}
+
 function categoryAttributes(attributes) {
   return {
     title: attributes.title,
     description: attributes.description,
+    type: attributes.type || "other",
+    slug: attributes.slug,
+    active: attributes.active !== false,
     icon: createSourceFromFile(attributes.file)
   };
 }
@@ -253,12 +299,20 @@ export function createContentService({ contentCategories, contentMovies, tariffS
   }
 
   return {
-    createCategory({ title, description, file }) {
+    createCategory({ title, description, type, slug, active, file }) {
       assertCategoryTitleAvailable(contentCategories, title);
+      const categorySlug = slug ? slugify(slug, "category") : uniqueCategorySlug(contentCategories, title);
+
+      if (slug) {
+        assertCategorySlugAvailable(contentCategories, categorySlug);
+      }
 
       return serializeCategory(contentCategories.create(categoryAttributes({
         title,
         description,
+        type,
+        slug: categorySlug,
+        active,
         file
       })));
     },
@@ -419,6 +473,11 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
       if (categoryUpdates.title) {
         assertCategoryTitleAvailable(contentCategories, categoryUpdates.title, category.id);
+      }
+
+      if (Object.hasOwn(categoryUpdates, "slug")) {
+        categoryUpdates.slug = slugify(categoryUpdates.slug, "category");
+        assertCategorySlugAvailable(contentCategories, categoryUpdates.slug, category.id);
       }
 
       if (Object.hasOwn(categoryUpdates, "file")) {

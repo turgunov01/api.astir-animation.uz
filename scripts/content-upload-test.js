@@ -195,7 +195,10 @@ function categoryMetadata(suffix = Date.now()) {
       en: "Created by category icon upload test",
       ru: "Created by category icon upload test RU",
       uz: "Created by category icon upload test UZ"
-    }
+    },
+    type: "cartoon",
+    slug: `multipart-category-${suffix}`,
+    active: true
   };
 }
 
@@ -361,6 +364,9 @@ try {
   assert.equal(categoryUploadResponse.status, 201);
   assert.equal(typeof categoryUploadResponse.body.category.id, "string");
   assert.match(categoryUploadResponse.body.category.icon_url, /^\/media\/uploads\//);
+  assert.equal(categoryUploadResponse.body.category.type, "cartoon");
+  assert.equal(categoryUploadResponse.body.category.active, true);
+  assert.match(categoryUploadResponse.body.category.slug, /^multipart-category-/);
   assert.equal(categoryUploadResponse.body.category.icon.original_name, "category-icon.png");
   assert.equal(categoryUploadResponse.body.category.icon.mime_type, "image/png");
   assert.equal(fs.existsSync(categoryUploadResponse.body.category.icon.storage_path), true);
@@ -370,7 +376,12 @@ try {
 
   const listedCategories = await requestJson(baseUrl, "/v1/content/categories");
   assert.equal(
-    listedCategories.body.categories.some((category) => category.id === categoryId && category.icon_url),
+    listedCategories.body.categories.some((category) => (
+      category.id === categoryId &&
+      category.icon_url &&
+      category.type === "cartoon" &&
+      category.active === true
+    )),
     true
   );
 
@@ -381,11 +392,18 @@ try {
 
   const replacementResponse = await requestRaw(baseUrl, `/v1/content/categories/${categoryId}`, {
     method: "PATCH",
-    body: multipartCategoryBody(null, { fileName: "replacement-icon.png" })
+    body: multipartCategoryBody({
+      type: "educational",
+      slug: "replacement-category",
+      active: false
+    }, { fileName: "replacement-icon.png" })
   });
 
   assert.equal(replacementResponse.status, 200);
   assert.equal(replacementResponse.body.category.id, categoryId);
+  assert.equal(replacementResponse.body.category.type, "educational");
+  assert.equal(replacementResponse.body.category.slug, "replacement-category");
+  assert.equal(replacementResponse.body.category.active, false);
   assert.equal(replacementResponse.body.category.icon.original_name, "replacement-icon.png");
   assert.equal(fs.existsSync(firstIconPath), false);
   assert.equal(fs.existsSync(replacementResponse.body.category.icon.storage_path), true);

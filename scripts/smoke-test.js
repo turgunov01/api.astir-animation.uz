@@ -182,7 +182,10 @@ try {
         en: "Category created by smoke test",
         ru: "Категория создана smoke test",
         uz: "Smoke test yaratgan kategoriya"
-      }
+      },
+      type: "cartoon",
+      slug: `smoke-category-${Date.now()}`,
+      active: true
     }
   });
 
@@ -191,6 +194,9 @@ try {
   assert.equal(typeof categoryResponse.category.title.en, "string");
   assert.equal(typeof categoryResponse.category.title.ru, "string");
   assert.equal(typeof categoryResponse.category.title.uz, "string");
+  assert.equal(categoryResponse.category.type, "cartoon");
+  assert.equal(categoryResponse.category.active, true);
+  assert.match(categoryResponse.category.slug, /^smoke-category-/);
 
   const listedCategories = await request(baseUrl, "/v1/content/categories", {
     headers: { authorization: `Bearer ${parentToken}` }
@@ -215,11 +221,17 @@ try {
         en: `Updated Smoke Category ${Date.now()}`,
         ru: `Обновленная тестовая категория ${Date.now()}`,
         uz: `Yangilangan test kategoriyasi ${Date.now()}`
-      }
+      },
+      type: "educational",
+      slug: `updated-smoke-category-${Date.now()}`,
+      active: false
     }
   });
 
   assert.equal(updatedCategory.category.id, categoryId);
+  assert.equal(updatedCategory.category.type, "educational");
+  assert.equal(updatedCategory.category.active, false);
+  assert.match(updatedCategory.category.slug, /^updated-smoke-category-/);
 
   const movieResponse = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",

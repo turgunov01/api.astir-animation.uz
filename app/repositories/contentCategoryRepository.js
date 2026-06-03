@@ -27,6 +27,15 @@ export function createContentCategoryRepository(store) {
       );
     },
 
+    findBySlug(slug) {
+      const normalizedSlug = String(slug).toLowerCase();
+
+      return store.findOne(
+        "contentCategories",
+        (category) => String(category.slug || "").toLowerCase() === normalizedSlug
+      );
+    },
+
     create(attributes) {
       return store.insert("contentCategories", attributes);
     },

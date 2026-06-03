@@ -245,10 +245,13 @@ Stored fields:
 1. `id`
 2. `title`
 3. `description`
-4. `icon`
-5. `icon_url`
-6. `createdAt`
-7. `updatedAt`
+4. `type`
+5. `slug`
+6. `active`
+7. `icon`
+8. `icon_url`
+9. `createdAt`
+10. `updatedAt`
 
 Rules:
 
@@ -259,7 +262,10 @@ Rules:
 5. Parent and paired device clients can read categories.
 6. `title` must include `en`, `ru`, and `uz`.
 7. `description` must include `en`, `ru`, and `uz`.
-8. `icon` is optional and stores uploaded image metadata.
+8. `type` defaults to `other`.
+9. `slug` defaults to a generated slug from the category title.
+10. `active` defaults to `true`.
+11. `icon` is optional and stores uploaded image metadata.
 
 Example:
 
@@ -274,7 +280,10 @@ Example:
     "en": "Short animated shows for kids",
     "ru": "Короткие мультфильмы для детей",
     "uz": "Bolalar uchun qisqa multfilmlar"
-  }
+  },
+  "type": "cartoon",
+  "slug": "cartoons",
+  "active": true
 }
 ```
 
