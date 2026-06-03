@@ -139,6 +139,26 @@ npm run db:seed
 `db:seed` creates the first `super_admin` from `SUPER_ADMIN_EMAIL`,
 `SUPER_ADMIN_PASSWORD`, and `SUPER_ADMIN_NAME`.
 
+## Content Tag Storage
+
+The new `/v1/content/tags` API and movie-tag links can use PostgreSQL.
+
+Configure:
+
+```text
+CONTENT_STORAGE=postgres
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/astir
+```
+
+Then run:
+
+```bash
+npm run db:migrate
+```
+
+This creates `v1_content_tags` and `v1_content_movie_tags`.
+If `CONTENT_STORAGE=json`, the API keeps using the local JSON store.
+
 ## Run The Test Flow
 
 1. Run the smoke test.

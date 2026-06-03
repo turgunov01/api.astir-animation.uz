@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 
 const dataFile = path.join(os.tmpdir(), `astir-smoke-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
+process.env.CONTENT_STORAGE = "json";
 process.env.JWT_SECRET = "astir-smoke-test-secret";
 process.env.REQUIRE_AUTH = "true";
 process.env.OTP_DEFAULT_CODE = "123456";

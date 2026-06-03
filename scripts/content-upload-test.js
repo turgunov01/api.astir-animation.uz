@@ -11,6 +11,7 @@ const failingDataFile = path.join(testRoot, "failing-store.json");
 
 process.env.DATA_FILE = dataFile;
 process.env.MEDIA_ROOT = mediaRoot;
+process.env.CONTENT_STORAGE = "json";
 process.env.JWT_SECRET = "astir-content-upload-test-secret";
 process.env.REQUIRE_AUTH = "false";
 process.env.TRANSCODER_ENABLED = "true";

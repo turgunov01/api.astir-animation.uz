@@ -18,6 +18,8 @@ export const config = {
   deviceTokenTtl: process.env.DEVICE_TOKEN_TTL || "365d",
   pairingTtlMinutes: Number(process.env.PAIRING_TTL_MINUTES || 5),
   dataFile: process.env.DATA_FILE || "data/store.json",
+  contentStorage: process.env.CONTENT_STORAGE || (process.env.DATABASE_URL ? "postgres" : "json"),
+  databaseUrl: process.env.DATABASE_URL || "",
   mediaRoot: process.env.MEDIA_ROOT || "media",
   maxVideoUploadMb: Number(process.env.MAX_VIDEO_UPLOAD_MB || 2048),
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",

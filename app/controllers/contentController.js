@@ -53,9 +53,9 @@ function logMovieUpload(request, event, details = {}) {
   }));
 }
 
-function withUploadCleanup(request, work) {
+async function withUploadCleanup(request, work) {
   try {
-    return work();
+    return await work();
   } catch (error) {
     cleanupUploadedFile(request.file);
     throw error;
@@ -84,11 +84,11 @@ function optionalPresentBoolean(body, field) {
 
 export function createContentController({ contentService }) {
   return {
-    createCategory(request, response) {
-      const category = withUploadCleanup(request, () => {
+    async createCategory(request, response) {
+      const category = await withUploadCleanup(request, async () => {
         const body = payload(request);
 
-        return contentService.createCategory({
+        return await contentService.createCategory({
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
           type: optionalString(body, "type") || "other",
@@ -101,11 +101,11 @@ export function createContentController({ contentService }) {
       response.status(201).json({ category });
     },
 
-    addSeriesMovie(request, response) {
-      const result = withUploadCleanup(request, () => {
+    async addSeriesMovie(request, response) {
+      const result = await withUploadCleanup(request, async () => {
         const body = payload(request);
 
-        return contentService.addSeriesMovie(request.params.movie_id, {
+        return await contentService.addSeriesMovie(request.params.movie_id, {
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
           is_premium: optionalBoolean(body, "is_premium", false),
@@ -118,8 +118,8 @@ export function createContentController({ contentService }) {
       response.status(201).json(result);
     },
 
-    createMovie(request, response) {
-      const movie = withUploadCleanup(request, () => {
+    async createMovie(request, response) {
+      const movie = await withUploadCleanup(request, async () => {
         logMovieUpload(request, "started", {
           contentType: request.get("content-type") || null,
           hasVideo: Boolean(request.file)
@@ -143,7 +143,7 @@ export function createContentController({ contentService }) {
           });
         }
 
-        const createdMovie = contentService.createMovie({
+        const createdMovie = await contentService.createMovie({
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
           series: optionalStringArray(body, "series", []),
@@ -177,8 +177,8 @@ export function createContentController({ contentService }) {
       });
     },
 
-    createTag(request, response) {
-      const tag = contentService.createTag({
+    async createTag(request, response) {
+      const tag = await contentService.createTag({
         name: requiredString(request.body, "name"),
         slug: optionalString(request.body, "slug"),
         active: optionalBoolean(request.body, "active", true)
@@ -187,26 +187,26 @@ export function createContentController({ contentService }) {
       response.status(201).json({ tag });
     },
 
-    deleteCategory(request, response) {
-      response.json(contentService.deleteCategory(request.params.category_id));
+    async deleteCategory(request, response) {
+      response.json(await contentService.deleteCategory(request.params.category_id));
     },
 
-    deleteMovie(request, response) {
-      response.json(contentService.deleteMovie(request.params.movie_id));
+    async deleteMovie(request, response) {
+      response.json(await contentService.deleteMovie(request.params.movie_id));
     },
 
-    deleteTag(request, response) {
-      response.json(contentService.deleteTag(request.params.tag_id));
+    async deleteTag(request, response) {
+      response.json(await contentService.deleteTag(request.params.tag_id));
     },
 
-    getCategory(request, response) {
+    async getCategory(request, response) {
       response.json({
-        category: contentService.getCategory(request.params.category_id)
+        category: await contentService.getCategory(request.params.category_id)
       });
     },
 
-    getMovie(request, response) {
-      const result = contentService.getMovie(request.actor, request.params.movie_id);
+    async getMovie(request, response) {
+      const result = await contentService.getMovie(request.actor, request.params.movie_id);
 
       response.json({
         data: result.movie,
@@ -214,47 +214,47 @@ export function createContentController({ contentService }) {
       });
     },
 
-    getMovieSeries(request, response) {
-      response.json(contentService.getMovieSeries(request.actor, request.params.movie_id));
+    async getMovieSeries(request, response) {
+      response.json(await contentService.getMovieSeries(request.actor, request.params.movie_id));
     },
 
-    getTag(request, response) {
+    async getTag(request, response) {
       response.json({
-        tag: contentService.getTag(request.params.tag_id)
+        tag: await contentService.getTag(request.params.tag_id)
       });
     },
 
-    list(request, response) {
-      response.json({ content: contentService.listContent() });
+    async list(request, response) {
+      response.json({ content: await contentService.listContent() });
     },
 
-    listCategories(request, response) {
-      response.json(contentService.listCategories());
+    async listCategories(request, response) {
+      response.json(await contentService.listCategories());
     },
 
-    listMovies(request, response) {
-      response.json(contentService.listMovies(request.actor));
+    async listMovies(request, response) {
+      response.json(await contentService.listMovies(request.actor));
     },
 
-    listTags(request, response) {
-      response.json(contentService.listTags());
+    async listTags(request, response) {
+      response.json(await contentService.listTags());
     },
 
-    replaceMovieTags(request, response) {
+    async replaceMovieTags(request, response) {
       const body = payload(request);
 
       if (!Object.hasOwn(body, "tag_ids") && !Object.hasOwn(body, "tags")) {
         throw badRequest("tag_ids or tags is required", "VALIDATION_ERROR");
       }
 
-      response.json(contentService.replaceMovieTags(request.params.movie_id, {
+      response.json(await contentService.replaceMovieTags(request.params.movie_id, {
         tag_ids: optionalStringArray(body, "tag_ids", []),
         tags: optionalStringArray(body, "tags", [])
       }));
     },
 
-    updateCategory(request, response) {
-      const category = withUploadCleanup(request, () => {
+    async updateCategory(request, response) {
+      const category = await withUploadCleanup(request, async () => {
         const body = payload(request);
         const attributes = {};
 
@@ -286,13 +286,13 @@ export function createContentController({ contentService }) {
           throw badRequest("At least one field is required", "VALIDATION_ERROR");
         }
 
-        return contentService.updateCategory(request.params.category_id, attributes);
+        return await contentService.updateCategory(request.params.category_id, attributes);
       });
 
       response.json({ category });
     },
 
-    updateMovie(request, response) {
+    async updateMovie(request, response) {
       const body = payload(request);
       const attributes = {};
 
@@ -316,7 +316,7 @@ export function createContentController({ contentService }) {
         throw badRequest("At least one field is required", "VALIDATION_ERROR");
       }
 
-      const result = contentService.updateMovie(request.params.movie_id, attributes);
+      const result = await contentService.updateMovie(request.params.movie_id, attributes);
 
       response.json({
         data: result.movie,
@@ -324,7 +324,7 @@ export function createContentController({ contentService }) {
       });
     },
 
-    updateTag(request, response) {
+    async updateTag(request, response) {
       const attributes = {};
 
       if (Object.hasOwn(request.body, "name")) {
@@ -344,7 +344,7 @@ export function createContentController({ contentService }) {
       }
 
       response.json({
-        tag: contentService.updateTag(request.params.tag_id, attributes)
+        tag: await contentService.updateTag(request.params.tag_id, attributes)
       });
     }
   };

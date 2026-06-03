@@ -113,18 +113,15 @@ function serializeRenditions(renditions = []) {
   }));
 }
 
-function serializeMovieTags(movie, contentTags) {
-  if (!contentTags) {
-    return [];
-  }
+async function serializeMovieTags(tagIds, contentTags) {
+  const tags = await Promise.all(
+    [...new Set(tagIds || [])].map((tagId) => contentTags.findById(tagId))
+  );
 
-  return [...new Set(movie.tag_ids || [])]
-    .map((tagId) => contentTags.findById(tagId))
-    .filter(Boolean)
-    .map(serializeTag);
+  return tags.filter(Boolean).map(serializeTag);
 }
 
-function serializeMovie(movie, series = [], contentTags = null) {
+async function serializeMovie(movie, series = [], contentTags, contentMovieTags) {
   const videoUrl = sourceUrl(movie.source);
   const transcodeStatus = movie.transcode?.status || "missing_source";
   const hlsUrl = movie.transcode?.hlsUrl || null;
@@ -132,15 +129,17 @@ function serializeMovie(movie, series = [], contentTags = null) {
   const qualities = hlsUrl || renditions.length > 0
     ? ["auto", ...renditions.map((rendition) => rendition.quality)]
     : [];
-  const tagIds = [...new Set(movie.tag_ids || [])];
+  const tagIds = [...new Set(await contentMovieTags.listByMovieId(movie.id))];
 
   return {
     id: movie.id,
     title: toLocalizedText(movie.title),
     description: toLocalizedText(movie.description),
-    series: series.length > 0 ? series.map((item) => serializeMovie(item, [], contentTags)) : movie.series || [],
+    series: series.length > 0
+      ? await Promise.all(series.map((item) => serializeMovie(item, [], contentTags, contentMovieTags)))
+      : movie.series || [],
     tag_ids: tagIds,
-    tags: serializeMovieTags(movie, contentTags),
+    tags: await serializeMovieTags(tagIds, contentTags),
     is_premium: Boolean(movie.is_premium),
     source: videoUrl,
     video_url: videoUrl,
@@ -214,16 +213,16 @@ function assertCategorySlugAvailable(contentCategories, slug, currentCategoryId 
   }
 }
 
-function assertTagNameAvailable(contentTags, name, currentTagId = null) {
-  const existingTag = contentTags.findByName(name);
+async function assertTagNameAvailable(contentTags, name, currentTagId = null) {
+  const existingTag = await contentTags.findByName(name);
 
   if (existingTag && existingTag.id !== currentTagId) {
     throw conflict("A content tag already exists with this name", "CONTENT_TAG_NAME_EXISTS");
   }
 }
 
-function assertTagSlugAvailable(contentTags, slug, currentTagId = null) {
-  const existingTag = contentTags.findBySlug(slug);
+async function assertTagSlugAvailable(contentTags, slug, currentTagId = null) {
+  const existingTag = await contentTags.findBySlug(slug);
 
   if (existingTag && existingTag.id !== currentTagId) {
     throw conflict("A content tag already exists with this slug", "CONTENT_TAG_SLUG_EXISTS");
@@ -247,13 +246,13 @@ function uniqueCategorySlug(contentCategories, value, currentCategoryId = null) 
   }
 }
 
-function uniqueTagSlug(contentTags, value, currentTagId = null) {
+async function uniqueTagSlug(contentTags, value, currentTagId = null) {
   const baseSlug = slugify(value, "tag");
   let slug = baseSlug;
   let suffix = 2;
 
   while (true) {
-    const existingTag = contentTags.findBySlug(slug);
+    const existingTag = await contentTags.findBySlug(slug);
 
     if (!existingTag || existingTag.id === currentTagId) {
       return slug;
@@ -287,14 +286,14 @@ function uniqueStrings(values = []) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim() !== "").map((value) => value.trim()))];
 }
 
-function findOrCreateTagByName(contentTags, name) {
+async function findOrCreateTagByName(contentTags, name) {
   const normalizedName = String(name || "").trim();
 
   if (!normalizedName) {
     throw badRequest("tags must contain only non-empty strings", "VALIDATION_ERROR");
   }
 
-  const existingTag = contentTags.findByName(normalizedName);
+  const existingTag = await contentTags.findByName(normalizedName);
 
   if (existingTag) {
     return existingTag;
@@ -302,16 +301,16 @@ function findOrCreateTagByName(contentTags, name) {
 
   return contentTags.create(tagAttributes({
     name: normalizedName,
-    slug: uniqueTagSlug(contentTags, normalizedName),
+    slug: await uniqueTagSlug(contentTags, normalizedName),
     active: true
   }));
 }
 
-function resolveMovieTagIds(contentTags, attributes = {}) {
+async function resolveMovieTagIds(contentTags, attributes = {}) {
   const tagIds = [];
 
   for (const tagId of uniqueStrings(attributes.tag_ids)) {
-    const tag = contentTags.findById(tagId);
+    const tag = await contentTags.findById(tagId);
 
     if (!tag) {
       throw badRequest("tag_ids contains an unknown tag id", "VALIDATION_ERROR");
@@ -321,7 +320,7 @@ function resolveMovieTagIds(contentTags, attributes = {}) {
   }
 
   for (const tagName of uniqueStrings(attributes.tags)) {
-    tagIds.push(findOrCreateTagByName(contentTags, tagName).id);
+    tagIds.push((await findOrCreateTagByName(contentTags, tagName)).id);
   }
 
   return [...new Set(tagIds)];
@@ -349,12 +348,11 @@ function initialTranscode(file) {
   };
 }
 
-function movieAttributes(attributes, contentTags) {
+function movieAttributes(attributes) {
   return {
     title: attributes.title,
     description: attributes.description,
     series: attributes.series || [],
-    tag_ids: resolveMovieTagIds(contentTags, attributes),
     is_premium: attributes.is_premium,
     source: createSourceFromFile(attributes.file),
     transcode: initialTranscode(attributes.file)
@@ -369,7 +367,7 @@ function assertCategoryTitleAvailable(contentCategories, title, currentCategoryI
   }
 }
 
-export function createContentService({ contentCategories, contentMovies, contentTags, tariffService, transcoder }) {
+export function createContentService({ contentCategories, contentMovieTags, contentMovies, contentTags, tariffService, transcoder }) {
   function getCategory(categoryId) {
     const category = contentCategories.findById(categoryId);
 
@@ -390,8 +388,8 @@ export function createContentService({ contentCategories, contentMovies, content
     return movie;
   }
 
-  function getTagRecord(tagId) {
-    const tag = contentTags.findById(tagId);
+  async function getTagRecord(tagId) {
+    const tag = await contentTags.findById(tagId);
 
     if (!tag) {
       throw notFound("Content tag not found", "CONTENT_TAG_NOT_FOUND");
@@ -454,23 +452,26 @@ export function createContentService({ contentCategories, contentMovies, content
       return catalog.find((item) => item.id === contentId) || null;
     },
 
-    addSeriesMovie(parentMovieId, attributes) {
+    async addSeriesMovie(parentMovieId, attributes) {
       const parentMovie = getMovieRecord(parentMovieId);
       let seriesMovie = null;
 
       try {
-        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }, contentTags));
+        const tagIds = await resolveMovieTagIds(contentTags, attributes);
+        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
+        await contentMovieTags.replaceForMovie(seriesMovie.id, tagIds);
         const transcodeJob = transcoder.queueMovieTranscode(seriesMovie);
         const series = [...(parentMovie.series || []), seriesMovie.id];
         const updatedParentMovie = contentMovies.update(parentMovie.id, { series });
 
         return {
-          movie: serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie), contentTags),
-          series_item: serializeMovie(seriesMovie, [], contentTags),
+          movie: await serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie), contentTags, contentMovieTags),
+          series_item: await serializeMovie(seriesMovie, [], contentTags, contentMovieTags),
           transcode_job_id: transcodeJob?.id || null
         };
       } catch (error) {
         if (seriesMovie?.id) {
+          await contentMovieTags.removeMovie(seriesMovie.id);
           contentMovies.delete(seriesMovie.id);
           transcoder.removeMovieFiles(seriesMovie);
         }
@@ -479,19 +480,22 @@ export function createContentService({ contentCategories, contentMovies, content
       }
     },
 
-    createMovie(attributes) {
+    async createMovie(attributes) {
       let movie = null;
 
       try {
-        movie = contentMovies.create(movieAttributes(attributes, contentTags));
+        const tagIds = await resolveMovieTagIds(contentTags, attributes);
+        movie = contentMovies.create(movieAttributes(attributes));
+        await contentMovieTags.replaceForMovie(movie.id, tagIds);
         const transcodeJob = transcoder.queueMovieTranscode(movie);
 
         return {
-          ...serializeMovie(movie, [], contentTags),
+          ...await serializeMovie(movie, [], contentTags, contentMovieTags),
           transcode_job_id: transcodeJob?.id || null
         };
       } catch (error) {
         if (movie?.id) {
+          await contentMovieTags.removeMovie(movie.id);
           contentMovies.delete(movie.id);
           transcoder.removeMovieFiles(movie);
         } else if (attributes.file?.path) {
@@ -509,7 +513,7 @@ export function createContentService({ contentCategories, contentMovies, content
       return serializeCategory(getCategory(categoryId));
     },
 
-    getMovie(actor, movieId) {
+    async getMovie(actor, movieId) {
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
@@ -517,24 +521,27 @@ export function createContentService({ contentCategories, contentMovies, content
       const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
 
       return {
-        movie: serializeMovie(
+        movie: await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode).filter((item) => tariffService.canWatchMovie(actor, item)),
-          contentTags
+          contentTags,
+          contentMovieTags
         )
       };
     },
 
-    getMovieSeries(actor, movieId) {
+    async getMovieSeries(actor, movieId) {
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
 
       return {
         movie_id: movie.id,
-        series: listSeriesRecords(movie)
-          .filter((item) => tariffService.canWatchMovie(actor, item))
-          .map((item) => serializeMovie(item, [], contentTags))
+        series: await Promise.all(
+          listSeriesRecords(movie)
+            .filter((item) => tariffService.canWatchMovie(actor, item))
+            .map((item) => serializeMovie(item, [], contentTags, contentMovieTags))
+        )
       };
     },
 
@@ -548,15 +555,17 @@ export function createContentService({ contentCategories, contentMovies, content
       return catalog;
     },
 
-    listMovies(actor) {
+    async listMovies(actor) {
       return {
-        movies: contentMovies.list()
-          .filter((movie) => tariffService.canWatchMovie(actor, movie))
-          .map((movie) => serializeMovie(movie, [], contentTags))
+        movies: await Promise.all(
+          contentMovies.list()
+            .filter((movie) => tariffService.canWatchMovie(actor, movie))
+            .map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags))
+        )
       };
     },
 
-    deleteMovie(movieId) {
+    async deleteMovie(movieId) {
       const movie = getMovieRecord(movieId);
       const moviesToDelete = collectMovieTree(movie);
       let deletedMovie = null;
@@ -565,6 +574,7 @@ export function createContentService({ contentCategories, contentMovies, content
         const deleted = contentMovies.delete(movieToDelete.id);
 
         if (deleted) {
+          await contentMovieTags.removeMovie(movieToDelete.id);
           transcoder.removeMovieFiles(movieToDelete);
         }
 
@@ -585,34 +595,28 @@ export function createContentService({ contentCategories, contentMovies, content
 
       return {
         deleted: true,
-        movie: serializeMovie(deletedMovie, [], contentTags)
+        movie: await serializeMovie(deletedMovie, [], contentTags, contentMovieTags)
       };
     },
 
-    createTag({ name, slug, active }) {
-      const tagSlug = slug ? slugify(slug, "tag") : uniqueTagSlug(contentTags, name);
+    async createTag({ name, slug, active }) {
+      const tagSlug = slug ? slugify(slug, "tag") : await uniqueTagSlug(contentTags, name);
 
-      assertTagNameAvailable(contentTags, name);
-      assertTagSlugAvailable(contentTags, tagSlug);
+      await assertTagNameAvailable(contentTags, name);
+      await assertTagSlugAvailable(contentTags, tagSlug);
 
-      return serializeTag(contentTags.create(tagAttributes({
+      return serializeTag(await contentTags.create(tagAttributes({
         name,
         slug: tagSlug,
         active
       })));
     },
 
-    deleteTag(tagId) {
-      const tag = getTagRecord(tagId);
-      const deletedTag = contentTags.delete(tag.id);
+    async deleteTag(tagId) {
+      const tag = await getTagRecord(tagId);
+      const deletedTag = await contentTags.delete(tag.id);
 
-      for (const movie of contentMovies.list()) {
-        if ((movie.tag_ids || []).includes(tag.id)) {
-          contentMovies.update(movie.id, {
-            tag_ids: movie.tag_ids.filter((movieTagId) => movieTagId !== tag.id)
-          });
-        }
-      }
+      await contentMovieTags.removeTag(tag.id);
 
       return {
         deleted: true,
@@ -620,23 +624,23 @@ export function createContentService({ contentCategories, contentMovies, content
       };
     },
 
-    getTag(tagId) {
-      return serializeTag(getTagRecord(tagId));
+    async getTag(tagId) {
+      return serializeTag(await getTagRecord(tagId));
     },
 
-    listTags() {
+    async listTags() {
       return {
-        tags: contentTags.list().map(serializeTag)
+        tags: (await contentTags.list()).map(serializeTag)
       };
     },
 
-    replaceMovieTags(movieId, attributes) {
+    async replaceMovieTags(movieId, attributes) {
       const movie = getMovieRecord(movieId);
-      const tagIds = resolveMovieTagIds(contentTags, attributes);
-      const updatedMovie = contentMovies.update(movie.id, { tag_ids: tagIds });
+      const tagIds = await resolveMovieTagIds(contentTags, attributes);
+      await contentMovieTags.replaceForMovie(movie.id, tagIds);
 
       return {
-        movie: serializeMovie(updatedMovie, listSeriesRecords(updatedMovie), contentTags)
+        movie: await serializeMovie(movie, listSeriesRecords(movie), contentTags, contentMovieTags)
       };
     },
 
@@ -667,34 +671,40 @@ export function createContentService({ contentCategories, contentMovies, content
       return serializeCategory(updatedCategory);
     },
 
-    updateMovie(movieId, attributes) {
+    async updateMovie(movieId, attributes) {
       const movie = getMovieRecord(movieId);
       const movieUpdates = { ...attributes };
 
       if (Object.hasOwn(movieUpdates, "tag_ids") || Object.hasOwn(movieUpdates, "tags")) {
-        movieUpdates.tag_ids = resolveMovieTagIds(contentTags, movieUpdates);
+        const tagIds = await resolveMovieTagIds(contentTags, movieUpdates);
+        await contentMovieTags.replaceForMovie(movie.id, tagIds);
+        delete movieUpdates.tag_ids;
         delete movieUpdates.tags;
       }
 
+      const updatedMovie = Object.keys(movieUpdates).length > 0
+        ? contentMovies.update(movie.id, movieUpdates)
+        : movie;
+
       return {
-        movie: serializeMovie(contentMovies.update(movie.id, movieUpdates), listSeriesRecords(movie), contentTags)
+        movie: await serializeMovie(updatedMovie, listSeriesRecords(updatedMovie), contentTags, contentMovieTags)
       };
     },
 
-    updateTag(tagId, attributes) {
-      const tag = getTagRecord(tagId);
+    async updateTag(tagId, attributes) {
+      const tag = await getTagRecord(tagId);
       const tagUpdates = { ...attributes };
 
       if (tagUpdates.name) {
-        assertTagNameAvailable(contentTags, tagUpdates.name, tag.id);
+        await assertTagNameAvailable(contentTags, tagUpdates.name, tag.id);
       }
 
       if (Object.hasOwn(tagUpdates, "slug")) {
         tagUpdates.slug = slugify(tagUpdates.slug, "tag");
-        assertTagSlugAvailable(contentTags, tagUpdates.slug, tag.id);
+        await assertTagSlugAvailable(contentTags, tagUpdates.slug, tag.id);
       }
 
-      return serializeTag(contentTags.update(tag.id, tagUpdates));
+      return serializeTag(await contentTags.update(tag.id, tagUpdates));
     }
   };
 }

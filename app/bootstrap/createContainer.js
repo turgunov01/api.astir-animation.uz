@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { createControllers } from "../controllers/index.js";
+import { createLegacyDb } from "../legacy/db.js";
 import { createAuthMiddleware } from "../middleware/auth.js";
 import { createUploadMiddleware } from "../middleware/upload.js";
 import { createRepositories } from "../repositories/index.js";
@@ -14,7 +15,10 @@ import { createWatchService } from "../services/watchService.js";
 import { store as defaultStore } from "../store/jsonStore.js";
 
 export function createContainer({ store = defaultStore } = {}) {
-  const repositories = createRepositories(store);
+  const contentDb = config.contentStorage === "postgres" && config.databaseUrl
+    ? createLegacyDb({ databaseUrl: config.databaseUrl })
+    : null;
+  const repositories = createRepositories(store, { contentDb });
   const services = {};
 
   services.auth = createAuthService({
@@ -42,6 +46,7 @@ export function createContainer({ store = defaultStore } = {}) {
   });
   services.content = createContentService({
     contentCategories: repositories.contentCategories,
+    contentMovieTags: repositories.contentMovieTags,
     contentMovies: repositories.contentMovies,
     contentTags: repositories.contentTags,
     tariffService: services.tariffs,
@@ -78,6 +83,7 @@ export function createContainer({ store = defaultStore } = {}) {
     middleware,
     repositories,
     services,
-    store
+    store,
+    contentDb
   };
 }
