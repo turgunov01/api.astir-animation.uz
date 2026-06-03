@@ -200,6 +200,7 @@ const scopes = [
       "GET /v1/content/movies/{movie_id}/series",
       "POST /v1/content/movies/create",
       "PATCH /v1/content/movies/{movie_id}",
+      "PUT /v1/content/movies/{movie_id}/tags",
       "POST /v1/content/movies/{movie_id}/series",
       "DELETE /v1/content/movies/{movie_id}",
       "GET /api/v1/series",
@@ -214,7 +215,12 @@ const scopes = [
       "GET /v1/content/categories/{category_id}",
       "POST /v1/content/categories/create",
       "PATCH /v1/content/categories/{category_id}",
-      "DELETE /v1/content/categories/{category_id}"
+      "DELETE /v1/content/categories/{category_id}",
+      "GET /v1/content/tags",
+      "GET /v1/content/tags/{tag_id}",
+      "POST /v1/content/tags/create",
+      "PATCH /v1/content/tags/{tag_id}",
+      "DELETE /v1/content/tags/{tag_id}"
     ]
   },
   {

@@ -5,6 +5,7 @@ import {
   optionalLocalizedText,
   optionalString,
   optionalStringArray,
+  requiredString,
   requiredLocalizedText
 } from "../lib/validation.js";
 
@@ -29,7 +30,7 @@ function payload(request) {
     Object.assign(body, metadata);
   }
 
-  for (const field of ["title", "description", "series"]) {
+  for (const field of ["title", "description", "series", "tag_ids", "tags"]) {
     if (body[field] !== undefined) {
       body[field] = parseJsonField(body[field], field);
     }
@@ -108,6 +109,8 @@ export function createContentController({ contentService }) {
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
           is_premium: optionalBoolean(body, "is_premium", false),
+          tag_ids: optionalStringArray(body, "tag_ids", []),
+          tags: optionalStringArray(body, "tags", []),
           file: request.file || null
         });
       });
@@ -144,6 +147,8 @@ export function createContentController({ contentService }) {
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
           series: optionalStringArray(body, "series", []),
+          tag_ids: optionalStringArray(body, "tag_ids", []),
+          tags: optionalStringArray(body, "tags", []),
           is_premium: optionalBoolean(body, "is_premium", false),
           file: request.file || null
         });
@@ -172,12 +177,26 @@ export function createContentController({ contentService }) {
       });
     },
 
+    createTag(request, response) {
+      const tag = contentService.createTag({
+        name: requiredString(request.body, "name"),
+        slug: optionalString(request.body, "slug"),
+        active: optionalBoolean(request.body, "active", true)
+      });
+
+      response.status(201).json({ tag });
+    },
+
     deleteCategory(request, response) {
       response.json(contentService.deleteCategory(request.params.category_id));
     },
 
     deleteMovie(request, response) {
       response.json(contentService.deleteMovie(request.params.movie_id));
+    },
+
+    deleteTag(request, response) {
+      response.json(contentService.deleteTag(request.params.tag_id));
     },
 
     getCategory(request, response) {
@@ -199,6 +218,12 @@ export function createContentController({ contentService }) {
       response.json(contentService.getMovieSeries(request.actor, request.params.movie_id));
     },
 
+    getTag(request, response) {
+      response.json({
+        tag: contentService.getTag(request.params.tag_id)
+      });
+    },
+
     list(request, response) {
       response.json({ content: contentService.listContent() });
     },
@@ -209,6 +234,23 @@ export function createContentController({ contentService }) {
 
     listMovies(request, response) {
       response.json(contentService.listMovies(request.actor));
+    },
+
+    listTags(request, response) {
+      response.json(contentService.listTags());
+    },
+
+    replaceMovieTags(request, response) {
+      const body = payload(request);
+
+      if (!Object.hasOwn(body, "tag_ids") && !Object.hasOwn(body, "tags")) {
+        throw badRequest("tag_ids or tags is required", "VALIDATION_ERROR");
+      }
+
+      response.json(contentService.replaceMovieTags(request.params.movie_id, {
+        tag_ids: optionalStringArray(body, "tag_ids", []),
+        tags: optionalStringArray(body, "tags", [])
+      }));
     },
 
     updateCategory(request, response) {
@@ -262,6 +304,14 @@ export function createContentController({ contentService }) {
         attributes.description = optionalLocalizedText(body, "description");
       }
 
+      if (Object.hasOwn(body, "tag_ids")) {
+        attributes.tag_ids = optionalStringArray(body, "tag_ids", []);
+      }
+
+      if (Object.hasOwn(body, "tags")) {
+        attributes.tags = optionalStringArray(body, "tags", []);
+      }
+
       if (Object.keys(attributes).length === 0) {
         throw badRequest("At least one field is required", "VALIDATION_ERROR");
       }
@@ -271,6 +321,30 @@ export function createContentController({ contentService }) {
       response.json({
         data: result.movie,
         ...result
+      });
+    },
+
+    updateTag(request, response) {
+      const attributes = {};
+
+      if (Object.hasOwn(request.body, "name")) {
+        attributes.name = optionalPresentString(request.body, "name");
+      }
+
+      if (Object.hasOwn(request.body, "slug")) {
+        attributes.slug = optionalPresentString(request.body, "slug");
+      }
+
+      if (Object.hasOwn(request.body, "active")) {
+        attributes.active = optionalPresentBoolean(request.body, "active");
+      }
+
+      if (Object.keys(attributes).length === 0) {
+        throw badRequest("At least one field is required", "VALIDATION_ERROR");
+      }
+
+      response.json({
+        tag: contentService.updateTag(request.params.tag_id, attributes)
       });
     }
   };

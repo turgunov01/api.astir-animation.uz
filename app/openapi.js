@@ -28,6 +28,7 @@ export const openApiDocument = {
     { name: "Tariffs" },
     { name: "Movies" },
     { name: "Categories" },
+    { name: "Tags" },
     { name: "Watch Sessions" }
   ],
   components: {
@@ -423,6 +424,17 @@ export const openApiDocument = {
           }
         }
       },
+      ContentTag: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string", example: "Cartoons" },
+          slug: { type: "string", example: "cartoons" },
+          active: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time", nullable: true },
+          updatedAt: { type: "string", format: "date-time", nullable: true }
+        }
+      },
       ContentMovie: {
         type: "object",
         properties: {
@@ -442,6 +454,15 @@ export const openApiDocument = {
                 { $ref: "#/components/schemas/ContentMovie" }
               ]
             }
+          },
+          tag_ids: {
+            type: "array",
+            items: { type: "string" },
+            example: ["tag-id"]
+          },
+          tags: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ContentTag" }
           },
           is_premium: { type: "boolean", example: false },
           source: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
@@ -5143,7 +5164,16 @@ export const openApiDocument = {
                 type: "object",
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
-                  description: { $ref: "#/components/schemas/LocalizedText" }
+                  description: { $ref: "#/components/schemas/LocalizedText" },
+                  tag_ids: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Free-form tag names. Missing tags are created automatically."
+                  }
                 }
               }
             }
@@ -5195,6 +5225,60 @@ export const openApiDocument = {
               }
             }
           },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/content/movies/{movie_id}/tags": {
+      put: {
+        tags: ["Movies"],
+        summary: "Replace movie tags",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  tag_ids: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Free-form tag names. Missing tags are created automatically."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Movie tags replaced",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
           404: { $ref: "#/components/responses/NotFound" }
         }
       }
@@ -5256,7 +5340,16 @@ export const openApiDocument = {
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
-                  is_premium: { type: "boolean", example: false }
+                  is_premium: { type: "boolean", example: false },
+                  tag_ids: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Free-form tag names. Missing tags are created automatically."
+                  }
                 }
               }
             },
@@ -5267,7 +5360,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, and is_premium"
+                    description: "JSON with title, description, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",
@@ -5315,6 +5408,15 @@ export const openApiDocument = {
                     type: "array",
                     items: { type: "string" }
                   },
+                  tag_ids: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Free-form tag names. Missing tags are created automatically."
+                  },
                   is_premium: { type: "boolean", example: false }
                 }
               }
@@ -5326,7 +5428,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, series, and is_premium"
+                    description: "JSON with title, description, series, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",
@@ -5557,6 +5659,183 @@ export const openApiDocument = {
                   type: "object",
                   properties: {
                     category: { $ref: "#/components/schemas/ContentCategory" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          409: { $ref: "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/content/tags": {
+      get: {
+        tags: ["Tags"],
+        summary: "List content tags",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        responses: {
+          200: {
+            description: "Content tag list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tags: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentTag" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/tags/{tag_id}": {
+      get: {
+        tags: ["Tags"],
+        summary: "Get one content tag",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "tag_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content tag",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tag: { $ref: "#/components/schemas/ContentTag" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      patch: {
+        tags: ["Tags"],
+        summary: "Update one content tag",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "tag_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string", example: "Learning" },
+                  slug: { type: "string", example: "learning" },
+                  active: { type: "boolean", example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Content tag updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tag: { $ref: "#/components/schemas/ContentTag" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" },
+          409: { $ref: "#/components/responses/Conflict" }
+        }
+      },
+      delete: {
+        tags: ["Tags"],
+        summary: "Delete one content tag",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "tag_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content tag deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    tag: { $ref: "#/components/schemas/ContentTag" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/content/tags/create": {
+      post: {
+        tags: ["Tags"],
+        summary: "Create a content tag",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: { type: "string", example: "Cartoons" },
+                  slug: { type: "string", example: "cartoons" },
+                  active: { type: "boolean", example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Content tag created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    tag: { $ref: "#/components/schemas/ContentTag" }
                   }
                 }
               }

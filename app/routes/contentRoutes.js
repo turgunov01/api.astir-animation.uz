@@ -21,6 +21,11 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
     authMiddleware.requireParent,
     asyncHandler(contentController.updateMovie)
   );
+  router.put(
+    "/movies/:movie_id/tags",
+    authMiddleware.requireParent,
+    asyncHandler(contentController.replaceMovieTags)
+  );
   router.post(
     "/movies/:movie_id/series",
     authMiddleware.requireParent,
@@ -50,6 +55,23 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
     "/categories/:category_id",
     authMiddleware.requireParent,
     asyncHandler(contentController.deleteCategory)
+  );
+  router.get("/tags", authMiddleware.requireActor, asyncHandler(contentController.listTags));
+  router.get("/tags/:tag_id", authMiddleware.requireActor, asyncHandler(contentController.getTag));
+  router.post(
+    "/tags/create",
+    authMiddleware.requireParent,
+    asyncHandler(contentController.createTag)
+  );
+  router.patch(
+    "/tags/:tag_id",
+    authMiddleware.requireParent,
+    asyncHandler(contentController.updateTag)
+  );
+  router.delete(
+    "/tags/:tag_id",
+    authMiddleware.requireParent,
+    asyncHandler(contentController.deleteTag)
   );
 
   return router;

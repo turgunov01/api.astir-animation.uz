@@ -43,6 +43,7 @@ export function createContainer({ store = defaultStore } = {}) {
   services.content = createContentService({
     contentCategories: repositories.contentCategories,
     contentMovies: repositories.contentMovies,
+    contentTags: repositories.contentTags,
     tariffService: services.tariffs,
     transcoder: services.transcoder
   });

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { conflict, notFound } from "../lib/errors.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 const catalog = [
   {
@@ -77,6 +77,17 @@ function serializeCategory(category) {
   };
 }
 
+function serializeTag(tag) {
+  return {
+    id: tag.id,
+    name: tag.name || "",
+    slug: tag.slug || slugify(tag.name, "tag"),
+    active: tag.active !== false,
+    createdAt: tag.createdAt || null,
+    updatedAt: tag.updatedAt || null
+  };
+}
+
 function sourceUrl(source) {
   if (source?.url) {
     return source.url;
@@ -102,7 +113,18 @@ function serializeRenditions(renditions = []) {
   }));
 }
 
-function serializeMovie(movie, series = []) {
+function serializeMovieTags(movie, contentTags) {
+  if (!contentTags) {
+    return [];
+  }
+
+  return [...new Set(movie.tag_ids || [])]
+    .map((tagId) => contentTags.findById(tagId))
+    .filter(Boolean)
+    .map(serializeTag);
+}
+
+function serializeMovie(movie, series = [], contentTags = null) {
   const videoUrl = sourceUrl(movie.source);
   const transcodeStatus = movie.transcode?.status || "missing_source";
   const hlsUrl = movie.transcode?.hlsUrl || null;
@@ -110,12 +132,15 @@ function serializeMovie(movie, series = []) {
   const qualities = hlsUrl || renditions.length > 0
     ? ["auto", ...renditions.map((rendition) => rendition.quality)]
     : [];
+  const tagIds = [...new Set(movie.tag_ids || [])];
 
   return {
     id: movie.id,
     title: toLocalizedText(movie.title),
     description: toLocalizedText(movie.description),
-    series: series.length > 0 ? series.map((item) => serializeMovie(item)) : movie.series || [],
+    series: series.length > 0 ? series.map((item) => serializeMovie(item, [], contentTags)) : movie.series || [],
+    tag_ids: tagIds,
+    tags: serializeMovieTags(movie, contentTags),
     is_premium: Boolean(movie.is_premium),
     source: videoUrl,
     video_url: videoUrl,
@@ -189,6 +214,22 @@ function assertCategorySlugAvailable(contentCategories, slug, currentCategoryId 
   }
 }
 
+function assertTagNameAvailable(contentTags, name, currentTagId = null) {
+  const existingTag = contentTags.findByName(name);
+
+  if (existingTag && existingTag.id !== currentTagId) {
+    throw conflict("A content tag already exists with this name", "CONTENT_TAG_NAME_EXISTS");
+  }
+}
+
+function assertTagSlugAvailable(contentTags, slug, currentTagId = null) {
+  const existingTag = contentTags.findBySlug(slug);
+
+  if (existingTag && existingTag.id !== currentTagId) {
+    throw conflict("A content tag already exists with this slug", "CONTENT_TAG_SLUG_EXISTS");
+  }
+}
+
 function uniqueCategorySlug(contentCategories, value, currentCategoryId = null) {
   const baseSlug = slugify(value, "category");
   let slug = baseSlug;
@@ -206,6 +247,23 @@ function uniqueCategorySlug(contentCategories, value, currentCategoryId = null) 
   }
 }
 
+function uniqueTagSlug(contentTags, value, currentTagId = null) {
+  const baseSlug = slugify(value, "tag");
+  let slug = baseSlug;
+  let suffix = 2;
+
+  while (true) {
+    const existingTag = contentTags.findBySlug(slug);
+
+    if (!existingTag || existingTag.id === currentTagId) {
+      return slug;
+    }
+
+    slug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+}
+
 function categoryAttributes(attributes) {
   return {
     title: attributes.title,
@@ -215,6 +273,58 @@ function categoryAttributes(attributes) {
     active: attributes.active !== false,
     icon: createSourceFromFile(attributes.file)
   };
+}
+
+function tagAttributes(attributes) {
+  return {
+    name: attributes.name,
+    slug: attributes.slug,
+    active: attributes.active !== false
+  };
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.trim() !== "").map((value) => value.trim()))];
+}
+
+function findOrCreateTagByName(contentTags, name) {
+  const normalizedName = String(name || "").trim();
+
+  if (!normalizedName) {
+    throw badRequest("tags must contain only non-empty strings", "VALIDATION_ERROR");
+  }
+
+  const existingTag = contentTags.findByName(normalizedName);
+
+  if (existingTag) {
+    return existingTag;
+  }
+
+  return contentTags.create(tagAttributes({
+    name: normalizedName,
+    slug: uniqueTagSlug(contentTags, normalizedName),
+    active: true
+  }));
+}
+
+function resolveMovieTagIds(contentTags, attributes = {}) {
+  const tagIds = [];
+
+  for (const tagId of uniqueStrings(attributes.tag_ids)) {
+    const tag = contentTags.findById(tagId);
+
+    if (!tag) {
+      throw badRequest("tag_ids contains an unknown tag id", "VALIDATION_ERROR");
+    }
+
+    tagIds.push(tag.id);
+  }
+
+  for (const tagName of uniqueStrings(attributes.tags)) {
+    tagIds.push(findOrCreateTagByName(contentTags, tagName).id);
+  }
+
+  return [...new Set(tagIds)];
 }
 
 function initialTranscode(file) {
@@ -239,11 +349,12 @@ function initialTranscode(file) {
   };
 }
 
-function movieAttributes(attributes) {
+function movieAttributes(attributes, contentTags) {
   return {
     title: attributes.title,
     description: attributes.description,
     series: attributes.series || [],
+    tag_ids: resolveMovieTagIds(contentTags, attributes),
     is_premium: attributes.is_premium,
     source: createSourceFromFile(attributes.file),
     transcode: initialTranscode(attributes.file)
@@ -258,7 +369,7 @@ function assertCategoryTitleAvailable(contentCategories, title, currentCategoryI
   }
 }
 
-export function createContentService({ contentCategories, contentMovies, tariffService, transcoder }) {
+export function createContentService({ contentCategories, contentMovies, contentTags, tariffService, transcoder }) {
   function getCategory(categoryId) {
     const category = contentCategories.findById(categoryId);
 
@@ -277,6 +388,16 @@ export function createContentService({ contentCategories, contentMovies, tariffS
     }
 
     return movie;
+  }
+
+  function getTagRecord(tagId) {
+    const tag = contentTags.findById(tagId);
+
+    if (!tag) {
+      throw notFound("Content tag not found", "CONTENT_TAG_NOT_FOUND");
+    }
+
+    return tag;
   }
 
   function listSeriesRecords(movie) {
@@ -338,14 +459,14 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       let seriesMovie = null;
 
       try {
-        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
+        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }, contentTags));
         const transcodeJob = transcoder.queueMovieTranscode(seriesMovie);
         const series = [...(parentMovie.series || []), seriesMovie.id];
         const updatedParentMovie = contentMovies.update(parentMovie.id, { series });
 
         return {
-          movie: serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie)),
-          series_item: serializeMovie(seriesMovie),
+          movie: serializeMovie(updatedParentMovie, listSeriesRecords(updatedParentMovie), contentTags),
+          series_item: serializeMovie(seriesMovie, [], contentTags),
           transcode_job_id: transcodeJob?.id || null
         };
       } catch (error) {
@@ -362,11 +483,11 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       let movie = null;
 
       try {
-        movie = contentMovies.create(movieAttributes(attributes));
+        movie = contentMovies.create(movieAttributes(attributes, contentTags));
         const transcodeJob = transcoder.queueMovieTranscode(movie);
 
         return {
-          ...serializeMovie(movie),
+          ...serializeMovie(movie, [], contentTags),
           transcode_job_id: transcodeJob?.id || null
         };
       } catch (error) {
@@ -398,7 +519,8 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       return {
         movie: serializeMovie(
           movieWithTranscode,
-          listSeriesRecords(movieWithTranscode).filter((item) => tariffService.canWatchMovie(actor, item))
+          listSeriesRecords(movieWithTranscode).filter((item) => tariffService.canWatchMovie(actor, item)),
+          contentTags
         )
       };
     },
@@ -412,7 +534,7 @@ export function createContentService({ contentCategories, contentMovies, tariffS
         movie_id: movie.id,
         series: listSeriesRecords(movie)
           .filter((item) => tariffService.canWatchMovie(actor, item))
-          .map((item) => serializeMovie(item))
+          .map((item) => serializeMovie(item, [], contentTags))
       };
     },
 
@@ -430,7 +552,7 @@ export function createContentService({ contentCategories, contentMovies, tariffS
       return {
         movies: contentMovies.list()
           .filter((movie) => tariffService.canWatchMovie(actor, movie))
-          .map((movie) => serializeMovie(movie))
+          .map((movie) => serializeMovie(movie, [], contentTags))
       };
     },
 
@@ -463,7 +585,58 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
       return {
         deleted: true,
-        movie: serializeMovie(deletedMovie)
+        movie: serializeMovie(deletedMovie, [], contentTags)
+      };
+    },
+
+    createTag({ name, slug, active }) {
+      const tagSlug = slug ? slugify(slug, "tag") : uniqueTagSlug(contentTags, name);
+
+      assertTagNameAvailable(contentTags, name);
+      assertTagSlugAvailable(contentTags, tagSlug);
+
+      return serializeTag(contentTags.create(tagAttributes({
+        name,
+        slug: tagSlug,
+        active
+      })));
+    },
+
+    deleteTag(tagId) {
+      const tag = getTagRecord(tagId);
+      const deletedTag = contentTags.delete(tag.id);
+
+      for (const movie of contentMovies.list()) {
+        if ((movie.tag_ids || []).includes(tag.id)) {
+          contentMovies.update(movie.id, {
+            tag_ids: movie.tag_ids.filter((movieTagId) => movieTagId !== tag.id)
+          });
+        }
+      }
+
+      return {
+        deleted: true,
+        tag: serializeTag(deletedTag)
+      };
+    },
+
+    getTag(tagId) {
+      return serializeTag(getTagRecord(tagId));
+    },
+
+    listTags() {
+      return {
+        tags: contentTags.list().map(serializeTag)
+      };
+    },
+
+    replaceMovieTags(movieId, attributes) {
+      const movie = getMovieRecord(movieId);
+      const tagIds = resolveMovieTagIds(contentTags, attributes);
+      const updatedMovie = contentMovies.update(movie.id, { tag_ids: tagIds });
+
+      return {
+        movie: serializeMovie(updatedMovie, listSeriesRecords(updatedMovie), contentTags)
       };
     },
 
@@ -496,10 +669,32 @@ export function createContentService({ contentCategories, contentMovies, tariffS
 
     updateMovie(movieId, attributes) {
       const movie = getMovieRecord(movieId);
+      const movieUpdates = { ...attributes };
+
+      if (Object.hasOwn(movieUpdates, "tag_ids") || Object.hasOwn(movieUpdates, "tags")) {
+        movieUpdates.tag_ids = resolveMovieTagIds(contentTags, movieUpdates);
+        delete movieUpdates.tags;
+      }
 
       return {
-        movie: serializeMovie(contentMovies.update(movie.id, attributes))
+        movie: serializeMovie(contentMovies.update(movie.id, movieUpdates), listSeriesRecords(movie), contentTags)
       };
+    },
+
+    updateTag(tagId, attributes) {
+      const tag = getTagRecord(tagId);
+      const tagUpdates = { ...attributes };
+
+      if (tagUpdates.name) {
+        assertTagNameAvailable(contentTags, tagUpdates.name, tag.id);
+      }
+
+      if (Object.hasOwn(tagUpdates, "slug")) {
+        tagUpdates.slug = slugify(tagUpdates.slug, "tag");
+        assertTagSlugAvailable(contentTags, tagUpdates.slug, tag.id);
+      }
+
+      return serializeTag(contentTags.update(tag.id, tagUpdates));
     }
   };
 }

@@ -233,6 +233,20 @@ try {
   assert.equal(updatedCategory.category.active, false);
   assert.match(updatedCategory.category.slug, /^updated-smoke-category-/);
 
+  const tagResponse = await request(baseUrl, "/v1/content/tags/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      name: `Smoke Tag ${Date.now()}`,
+      slug: `smoke-tag-${Date.now()}`,
+      active: true
+    }
+  });
+
+  const tagId = tagResponse.tag.id;
+  assert.equal(typeof tagId, "string");
+  assert.equal(tagResponse.tag.active, true);
+
   const movieResponse = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",
     headers: { authorization: `Bearer ${parentToken}` },
@@ -249,6 +263,8 @@ try {
         uz: "Movie created by smoke test UZ"
       },
       series: [],
+      tag_ids: [tagId],
+      tags: [`Auto Smoke Tag ${Date.now()}`],
       is_premium: false
     }
   });
@@ -258,6 +274,11 @@ try {
   assert.match(movieId, uuidPattern);
   assert.notEqual(movieId, "client-selected-movie-id");
   assert.equal(movieResponse.movie.is_premium, false);
+  assert.equal(movieResponse.movie.tag_ids.includes(tagId), true);
+  assert.equal(
+    movieResponse.movie.tags.some((tag) => tag.name.startsWith("Auto Smoke Tag")),
+    true
+  );
 
   const premiumMovieResponse = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",
@@ -457,11 +478,24 @@ try {
         en: `Updated Smoke Movie ${Date.now()}`,
         ru: `Updated Smoke Movie RU ${Date.now()}`,
         uz: `Updated Smoke Movie UZ ${Date.now()}`
-      }
+      },
+      tags: [`Updated Auto Smoke Tag ${Date.now()}`]
     }
   });
 
   assert.equal(updatedMovie.movie.id, movieId);
+  assert.equal(updatedMovie.movie.tags.some((tag) => tag.name.startsWith("Updated Auto Smoke Tag")), true);
+
+  const replacedMovieTags = await request(baseUrl, `/v1/content/movies/${movieId}/tags`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      tag_ids: [tagId]
+    }
+  });
+
+  assert.equal(replacedMovieTags.movie.id, movieId);
+  assert.deepEqual(replacedMovieTags.movie.tag_ids, [tagId]);
 
   const seriesResponse = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
     method: "POST",

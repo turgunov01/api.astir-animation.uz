@@ -167,6 +167,18 @@ try {
   assert.equal(category.category.active, true);
   assert.equal(typeof category.category.slug, "string");
 
+  const tag = await request(baseUrl, "/v1/content/tags/create", {
+    method: "POST",
+    body: {
+      name: "Auth Toggle Tag",
+      active: true
+    }
+  });
+
+  assert.equal(typeof tag.tag.id, "string");
+  assert.equal(tag.tag.name, "Auth Toggle Tag");
+  assert.equal(tag.tag.active, true);
+
   const movie = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",
     body: {
@@ -180,11 +192,13 @@ try {
         ru: "Created without auth headers RU",
         uz: "Created without auth headers UZ"
       },
+      tag_ids: [tag.tag.id],
       is_premium: false
     }
   });
 
   assert.equal(typeof movie.movie.id, "string");
+  assert.deepEqual(movie.movie.tag_ids, [tag.tag.id]);
   assert.match(movie.movie.id, uuidPattern);
 
   const categories = await request(baseUrl, "/v1/content/categories");

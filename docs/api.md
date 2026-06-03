@@ -773,7 +773,106 @@ What happens:
 2. The backend finds the category.
 3. The backend deletes the category.
 
-## 32. List Movies
+## 32. List Content Tags
+
+Request:
+
+```text
+GET /v1/content/tags
+```
+
+This request needs a parent token or a device token.
+
+What happens:
+
+1. The backend checks the token.
+2. The backend returns all content tags.
+
+## 33. Get One Content Tag
+
+Request:
+
+```text
+GET /v1/content/tags/:tag_id
+```
+
+This request needs a parent token or a device token.
+
+What happens:
+
+1. The backend checks the token.
+2. The backend finds the tag by id.
+3. The backend returns the tag.
+
+## 34. Create A Content Tag
+
+Request:
+
+```text
+POST /v1/content/tags/create
+```
+
+This request needs a parent token.
+
+Body:
+
+```json
+{
+  "name": "Cartoons",
+  "slug": "cartoons",
+  "active": true
+}
+```
+
+What happens:
+
+1. The backend checks the parent token.
+2. The backend checks that the tag name and slug are not already used.
+3. The backend creates the tag.
+
+## 35. Update A Content Tag
+
+Request:
+
+```text
+PATCH /v1/content/tags/:tag_id
+```
+
+This request needs a parent token.
+
+Body can include:
+
+```json
+{
+  "name": "Learning",
+  "slug": "learning",
+  "active": true
+}
+```
+
+What happens:
+
+1. The backend checks the parent token.
+2. The backend finds the tag.
+3. The backend updates the fields that were sent.
+
+## 36. Delete A Content Tag
+
+Request:
+
+```text
+DELETE /v1/content/tags/:tag_id
+```
+
+This request needs a parent token.
+
+What happens:
+
+1. The backend checks the parent token.
+2. The backend finds the tag.
+3. The backend deletes the tag and removes it from linked movies.
+
+## 37. List Movies
 
 Request:
 
@@ -791,7 +890,7 @@ What happens:
 4. The `premium` tariff returns all movies.
 5. Each movie includes playback status.
 
-## 33. Get One Movie
+## 38. Get One Movie
 
 Request:
 
@@ -811,7 +910,7 @@ What happens:
 6. Manual quality options are listed in `playback.renditions` for `360`, `480`, `720`, and `1080`.
 7. If HLS is not ready, the response includes the current playback status.
 
-## 34. List Movie Series
+## 39. List Movie Series
 
 Request:
 
@@ -827,7 +926,7 @@ What happens:
 2. The backend reads the movie `series` array.
 3. The backend returns the linked series movies.
 
-## 35. Create Or Upload A Movie
+## 40. Create Or Upload A Movie
 
 Request:
 
@@ -853,13 +952,15 @@ JSON body:
     "uz": "Movie description UZ"
   },
   "series": [],
+  "tag_ids": ["tag-id"],
+  "tags": ["New free-form tag"],
   "is_premium": false
 }
 ```
 
 For video upload, send `multipart/form-data`:
 
-1. `metadata` - JSON string with the same fields.
+1. `metadata` - JSON string with the same fields, including optional `tag_ids` and `tags`.
 2. `video` - uploaded video file.
 
 Success response:
@@ -879,6 +980,15 @@ Success response:
       "uz": "Movie description UZ"
     },
     "series": [],
+    "tag_ids": ["tag-id"],
+    "tags": [
+      {
+        "id": "tag-id",
+        "name": "Cartoons",
+        "slug": "cartoons",
+        "active": true
+      }
+    ],
     "is_premium": false,
     "source": "/media/uploads/movie.mp4",
     "video_url": "/media/uploads/movie.mp4",
@@ -923,7 +1033,7 @@ contains the generated manual playlists:
 
 The response also includes `movie` with the same object for compatibility with older clients.
 
-## 36. Update A Movie
+## 41. Update A Movie
 
 Request:
 
@@ -946,11 +1056,39 @@ Body can include:
     "en": "New description",
     "ru": "New description RU",
     "uz": "New description UZ"
-  }
+  },
+  "tag_ids": ["tag-id"],
+  "tags": ["New free-form tag"]
 }
 ```
 
-## 37. Add Movie To Series
+## 42. Replace Movie Tags
+
+Request:
+
+```text
+PUT /v1/content/movies/:movie_id/tags
+```
+
+This request needs a parent token.
+
+Body:
+
+```json
+{
+  "tag_ids": ["tag-id"],
+  "tags": ["New free-form tag"]
+}
+```
+
+What happens:
+
+1. The backend checks the parent token.
+2. The backend finds the movie.
+3. The backend replaces all movie tags with `tag_ids` plus tags resolved from `tags`.
+4. Any free-form tag names in `tags` are created automatically if they do not exist.
+
+## 43. Add Movie To Series
 
 Request:
 
@@ -964,7 +1102,7 @@ The body is the same as movie creation.
 The backend creates a new movie and links it to the parent movie series.
 The backend generates the new series movie `id` as a UUID.
 
-## 38. Delete A Movie
+## 44. Delete A Movie
 
 Request:
 
@@ -979,7 +1117,7 @@ What happens:
 1. The backend deletes the movie record.
 2. The backend removes uploaded source and HLS files for that movie.
 
-## 39. Start A Watch Session
+## 45. Start A Watch Session
 
 Request:
 
@@ -1006,7 +1144,7 @@ What happens:
 5. The backend checks if the daily limit is already used.
 6. If all checks pass, the watch session starts.
 
-## 40. Stop A Watch Session
+## 46. Stop A Watch Session
 
 Request:
 

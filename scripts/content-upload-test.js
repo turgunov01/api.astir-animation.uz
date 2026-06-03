@@ -252,9 +252,54 @@ try {
   const port = await listen(server);
   const baseUrl = `http://127.0.0.1:${port}`;
 
+  const createTagResponse = await requestJson(baseUrl, "/v1/content/tags/create", {
+    method: "POST",
+    body: {
+      name: "Upload Test Tag",
+      slug: "upload-test-tag",
+      active: true
+    }
+  });
+
+  assert.equal(createTagResponse.status, 201);
+  assert.equal(typeof createTagResponse.body.tag.id, "string");
+  assert.equal(createTagResponse.body.tag.name, "Upload Test Tag");
+  assert.equal(createTagResponse.body.tag.slug, "upload-test-tag");
+
+  const listedTags = await requestJson(baseUrl, "/v1/content/tags");
+  assert.equal(listedTags.status, 200);
+  assert.equal(
+    listedTags.body.tags.some((tag) => tag.id === createTagResponse.body.tag.id),
+    true
+  );
+
+  const singleTag = await requestJson(baseUrl, `/v1/content/tags/${createTagResponse.body.tag.id}`);
+  assert.equal(singleTag.status, 200);
+  assert.equal(singleTag.body.tag.id, createTagResponse.body.tag.id);
+
+  const updatedTag = await requestJson(baseUrl, `/v1/content/tags/${createTagResponse.body.tag.id}`, {
+    method: "PATCH",
+    body: {
+      name: "Updated Upload Test Tag",
+      slug: "updated-upload-test-tag",
+      active: false
+    }
+  });
+
+  assert.equal(updatedTag.status, 200);
+  assert.equal(updatedTag.body.tag.name, "Updated Upload Test Tag");
+  assert.equal(updatedTag.body.tag.slug, "updated-upload-test-tag");
+  assert.equal(updatedTag.body.tag.active, false);
+
+  const movieWithTagsMetadata = {
+    ...movieMetadata(),
+    tag_ids: [updatedTag.body.tag.id],
+    tags: ["Auto Upload Test Tag"]
+  };
+
   const createResponse = await requestRaw(baseUrl, "/v1/content/movies/create", {
     method: "POST",
-    body: multipartMovieBody(movieMetadata(), { fileName: "upload-test.mp4" })
+    body: multipartMovieBody(movieWithTagsMetadata, { fileName: "upload-test.mp4" })
   });
 
   assert.equal(createResponse.status, 201);
@@ -265,6 +310,11 @@ try {
   assert.equal(createResponse.body.data.transcode_status, "queued");
   assert.equal(typeof createResponse.body.data.transcode_job_id, "string");
   assert.match(createResponse.body.data.video_url, /^\/media\/uploads\//);
+  assert.equal(createResponse.body.data.tag_ids.includes(updatedTag.body.tag.id), true);
+  assert.equal(
+    createResponse.body.data.tags.some((tag) => tag.name === "Auto Upload Test Tag"),
+    true
+  );
   assert.equal(createResponse.body.data.playback.hls_url, null);
   assert.deepEqual(createResponse.body.data.playback.qualities, []);
   assert.deepEqual(createResponse.body.data.playback.renditions, []);
@@ -273,6 +323,20 @@ try {
   const movieId = createResponse.body.data.id;
   const videoUrl = createResponse.body.data.video_url;
   const storagePath = createResponse.body.data.storage_path;
+
+  const replaceTagsResponse = await requestJson(baseUrl, `/v1/content/movies/${movieId}/tags`, {
+    method: "PUT",
+    body: {
+      tags: ["Replacement Upload Test Tag"]
+    }
+  });
+
+  assert.equal(replaceTagsResponse.status, 200);
+  assert.equal(replaceTagsResponse.body.movie.id, movieId);
+  assert.equal(replaceTagsResponse.body.movie.tag_ids.length, 1);
+  assert.equal(replaceTagsResponse.body.movie.tags[0].name, "Replacement Upload Test Tag");
+
+  const replacementTagId = replaceTagsResponse.body.movie.tag_ids[0];
 
   const listedMovies = await requestJson(baseUrl, "/v1/content/movies");
   assert.equal(listedMovies.status, 200);
@@ -285,6 +349,19 @@ try {
   assert.equal(singleMovie.status, 200);
   assert.equal(singleMovie.body.movie.id, movieId);
   assert.equal(singleMovie.body.movie.video_url, videoUrl);
+  assert.equal(singleMovie.body.movie.tags[0].name, "Replacement Upload Test Tag");
+
+  const deleteTagResponse = await requestJson(baseUrl, `/v1/content/tags/${replacementTagId}`, {
+    method: "DELETE"
+  });
+
+  assert.equal(deleteTagResponse.status, 200);
+  assert.equal(deleteTagResponse.body.deleted, true);
+
+  const movieAfterTagDelete = await requestJson(baseUrl, `/v1/content/movies/${movieId}`);
+  assert.equal(movieAfterTagDelete.status, 200);
+  assert.deepEqual(movieAfterTagDelete.body.movie.tag_ids, []);
+  assert.deepEqual(movieAfterTagDelete.body.movie.tags, []);
 
   const hlsDir = path.join(mediaRoot, "hls", movieId);
   fs.mkdirSync(hlsDir, { recursive: true });

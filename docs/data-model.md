@@ -287,7 +287,38 @@ Example:
 }
 ```
 
-## 11. Content Movie
+## 11. Content Tag
+
+A content tag is used to label movies, cartoons, and episodes.
+
+Stored fields:
+
+1. `id`
+2. `name`
+3. `slug`
+4. `active`
+5. `createdAt`
+6. `updatedAt`
+
+Rules:
+
+1. Tag names should be unique.
+2. Tag slugs should be unique.
+3. A parent can create, update, and delete tags.
+4. Parent and paired device clients can read tags.
+5. `active` defaults to `true`.
+
+Example:
+
+```json
+{
+  "name": "Cartoons",
+  "slug": "cartoons",
+  "active": true
+}
+```
+
+## 12. Content Movie
 
 A content movie is a movie, cartoon, or episode that can be watched later from the mobile or TV app.
 
@@ -297,9 +328,11 @@ Stored fields:
 2. `title`
 3. `description`
 4. `series`
-5. `is_premium`
-6. `source`
-7. `transcode`
+5. `tag_ids`
+6. `tags`
+7. `is_premium`
+8. `source`
+9. `transcode`
 
 Rules:
 
@@ -307,9 +340,11 @@ Rules:
 2. `title` must include `en`, `ru`, and `uz`.
 3. `description` must include `en`, `ru`, and `uz`.
 4. `series` stores ids of linked movies or episodes.
-5. `is_premium` marks content that needs the `premium` tariff.
-6. `source` stores uploaded file details.
-7. `transcode` stores HLS status, the auto master playlist URL, and rendition playlist URLs.
+5. `tag_ids` stores ids of linked content tags.
+6. `tags` returns full tag objects for clients.
+7. `is_premium` marks content that needs the `premium` tariff.
+8. `source` stores uploaded file details.
+9. `transcode` stores HLS status, the auto master playlist URL, and rendition playlist URLs.
 
 Example:
 
@@ -327,6 +362,15 @@ Example:
     "uz": "Movie description UZ"
   },
   "series": [],
+  "tag_ids": ["tag-id"],
+  "tags": [
+    {
+      "id": "tag-id",
+      "name": "Cartoons",
+      "slug": "cartoons",
+      "active": true
+    }
+  ],
   "is_premium": false
 }
 ```
