@@ -88,5 +88,9 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
     asyncHandler(contentController.deleteTag)
   );
 
+  // New version of the movie creation endpoint that accepts JSON body instead of multipart form data
+
+  
+
   return router;
 }

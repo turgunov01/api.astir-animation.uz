@@ -116,6 +116,21 @@ function serializeContent(row) {
   };
 }
 
+function serializeSeries(row) {
+  return {
+    id: row.id,
+    title: row.title || {},
+    description: row.description || {},
+    slug: row.slug,
+    kind: row.kind || "seasons",
+    poster_path: row.poster_path || "",
+    poster_url: row.poster_url || "",
+    active: row.active !== false,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
 function supportMessageBody(body = {}) {
   for (const field of ["body", "message", "text", "content"]) {
     const value = body[field];
@@ -298,6 +313,69 @@ async function getById(db, table, id) {
   return result.rows[0];
 }
 
+function normalizeLikeTargetType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (["content", "movie", "movies", "episode", "episodes"].includes(normalized)) {
+    return "content";
+  }
+
+  if (normalized === "series") {
+    return "series";
+  }
+
+  return "";
+}
+
+function requestedLikeTargetType(request) {
+  const value = request.query.target_type
+    || request.query.type
+    || request.body?.target_type
+    || request.body?.type;
+
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+
+  const targetType = normalizeLikeTargetType(value);
+  if (!targetType) {
+    throw legacyError(400, "invalid_like_target_type", "type must be content or series");
+  }
+
+  return targetType;
+}
+
+async function resolveLikeTarget(db, id, targetType = "") {
+  if (!isUuid(id)) {
+    throw legacyError(404, "like_target_not_found", "content or series not found");
+  }
+
+  if (!targetType) {
+    const content = await db.one("SELECT id FROM content WHERE id = $1", [id]);
+    if (content) {
+      return { type: "content", id: content.id, contentId: content.id };
+    }
+
+    const series = await db.one("SELECT id FROM series WHERE id = $1", [id]);
+    if (series) {
+      return { type: "series", id: series.id, contentId: null };
+    }
+
+    throw legacyError(404, "like_target_not_found", "content or series not found");
+  }
+
+  const row = await db.one(`SELECT id FROM ${targetType} WHERE id = $1`, [id]);
+  if (!row) {
+    throw legacyError(404, "like_target_not_found", `${targetType} not found`);
+  }
+
+  return {
+    type: targetType,
+    id: row.id,
+    contentId: targetType === "content" ? row.id : null
+  };
+}
+
 async function ownerUserIdForActor(db, actor) {
   if (actor.kind === "user") {
     return actor.user.id;
@@ -359,10 +437,16 @@ async function contentListItem(db, row, actor, lang) {
     "SELECT COALESCE(AVG(score), 0)::float AS avg_rating, COUNT(*)::integer AS rating_count FROM ratings WHERE content_id = $1",
     [row.id]
   );
-  const likes = await db.one("SELECT COUNT(*)::integer AS count FROM likes WHERE content_id = $1", [row.id]);
+  const likes = await db.one(
+    "SELECT COUNT(*)::integer AS count FROM likes WHERE target_type = 'content' AND target_id = $1",
+    [row.id]
+  );
   const viewerUserId = actor ? await ownerUserIdForActor(db, actor) : null;
   const liked = viewerUserId
-    ? await db.one("SELECT 1 FROM likes WHERE user_id = $1 AND content_id = $2", [viewerUserId, row.id])
+    ? await db.one(
+      "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = 'content' AND target_id = $2",
+      [viewerUserId, row.id]
+    )
     : null;
 
   return localizeRecord({
@@ -430,7 +514,7 @@ async function listLegacyContent(request, response) {
   if (request.query.liked === "true") {
     const userId = await ownerUserIdForActor(request.legacyDb, request.legacyActor);
     values.push(userId);
-    filters.push(`EXISTS (SELECT 1 FROM likes l WHERE l.content_id = c.id AND l.user_id = $${values.length})`);
+    filters.push(`EXISTS (SELECT 1 FROM likes l WHERE l.target_type = 'content' AND l.target_id = c.id AND l.user_id = $${values.length})`);
   }
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
@@ -1826,31 +1910,105 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.get("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
-    const row = await request.legacyDb.one("SELECT 1 FROM likes WHERE user_id = $1 AND content_id = $2", [request.legacyUser.id, request.params.id]);
-    response.json({ liked: Boolean(row) });
+    const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
+    const row = await request.legacyDb.one(
+      "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [request.legacyUser.id, target.type, target.id]
+    );
+
+    response.json({
+      liked: Boolean(row),
+      target_type: target.type,
+      target_id: target.id
+    });
   }));
 
   router.post("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
-    await request.legacyDb.query("INSERT INTO likes (user_id, content_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [request.legacyUser.id, request.params.id]);
-    response.status(201).json({ liked: true });
+    const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
+    await request.legacyDb.query(
+      `
+        INSERT INTO likes (user_id, content_id, target_type, target_id)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT DO NOTHING
+      `,
+      [request.legacyUser.id, target.contentId, target.type, target.id]
+    );
+
+    response.status(201).json({
+      liked: true,
+      target_type: target.type,
+      target_id: target.id
+    });
   }));
 
   router.delete("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
-    await request.legacyDb.query("DELETE FROM likes WHERE user_id = $1 AND content_id = $2", [request.legacyUser.id, request.params.id]);
-    response.json({ liked: false });
+    const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
+    await request.legacyDb.query(
+      "DELETE FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [request.legacyUser.id, target.type, target.id]
+    );
+
+    response.json({
+      liked: false,
+      target_type: target.type,
+      target_id: target.id
+    });
   }));
 
   router.get("/content/:id/likes/count", asyncHandler(async (request, response) => {
-    const row = await request.legacyDb.one("SELECT COUNT(*)::integer AS count FROM likes WHERE content_id = $1", [request.params.id]);
-    response.json({ content_id: request.params.id, count: row.count });
+    const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
+    const row = await request.legacyDb.one(
+      "SELECT COUNT(*)::integer AS count FROM likes WHERE target_type = $1 AND target_id = $2",
+      [target.type, target.id]
+    );
+
+    response.json({
+      content_id: target.id,
+      target_type: target.type,
+      target_id: target.id,
+      count: row.count
+    });
   }));
 
   router.get("/me/likes", requireUser, asyncHandler(async (request, response) => {
     const rows = await request.legacyDb.many(
-      "SELECT c.* FROM content c JOIN likes l ON l.content_id = c.id WHERE l.user_id = $1 ORDER BY l.created_at DESC",
+      `
+        SELECT
+          l.target_type,
+          l.target_id,
+          l.created_at AS liked_at,
+          to_jsonb(c) AS content_row,
+          to_jsonb(s) AS series_row
+        FROM likes l
+        LEFT JOIN content c ON l.target_type = 'content' AND l.target_id = c.id
+        LEFT JOIN series s ON l.target_type = 'series' AND l.target_id = s.id
+        WHERE l.user_id = $1
+          AND (c.id IS NOT NULL OR s.id IS NOT NULL)
+        ORDER BY l.created_at DESC
+      `,
       [request.legacyUser.id]
     );
-    response.json({ data: rows.map(serializeContent) });
+    response.json({
+      data: rows.map((row) => {
+        if (row.target_type === "series") {
+          return {
+            ...serializeSeries(row.series_row),
+            item_type: "series",
+            target_type: row.target_type,
+            target_id: row.target_id,
+            liked_at: row.liked_at
+          };
+        }
+
+        return {
+          ...serializeContent(row.content_row),
+          item_type: "content",
+          target_type: row.target_type,
+          target_id: row.target_id,
+          liked_at: row.liked_at
+        };
+      })
+    });
   }));
 
   router.get("/content/:id/block", requireUser, asyncHandler(async (request, response) => {
