@@ -94,9 +94,35 @@ try {
   assert.equal(googlePurchase.subscription.provider, "google");
   assert.equal(googlePurchase.subscription.status, "active");
 
+  const googleCamelCasePurchase = await request(baseUrl, "/v1/billing/google/verify", {
+    method: "POST",
+    body: {
+      tariffId: "premium",
+      purchaseToken: `google-camel-token-${Date.now()}`,
+      productId: "astir_premium_monthly",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  });
+
+  assert.equal(googleCamelCasePurchase.subscription.provider, "google");
+  assert.equal(googleCamelCasePurchase.subscription.status, "active");
+
+  const appleCamelCasePurchase = await request(baseUrl, "/v1/billing/apple/verify", {
+    method: "POST",
+    body: {
+      tariffId: "premium",
+      receiptData: `apple-camel-receipt-${Date.now()}`,
+      providerSubscriptionId: `apple-camel-sub-${Date.now()}`,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  });
+
+  assert.equal(appleCamelCasePurchase.subscription.provider, "apple");
+  assert.equal(appleCamelCasePurchase.subscription.status, "active");
+
   const currentSubscription = await request(baseUrl, "/v1/billing/subscription/current");
 
-  assert.equal(currentSubscription.subscription.id, googlePurchase.subscription.id);
+  assert.equal(currentSubscription.subscription.id, appleCamelCasePurchase.subscription.id);
 
   const customTariffId = `auth-toggle-tariff-${Date.now()}`;
   const customTariff = await request(baseUrl, "/v1/tariffs/create", {

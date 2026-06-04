@@ -1075,10 +1075,18 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["id_token"],
+                oneOf: [
+                  { required: ["id_token"] },
+                  { required: ["idToken"] }
+                ],
                 properties: {
                   id_token: {
                     type: "string",
+                    example: "eyJhbGci..."
+                  },
+                  idToken: {
+                    type: "string",
+                    description: "CamelCase alias for id_token.",
                     example: "eyJhbGci..."
                   }
                 }
@@ -1227,23 +1235,50 @@ export const openApiDocument = {
                 type: "object",
                 oneOf: [
                   { required: ["identity_token"] },
-                  { required: ["id_token"] }
+                  { required: ["identityToken"] },
+                  { required: ["id_token"] },
+                  { required: ["idToken"] }
                 ],
                 properties: {
                   identity_token: {
                     type: "string",
                     example: "eyJhbGci..."
                   },
+                  identityToken: {
+                    type: "string",
+                    description: "CamelCase alias for identity_token.",
+                    example: "eyJhbGci..."
+                  },
                   id_token: {
                     type: "string",
                     example: "eyJhbGci..."
+                  },
+                  idToken: {
+                    type: "string",
+                    description: "CamelCase alias for id_token.",
+                    example: "eyJhbGci..."
+                  },
+                  email: {
+                    type: "string",
+                    description: "Optional fallback email when Apple does not include it in the token payload.",
+                    example: "parent@example.com"
                   },
                   given_name: {
                     type: "string",
                     example: "Alisher"
                   },
+                  givenName: {
+                    type: "string",
+                    description: "CamelCase alias for given_name.",
+                    example: "Alisher"
+                  },
                   family_name: {
                     type: "string",
+                    example: "Karimov"
+                  },
+                  familyName: {
+                    type: "string",
+                    description: "CamelCase alias for family_name.",
                     example: "Karimov"
                   }
                 }
@@ -4712,14 +4747,21 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
+                description: "snake_case and camelCase field names are both accepted.",
                 required: ["tariff_id", "receipt", "provider_subscription_id"],
                 properties: {
                   tariff_id: { type: "string", example: "premium" },
+                  tariffId: { type: "string", description: "Alias for tariff_id.", example: "premium" },
                   receipt: { type: "string", example: "apple-receipt-data" },
+                  receiptData: { type: "string", description: "Alias for receipt.", example: "apple-receipt-data" },
                   provider_subscription_id: { type: "string", example: "1000001234567890" },
+                  providerSubscriptionId: { type: "string", description: "Alias for provider_subscription_id.", example: "1000001234567890" },
                   original_transaction_id: { type: "string", example: "1000001234567890" },
+                  originalTransactionId: { type: "string", description: "Alias for original_transaction_id.", example: "1000001234567890" },
                   transaction_id: { type: "string", example: "1000001234567891" },
-                  expires_at: { type: "string", format: "date-time" }
+                  transactionId: { type: "string", description: "Alias for transaction_id.", example: "1000001234567891" },
+                  expires_at: { type: "string", format: "date-time" },
+                  expiresAt: { type: "string", format: "date-time", description: "Alias for expires_at." }
                 }
               }
             }
@@ -4751,13 +4793,19 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
+                description: "snake_case and camelCase field names are both accepted.",
                 required: ["tariff_id", "purchase_token"],
                 properties: {
                   tariff_id: { type: "string", example: "premium" },
+                  tariffId: { type: "string", description: "Alias for tariff_id.", example: "premium" },
                   purchase_token: { type: "string", example: "google-purchase-token" },
+                  purchaseToken: { type: "string", description: "Alias for purchase_token.", example: "google-purchase-token" },
                   product_id: { type: "string", example: "astir_premium_monthly" },
+                  productId: { type: "string", description: "Alias for product_id.", example: "astir_premium_monthly" },
                   provider_subscription_id: { type: "string", example: "google-subscription-id" },
-                  expires_at: { type: "string", format: "date-time" }
+                  providerSubscriptionId: { type: "string", description: "Alias for provider_subscription_id.", example: "google-subscription-id" },
+                  expires_at: { type: "string", format: "date-time" },
+                  expiresAt: { type: "string", format: "date-time", description: "Alias for expires_at." }
                 }
               }
             }

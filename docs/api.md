@@ -556,6 +556,9 @@ Body:
 }
 ```
 
+The backend also accepts camelCase aliases: `tariffId`, `receiptData`, `providerSubscriptionId`,
+`originalTransactionId`, `transactionId`, and `expiresAt`.
+
 What happens:
 
 1. The mobile app buys the tariff through Apple.
@@ -586,6 +589,9 @@ Body:
   "expires_at": "2026-06-28T10:00:00.000Z"
 }
 ```
+
+The backend also accepts camelCase aliases: `tariffId`, `purchaseToken`, `productId`,
+`providerSubscriptionId`, and `expiresAt`.
 
 What happens:
 

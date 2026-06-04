@@ -715,14 +715,20 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.post("/auth/google", asyncHandler(async (request, response) => {
-    requireFields(request.body, ["id_token"]);
-    const profile = await verifyGoogleToken(request.body.id_token);
+    const token = request.body.id_token || request.body.idToken;
+    if (!token) {
+      throw legacyError(400, "id_token is required");
+    }
+    const profile = await verifyGoogleToken(token, request.body);
     const user = await findOrCreateOAuthUser(request.legacyDb, profile);
     response.json(await issueTokenPair(request.legacyDb, user));
   }));
 
   router.post("/auth/apple", asyncHandler(async (request, response) => {
-    const token = request.body.identity_token || request.body.id_token;
+    const token = request.body.identity_token
+      || request.body.identityToken
+      || request.body.id_token
+      || request.body.idToken;
     if (!token) {
       throw legacyError(400, "identity_token is required");
     }

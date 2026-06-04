@@ -24,6 +24,18 @@ function envList(...names) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function firstString(...values) {
+  return values.find((value) => typeof value === "string" && value.trim() !== "")?.trim() || "";
+}
+
+function nestedValue(source, path) {
+  return path.split(".").reduce((value, key) => value?.[key], source);
+}
+
+function firstBodyString(body, ...fields) {
+  return firstString(...fields.map((field) => nestedValue(body, field)));
+}
+
 function isoFromNow(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
@@ -376,7 +388,7 @@ export async function refreshTokenPair(db, refreshToken) {
   return issueTokenPair(db, user);
 }
 
-export async function verifyGoogleToken(idToken) {
+export async function verifyGoogleToken(idToken, body = {}) {
   const audiences = envList("GOOGLE_CLIENT_IDS", "GOOGLE_CLIENT_ID");
 
   if (!audiences.length) {
@@ -398,9 +410,9 @@ export async function verifyGoogleToken(idToken) {
   return {
     provider: "google",
     subject: payload.sub,
-    email: payload.email,
-    name: payload.given_name || payload.name || "",
-    last_name: payload.family_name || ""
+    email: payload.email || firstBodyString(body, "email"),
+    name: firstString(payload.given_name, payload.name, firstBodyString(body, "given_name", "givenName", "name")),
+    last_name: firstString(payload.family_name, firstBodyString(body, "family_name", "familyName", "last_name", "lastName"))
   };
 }
 
@@ -426,9 +438,9 @@ export async function verifyAppleToken(identityToken, body = {}) {
   return {
     provider: "apple",
     subject: payload.sub,
-    email: payload.email,
-    name: body.given_name || body.name || "",
-    last_name: body.family_name || body.last_name || ""
+    email: payload.email || firstBodyString(body, "email"),
+    name: firstBodyString(body, "given_name", "givenName", "name", "fullName.givenName"),
+    last_name: firstBodyString(body, "family_name", "familyName", "last_name", "lastName", "fullName.familyName")
   };
 }
 

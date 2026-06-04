@@ -1,18 +1,41 @@
 import { optionalString, requiredString } from "../lib/validation.js";
 
+function firstString(body, ...fields) {
+  for (const field of fields) {
+    const value = optionalString(body, field);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function purchasePayload(body, requiredPurchaseField) {
-  const payload = {
-    tariff_id: requiredString(body, "tariff_id"),
-    expires_at: optionalString(body, "expires_at"),
-    provider_subscription_id: optionalString(body, "provider_subscription_id"),
-    original_transaction_id: optionalString(body, "original_transaction_id"),
-    transaction_id: optionalString(body, "transaction_id"),
-    product_id: optionalString(body, "product_id"),
-    purchase_token: optionalString(body, "purchase_token"),
-    receipt: optionalString(body, "receipt")
+  const normalized = {
+    tariff_id: firstString(body, "tariff_id", "tariffId"),
+    expires_at: firstString(body, "expires_at", "expiresAt"),
+    provider_subscription_id: firstString(body, "provider_subscription_id", "providerSubscriptionId", "subscription_id", "subscriptionId"),
+    original_transaction_id: firstString(body, "original_transaction_id", "originalTransactionId"),
+    transaction_id: firstString(body, "transaction_id", "transactionId"),
+    product_id: firstString(body, "product_id", "productId"),
+    purchase_token: firstString(body, "purchase_token", "purchaseToken"),
+    receipt: firstString(body, "receipt", "receipt_data", "receiptData")
   };
 
-  payload[requiredPurchaseField] = requiredString(body, requiredPurchaseField);
+  const payload = {
+    tariff_id: requiredString(normalized, "tariff_id"),
+    expires_at: normalized.expires_at,
+    provider_subscription_id: normalized.provider_subscription_id,
+    original_transaction_id: normalized.original_transaction_id,
+    transaction_id: normalized.transaction_id,
+    product_id: normalized.product_id,
+    purchase_token: normalized.purchase_token,
+    receipt: normalized.receipt
+  };
+
+  payload[requiredPurchaseField] = requiredString(normalized, requiredPurchaseField);
 
   return payload;
 }
