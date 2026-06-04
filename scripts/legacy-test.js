@@ -106,6 +106,7 @@ try {
     openApiDocument.paths["/api/v1/auth/register"].post.requestBody.content["application/json"].schema.required,
     ["email", "name", "password", "pin"]
   );
+  assert.equal(Boolean(openApiDocument.paths["/api/v1/admin/logs"].get), true);
 
   const uiResponse = await fetch(`${baseUrl}/legacy-api-docs/`);
   assert.equal(uiResponse.status, 200);

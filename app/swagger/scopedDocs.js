@@ -83,6 +83,7 @@ const scopes = [
       "GET /api/v1/users/{id}/children",
       "DELETE /api/v1/users/{user_id}/children/{child_id}",
       "PATCH /api/v1/users/{user_id}/children/{child_id}/active",
+      "GET /api/v1/admin/logs",
       "GET /api/v1/admin/cards"
     ]
   },

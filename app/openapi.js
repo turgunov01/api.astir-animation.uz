@@ -2239,6 +2239,87 @@ export const openApiDocument = {
         }
       }
     },
+    "/api/v1/admin/logs": {
+      get: {
+        tags: ["Admin"],
+        summary: "Read project log tails",
+        description: "Returns tail lines from project log files and default PM2 app logs. Only known log locations are readable.",
+        security: [{ legacyBearer: [] }],
+        parameters: [
+          {
+            name: "source",
+            in: "query",
+            required: false,
+            schema: { type: "string", example: "all" },
+            description: "Comma-separated source ids. Use all, pm2:out, pm2:error, project:<file>, or root:<file>."
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 1000, default: 200 },
+            description: "Maximum number of lines per selected source."
+          }
+        ],
+        responses: {
+          200: {
+            description: "Log lines",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          source: { type: "string", example: "pm2:error" },
+                          source_label: { type: "string", example: "astir stderr" },
+                          level: { type: "string", example: "error" },
+                          text: { type: "string" },
+                          parsed: {
+                            type: "object",
+                            nullable: true,
+                            additionalProperties: true
+                          }
+                        }
+                      }
+                    },
+                    limit: { type: "integer", example: 200 },
+                    selected_sources: {
+                      type: "array",
+                      items: { type: "string" }
+                    },
+                    sources: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string", example: "pm2:out" },
+                          label: { type: "string", example: "astir stdout" },
+                          exists: { type: "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Unknown log source",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/api/v1/admin/cards": {
       get: {
         tags: ["Admin"],
@@ -2906,11 +2987,43 @@ export const openApiDocument = {
         requestBody: {
           required: false,
           content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  body: { type: "string" },
+                  message: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  text: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  content: {
+                    type: "string",
+                    description: "Alias for body."
+                  }
+                }
+              }
+            },
             "multipart/form-data": {
               schema: {
                 type: "object",
                 properties: {
                   body: { type: "string" },
+                  message: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  text: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  content: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
                   file: { type: "string", format: "binary" }
                 }
               }
@@ -3076,11 +3189,43 @@ export const openApiDocument = {
         requestBody: {
           required: false,
           content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  body: { type: "string" },
+                  message: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  text: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  content: {
+                    type: "string",
+                    description: "Alias for body."
+                  }
+                }
+              }
+            },
             "multipart/form-data": {
               schema: {
                 type: "object",
                 properties: {
                   body: { type: "string" },
+                  message: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  text: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
+                  content: {
+                    type: "string",
+                    description: "Alias for body."
+                  },
                   file: { type: "string", format: "binary" }
                 }
               }

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
 import { hashSecret, verifySecret } from "../lib/security.js";
@@ -49,6 +50,7 @@ const clickEnv = [
   "CLICK_SECRET_KEY"
 ];
 const legacyTranscodeJobs = new Map();
+const maxLogTailBytes = 1024 * 1024;
 
 function requireClickEnv() {
   const missing = clickEnv.filter((name) => !process.env[name]);
@@ -111,6 +113,132 @@ function serializeContent(row) {
     created_by_id: row.created_by_id,
     created_at: row.created_at,
     updated_at: row.updated_at
+  };
+}
+
+function supportMessageBody(body = {}) {
+  for (const field of ["body", "message", "text", "content"]) {
+    const value = body[field];
+
+    if (typeof value === "string" && value.trim() !== "") {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+function assertSupportMessagePayload(body, stored) {
+  if (!body && !stored) {
+    throw legacyError(400, "message is required");
+  }
+}
+
+function boundedInteger(value, fallback, max) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
+
+function parseRequestedLogSources(value) {
+  const requested = Array.isArray(value) ? value.join(",") : String(value || "all");
+
+  return requested
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function safeLogFileSource(id, label, filePath) {
+  return {
+    id,
+    label,
+    path: filePath,
+    exists: fs.existsSync(filePath)
+  };
+}
+
+function availableLogSources() {
+  const sources = [];
+  const projectRoot = process.cwd();
+  const logDir = path.resolve(projectRoot, process.env.LOG_DIR || "logs");
+
+  if (fs.existsSync(logDir)) {
+    for (const entry of fs.readdirSync(logDir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".log")) {
+        const id = `project:${entry.name}`;
+        sources.push(safeLogFileSource(id, entry.name, path.join(logDir, entry.name)));
+      }
+    }
+  }
+
+  for (const entry of fs.readdirSync(projectRoot, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(".log")) {
+      const id = `root:${entry.name}`;
+      sources.push(safeLogFileSource(id, entry.name, path.join(projectRoot, entry.name)));
+    }
+  }
+
+  const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), ".pm2");
+  const pm2LogsDir = path.join(pm2Home, "logs");
+  const pm2AppName = process.env.PM2_APP_NAME || "astir";
+
+  sources.push(
+    safeLogFileSource("pm2:out", `${pm2AppName} stdout`, path.join(pm2LogsDir, `${pm2AppName}-out.log`)),
+    safeLogFileSource("pm2:error", `${pm2AppName} stderr`, path.join(pm2LogsDir, `${pm2AppName}-error.log`))
+  );
+
+  return sources;
+}
+
+function readTailLines(filePath, limit) {
+  const stats = fs.statSync(filePath);
+  const start = Math.max(0, stats.size - maxLogTailBytes);
+  const length = stats.size - start;
+  const file = fs.openSync(filePath, "r");
+
+  try {
+    const buffer = Buffer.alloc(length);
+    fs.readSync(file, buffer, 0, length, start);
+    const text = buffer.toString("utf8");
+    const lines = text.split(/\r?\n/);
+
+    if (start > 0) {
+      lines.shift();
+    }
+
+    return lines.filter((line) => line.trim() !== "").slice(-limit);
+  } finally {
+    fs.closeSync(file);
+  }
+}
+
+function normalizeLogLine(source, line) {
+  let parsed = null;
+
+  if (line.trim().startsWith("{")) {
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  const text = parsed ? JSON.stringify(parsed) : line;
+  const lowered = text.toLowerCase();
+  const level = parsed?.level
+    || (source.id.includes("error") || lowered.includes("error") ? "error" : lowered.includes("warn") ? "warn" : "info");
+
+  return {
+    source: source.id,
+    source_label: source.label,
+    level,
+    text: line,
+    parsed
   };
 }
 
@@ -1989,7 +2117,8 @@ export function createLegacyRoutes({ config, media }) {
     if (stored) {
       await saveMediaAsset(request.legacyDb, stored, "support_chats", chat.id);
     }
-    const body = request.body.body || "";
+    const body = supportMessageBody(request.body);
+    assertSupportMessagePayload(body, stored);
     const message = await insertRow(request.legacyDb, "support_messages", {
       chat_id: chat.id,
       sender_id: request.legacyUser.id,
@@ -2050,7 +2179,8 @@ export function createLegacyRoutes({ config, media }) {
     if (stored) {
       await saveMediaAsset(request.legacyDb, stored, "support_chats", chat.id);
     }
-    const body = request.body.body || "";
+    const body = supportMessageBody(request.body);
+    assertSupportMessagePayload(body, stored);
     const message = await insertRow(request.legacyDb, "support_messages", {
       chat_id: chat.id,
       sender_id: request.legacyUser.id,
@@ -2073,6 +2203,42 @@ export function createLegacyRoutes({ config, media }) {
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
     await updateById(request.legacyDb, "support_chats", request.params.id, { admin_unread_count: 0 });
     response.json(messageResponse("read"));
+  }));
+
+  router.get("/admin/logs", requireAdmin, asyncHandler(async (request, response) => {
+    const limit = boundedInteger(request.query.limit, 200, 1000);
+    const sources = availableLogSources();
+    const requestedSources = parseRequestedLogSources(request.query.source);
+    const selectedSources = requestedSources.includes("all")
+      ? sources
+      : sources.filter((source) => requestedSources.includes(source.id));
+
+    if (selectedSources.length === 0) {
+      throw legacyError(400, "unknown_log_source", "unknown log source");
+    }
+
+    const data = [];
+
+    for (const source of selectedSources) {
+      if (!source.exists) {
+        continue;
+      }
+
+      for (const line of readTailLines(source.path, limit)) {
+        data.push(normalizeLogLine(source, line));
+      }
+    }
+
+    response.json({
+      data,
+      limit,
+      selected_sources: selectedSources.map((source) => source.id),
+      sources: sources.map((source) => ({
+        id: source.id,
+        label: source.label,
+        exists: source.exists
+      }))
+    });
   }));
 
   router.get("/cards", requireUser, asyncHandler(async (request, response) => {
