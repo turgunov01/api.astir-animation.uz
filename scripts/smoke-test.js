@@ -480,11 +480,13 @@ try {
         ru: `Updated Smoke Movie RU ${Date.now()}`,
         uz: `Updated Smoke Movie UZ ${Date.now()}`
       },
+      is_premium: false,
       tags: [`Updated Auto Smoke Tag ${Date.now()}`]
     }
   });
 
   assert.equal(updatedMovie.movie.id, movieId);
+  assert.equal(updatedMovie.movie.is_premium, false);
   assert.equal(updatedMovie.movie.tags.some((tag) => tag.name.startsWith("Updated Auto Smoke Tag")), true);
 
   const replacedMovieTags = await request(baseUrl, `/v1/content/movies/${movieId}/tags`, {

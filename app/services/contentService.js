@@ -123,6 +123,7 @@ async function serializeMovieTags(tagIds, contentTags) {
 
 async function serializeMovie(movie, series = [], contentTags, contentMovieTags) {
   const videoUrl = sourceUrl(movie.source);
+  const posterUrl = sourceUrl(movie.poster);
   const transcodeStatus = movie.transcode?.status || "missing_source";
   const hlsUrl = movie.transcode?.hlsUrl || null;
   const renditions = serializeRenditions(movie.transcode?.renditions);
@@ -141,6 +142,16 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags)
     tag_ids: tagIds,
     tags: await serializeMovieTags(tagIds, contentTags),
     is_premium: Boolean(movie.is_premium),
+    poster_url: posterUrl,
+    poster: movie.poster
+      ? {
+          url: posterUrl,
+          storage_path: movie.poster.path || null,
+          original_name: movie.poster.originalName || null,
+          mime_type: movie.poster.mimeType || null,
+          size: movie.poster.size || null
+        }
+      : null,
     source: videoUrl,
     video_url: videoUrl,
     storage_path: movie.source?.path || null,
@@ -354,6 +365,7 @@ function movieAttributes(attributes) {
     description: attributes.description,
     series: attributes.series || [],
     is_premium: attributes.is_premium,
+    poster: createSourceFromFile(attributes.posterFile),
     source: createSourceFromFile(attributes.file),
     transcode: initialTranscode(attributes.file)
   };
@@ -576,6 +588,7 @@ export function createContentService({ contentCategories, contentMovieTags, cont
         if (deleted) {
           await contentMovieTags.removeMovie(movieToDelete.id);
           transcoder.removeMovieFiles(movieToDelete);
+          removeStoredFile(movieToDelete.poster);
         }
 
         if (movieToDelete.id === movie.id) {
@@ -682,9 +695,18 @@ export function createContentService({ contentCategories, contentMovieTags, cont
         delete movieUpdates.tags;
       }
 
+      if (Object.hasOwn(movieUpdates, "posterFile")) {
+        movieUpdates.poster = createSourceFromFile(movieUpdates.posterFile);
+        delete movieUpdates.posterFile;
+      }
+
       const updatedMovie = Object.keys(movieUpdates).length > 0
         ? contentMovies.update(movie.id, movieUpdates)
         : movie;
+
+      if (movieUpdates.poster) {
+        removeStoredFile(movie.poster);
+      }
 
       return {
         movie: await serializeMovie(updatedMovie, listSeriesRecords(updatedMovie), contentTags, contentMovieTags)

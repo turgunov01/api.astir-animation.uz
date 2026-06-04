@@ -200,6 +200,7 @@ const scopes = [
       "GET /v1/content/movies/{movie_id}/series",
       "POST /v1/content/movies/create",
       "PATCH /v1/content/movies/{movie_id}",
+      "POST /v1/content/movies/{movie_id}/poster",
       "PUT /v1/content/movies/{movie_id}/tags",
       "POST /v1/content/movies/{movie_id}/series",
       "DELETE /v1/content/movies/{movie_id}",

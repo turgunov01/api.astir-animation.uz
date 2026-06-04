@@ -962,6 +962,7 @@ For video upload, send `multipart/form-data`:
 
 1. `metadata` - JSON string with the same fields, including optional `tag_ids` and `tags`.
 2. `video` - uploaded video file.
+3. `poster` - optional poster image.
 
 Success response:
 
@@ -990,6 +991,14 @@ Success response:
       }
     ],
     "is_premium": false,
+    "poster_url": "/media/uploads/poster.png",
+    "poster": {
+      "url": "/media/uploads/poster.png",
+      "storage_path": "/absolute/storage/path/poster.png",
+      "original_name": "poster.png",
+      "mime_type": "image/png",
+      "size": 250000
+    },
     "source": "/media/uploads/movie.mp4",
     "video_url": "/media/uploads/movie.mp4",
     "storage_path": "/absolute/storage/path/movie.mp4",
@@ -1057,10 +1066,26 @@ Body can include:
     "ru": "New description RU",
     "uz": "New description UZ"
   },
+  "is_premium": false,
   "tag_ids": ["tag-id"],
   "tags": ["New free-form tag"]
 }
 ```
+
+For poster upload or combined metadata + poster update, send `multipart/form-data`:
+
+1. `metadata` - optional JSON string with `title`, `description`, `is_premium`, `tag_ids`, or `tags`.
+2. `poster` - poster image. The `file` field is also accepted as an alias.
+
+Direct poster upload:
+
+```text
+POST /v1/content/movies/:movie_id/poster
+```
+
+Multipart body:
+
+1. `poster` - poster image, or `file` as a compatibility alias.
 
 ## 42. Replace Movie Tags
 

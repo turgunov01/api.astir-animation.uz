@@ -3,7 +3,14 @@ import { asyncHandler } from "../lib/errors.js";
 
 export function createContentRoutes({ authMiddleware, contentController, uploadMiddleware }) {
   const router = Router();
-  const videoUpload = uploadMiddleware.single("video");
+  const movieUpload = uploadMiddleware.fields([
+    { name: "video", maxCount: 1 },
+    { name: "poster", maxCount: 1 }
+  ]);
+  const posterUpload = uploadMiddleware.fields([
+    { name: "poster", maxCount: 1 },
+    { name: "file", maxCount: 1 }
+  ]);
   const iconUpload = uploadMiddleware.single("icon");
 
   router.get("/", authMiddleware.requireActor, asyncHandler(contentController.list));
@@ -13,13 +20,20 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
   router.post(
     "/movies/create",
     authMiddleware.requireParent,
-    videoUpload,
+    movieUpload,
     asyncHandler(contentController.createMovie)
   );
   router.patch(
     "/movies/:movie_id",
     authMiddleware.requireParent,
+    posterUpload,
     asyncHandler(contentController.updateMovie)
+  );
+  router.post(
+    "/movies/:movie_id/poster",
+    authMiddleware.requireParent,
+    posterUpload,
+    asyncHandler(contentController.updateMoviePoster)
   );
   router.put(
     "/movies/:movie_id/tags",
@@ -29,7 +43,7 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
   router.post(
     "/movies/:movie_id/series",
     authMiddleware.requireParent,
-    videoUpload,
+    movieUpload,
     asyncHandler(contentController.addSeriesMovie)
   );
   router.delete(

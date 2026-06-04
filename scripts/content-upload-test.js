@@ -229,6 +229,22 @@ function multipartMovieBody(metadata, options = {}) {
     form.append("video", videoBlob(), options.fileName || "upload-test.mp4");
   }
 
+  if (options.poster) {
+    form.append("poster", imageBlob(), options.posterFileName || "movie-poster.png");
+  }
+
+  return form;
+}
+
+function multipartPosterBody(options = {}) {
+  const form = new FormData();
+
+  if (options.metadata) {
+    form.append("metadata", typeof options.metadata === "string" ? options.metadata : JSON.stringify(options.metadata));
+  }
+
+  form.append(options.field || "poster", imageBlob(), options.fileName || "movie-poster.png");
+
   return form;
 }
 
@@ -325,6 +341,36 @@ try {
   const videoUrl = createResponse.body.data.video_url;
   const storagePath = createResponse.body.data.storage_path;
 
+  const posterUploadResponse = await requestRaw(baseUrl, `/v1/content/movies/${movieId}/poster`, {
+    method: "POST",
+    body: multipartPosterBody({ field: "file", fileName: "movie-poster-file-field.png" })
+  });
+
+  assert.equal(posterUploadResponse.status, 200);
+  assert.match(posterUploadResponse.body.movie.poster_url, /^\/media\/uploads\//);
+  assert.equal(posterUploadResponse.body.movie.poster.original_name, "movie-poster-file-field.png");
+  assert.equal(posterUploadResponse.body.movie.poster.mime_type, "image/png");
+  assert.equal(fs.existsSync(posterUploadResponse.body.movie.poster.storage_path), true);
+
+  const firstPosterPath = posterUploadResponse.body.movie.poster.storage_path;
+
+  const posterPatchResponse = await requestRaw(baseUrl, `/v1/content/movies/${movieId}`, {
+    method: "PATCH",
+    body: multipartPosterBody({
+      metadata: { is_premium: false },
+      field: "poster",
+      fileName: "replacement-movie-poster.png"
+    })
+  });
+
+  assert.equal(posterPatchResponse.status, 200);
+  assert.equal(posterPatchResponse.body.movie.is_premium, false);
+  assert.equal(posterPatchResponse.body.movie.poster.original_name, "replacement-movie-poster.png");
+  assert.equal(fs.existsSync(posterPatchResponse.body.movie.poster.storage_path), true);
+  assert.equal(fs.existsSync(firstPosterPath), false);
+
+  const replacementPosterPath = posterPatchResponse.body.movie.poster.storage_path;
+
   const replaceTagsResponse = await requestJson(baseUrl, `/v1/content/movies/${movieId}/tags`, {
     method: "PUT",
     body: {
@@ -375,6 +421,7 @@ try {
   assert.equal(deleteMovieResponse.status, 200);
   assert.equal(deleteMovieResponse.body.deleted, true);
   assert.equal(fs.existsSync(storagePath), false);
+  assert.equal(fs.existsSync(replacementPosterPath), false);
   assert.equal(fs.existsSync(hlsDir), false);
 
   await new Promise((resolve) => {
@@ -508,10 +555,26 @@ try {
   const failingContainer = createContainer({ store: new JsonStore(failingDataFile) });
   failingContainer.middleware.upload = {
     single(fieldName) {
-      assert.equal(["video", "icon"].includes(fieldName), true);
+      assert.equal(["video", "icon", "poster"].includes(fieldName), true);
 
       return (request, response, next) => {
         if (fieldName === "video") {
+          next(new Error("Simulated storage failure"));
+          return;
+        }
+
+        next();
+      };
+    },
+    fields(fields) {
+      const fieldNames = fields.map((field) => field.name);
+      assert.equal(
+        fieldNames.every((fieldName) => ["video", "poster", "file"].includes(fieldName)),
+        true
+      );
+
+      return (request, response, next) => {
+        if (fieldNames.includes("video")) {
           next(new Error("Simulated storage failure"));
           return;
         }

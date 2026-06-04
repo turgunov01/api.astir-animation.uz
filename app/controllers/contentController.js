@@ -45,6 +45,36 @@ function cleanupUploadedFile(file) {
   }
 }
 
+function uploadedFiles(request) {
+  const files = [];
+
+  if (request.file) {
+    files.push(request.file);
+  }
+
+  for (const value of Object.values(request.files || {})) {
+    if (Array.isArray(value)) {
+      files.push(...value);
+    }
+  }
+
+  return files;
+}
+
+function uploadedFile(request, field) {
+  if (request.file?.fieldname === field) {
+    return request.file;
+  }
+
+  const files = request.files?.[field];
+
+  return Array.isArray(files) ? files[0] || null : null;
+}
+
+function uploadedPosterFile(request) {
+  return uploadedFile(request, "poster") || uploadedFile(request, "file");
+}
+
 function logMovieUpload(request, event, details = {}) {
   console.info(JSON.stringify({
     event: `movie_upload.${event}`,
@@ -57,7 +87,10 @@ async function withUploadCleanup(request, work) {
   try {
     return await work();
   } catch (error) {
-    cleanupUploadedFile(request.file);
+    for (const file of uploadedFiles(request)) {
+      cleanupUploadedFile(file);
+    }
+
     throw error;
   }
 }
@@ -111,7 +144,8 @@ export function createContentController({ contentService }) {
           is_premium: optionalBoolean(body, "is_premium", false),
           tag_ids: optionalStringArray(body, "tag_ids", []),
           tags: optionalStringArray(body, "tags", []),
-          file: request.file || null
+          file: uploadedFile(request, "video"),
+          posterFile: uploadedFile(request, "poster")
         });
       });
 
@@ -122,7 +156,8 @@ export function createContentController({ contentService }) {
       const movie = await withUploadCleanup(request, async () => {
         logMovieUpload(request, "started", {
           contentType: request.get("content-type") || null,
-          hasVideo: Boolean(request.file)
+          hasVideo: Boolean(uploadedFile(request, "video")),
+          hasPoster: Boolean(uploadedFile(request, "poster"))
         });
 
         const body = payload(request);
@@ -133,13 +168,16 @@ export function createContentController({ contentService }) {
           seriesCount: Array.isArray(body.series) ? body.series.length : 0
         });
 
-        if (request.file) {
+        const videoFile = uploadedFile(request, "video");
+        const posterFile = uploadedFile(request, "poster");
+
+        if (videoFile) {
           logMovieUpload(request, "file_stored", {
-            path: request.file.path,
-            fileName: request.file.filename,
-            originalName: request.file.originalname,
-            mimeType: request.file.mimetype,
-            size: request.file.size
+            path: videoFile.path,
+            fileName: videoFile.filename,
+            originalName: videoFile.originalname,
+            mimeType: videoFile.mimetype,
+            size: videoFile.size
           });
         }
 
@@ -150,7 +188,8 @@ export function createContentController({ contentService }) {
           tag_ids: optionalStringArray(body, "tag_ids", []),
           tags: optionalStringArray(body, "tags", []),
           is_premium: optionalBoolean(body, "is_premium", false),
-          file: request.file || null
+          file: videoFile,
+          posterFile
         });
 
         if (!createdMovie?.id) {
@@ -293,30 +332,61 @@ export function createContentController({ contentService }) {
     },
 
     async updateMovie(request, response) {
-      const body = payload(request);
-      const attributes = {};
+      const result = await withUploadCleanup(request, async () => {
+        const body = payload(request);
+        const attributes = {};
 
-      if (Object.hasOwn(body, "title")) {
-        attributes.title = requiredLocalizedText(body, "title");
-      }
+        if (Object.hasOwn(body, "title")) {
+          attributes.title = requiredLocalizedText(body, "title");
+        }
 
-      if (Object.hasOwn(body, "description")) {
-        attributes.description = optionalLocalizedText(body, "description");
-      }
+        if (Object.hasOwn(body, "description")) {
+          attributes.description = optionalLocalizedText(body, "description");
+        }
 
-      if (Object.hasOwn(body, "tag_ids")) {
-        attributes.tag_ids = optionalStringArray(body, "tag_ids", []);
-      }
+        if (Object.hasOwn(body, "is_premium")) {
+          attributes.is_premium = optionalPresentBoolean(body, "is_premium");
+        }
 
-      if (Object.hasOwn(body, "tags")) {
-        attributes.tags = optionalStringArray(body, "tags", []);
-      }
+        if (Object.hasOwn(body, "tag_ids")) {
+          attributes.tag_ids = optionalStringArray(body, "tag_ids", []);
+        }
 
-      if (Object.keys(attributes).length === 0) {
-        throw badRequest("At least one field is required", "VALIDATION_ERROR");
-      }
+        if (Object.hasOwn(body, "tags")) {
+          attributes.tags = optionalStringArray(body, "tags", []);
+        }
 
-      const result = await contentService.updateMovie(request.params.movie_id, attributes);
+        const posterFile = uploadedPosterFile(request);
+
+        if (posterFile) {
+          attributes.posterFile = posterFile;
+        }
+
+        if (Object.keys(attributes).length === 0) {
+          throw badRequest("At least one field is required", "VALIDATION_ERROR");
+        }
+
+        return await contentService.updateMovie(request.params.movie_id, attributes);
+      });
+
+      response.json({
+        data: result.movie,
+        ...result
+      });
+    },
+
+    async updateMoviePoster(request, response) {
+      const result = await withUploadCleanup(request, async () => {
+        const posterFile = uploadedPosterFile(request);
+
+        if (!posterFile) {
+          throw badRequest("poster is required", "VALIDATION_ERROR");
+        }
+
+        return await contentService.updateMovie(request.params.movie_id, {
+          posterFile
+        });
+      });
 
       response.json({
         data: result.movie,

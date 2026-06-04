@@ -465,6 +465,18 @@ export const openApiDocument = {
             items: { $ref: "#/components/schemas/ContentTag" }
           },
           is_premium: { type: "boolean", example: false },
+          poster_url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+          poster: {
+            type: "object",
+            nullable: true,
+            properties: {
+              url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+              storage_path: { type: "string", nullable: true },
+              original_name: { type: "string", nullable: true, example: "poster.png" },
+              mime_type: { type: "string", nullable: true, example: "image/png" },
+              size: { type: "integer", nullable: true, example: 250000 }
+            }
+          },
           source: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
           video_url: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
           storage_path: { type: "string", nullable: true },
@@ -5146,7 +5158,7 @@ export const openApiDocument = {
       },
       patch: {
         tags: ["Movies"],
-        summary: "Update movie title or description",
+        summary: "Update movie metadata or poster",
         security: [{ parentToken: [] }],
         parameters: [
           {
@@ -5165,6 +5177,7 @@ export const openApiDocument = {
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
+                  is_premium: { type: "boolean", example: false },
                   tag_ids: {
                     type: "array",
                     items: { type: "string" }
@@ -5173,6 +5186,27 @@ export const openApiDocument = {
                     type: "array",
                     items: { type: "string" },
                     description: "Free-form tag names. Missing tags are created automatically."
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  metadata: {
+                    type: "string",
+                    description: "Optional JSON with title, description, is_premium, tag_ids, and tags"
+                  },
+                  poster: {
+                    type: "string",
+                    format: "binary",
+                    description: "Poster image. The field name file is also accepted for compatibility."
+                  },
+                  file: {
+                    type: "string",
+                    format: "binary",
+                    description: "Alias for poster."
                   }
                 }
               }
@@ -5225,6 +5259,61 @@ export const openApiDocument = {
               }
             }
           },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/content/movies/{movie_id}/poster": {
+      post: {
+        tags: ["Movies"],
+        summary: "Upload or replace movie poster",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "movie_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  poster: {
+                    type: "string",
+                    format: "binary",
+                    description: "Poster image."
+                  },
+                  file: {
+                    type: "string",
+                    format: "binary",
+                    description: "Alias for poster, used by legacy-style upload widgets."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Movie poster updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/ContentMovie" },
+                    movie: { $ref: "#/components/schemas/ContentMovie" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
           404: { $ref: "#/components/responses/NotFound" }
         }
       }
@@ -5365,6 +5454,11 @@ export const openApiDocument = {
                   video: {
                     type: "string",
                     format: "binary"
+                  },
+                  poster: {
+                    type: "string",
+                    format: "binary",
+                    description: "Optional poster image."
                   }
                 }
               }
@@ -5433,6 +5527,11 @@ export const openApiDocument = {
                   video: {
                     type: "string",
                     format: "binary"
+                  },
+                  poster: {
+                    type: "string",
+                    format: "binary",
+                    description: "Optional poster image."
                   }
                 }
               }

@@ -34,12 +34,12 @@ export function createUploadMiddleware(config) {
         return;
       }
 
-      if (file.fieldname === "icon" && !file.mimetype.startsWith("image/")) {
+      if (["icon", "poster", "file"].includes(file.fieldname) && !file.mimetype.startsWith("image/")) {
         callback(new Error("Only image files are allowed"));
         return;
       }
 
-      if (!["video", "icon"].includes(file.fieldname)) {
+      if (!["video", "icon", "poster", "file"].includes(file.fieldname)) {
         callback(new Error("Unsupported upload field"));
         return;
       }
