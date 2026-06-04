@@ -103,6 +103,7 @@ export function createApp({ container = createContainer() } = {}) {
     controllers: container.controllers,
     middleware: container.middleware
   }));
+
   app.use(
     "/api/v1",
     requireLegacyDb(legacyDb),
@@ -111,6 +112,7 @@ export function createApp({ container = createContainer() } = {}) {
       media: legacyMedia
     })
   );
+  
   app.use(notFoundHandler);
   app.use(errorHandler);
 

@@ -379,6 +379,90 @@ async function contentListItem(db, row, actor, lang) {
   }, lang);
 }
 
+async function listLegacyContent(request, response) {
+  const { limit, offset } = parseLimitOffset(request.query);
+  const lang = requestedLang(request);
+  const filters = [];
+  const values = [];
+
+  if (request.query.admin !== "true") {
+    filters.push("c.published = true");
+  }
+
+  if (request.query.category_id) {
+    values.push(request.query.category_id);
+    filters.push(`c.category_id = $${values.length}`);
+  }
+
+  if (request.query.q) {
+    values.push(`%${request.query.q}%`);
+    filters.push(`(c.title->>'en' ILIKE $${values.length} OR c.title->>'ru' ILIKE $${values.length} OR c.title->>'uz' ILIKE $${values.length})`);
+  }
+
+  if (request.query.min_age) {
+    values.push(Number(request.query.min_age));
+    filters.push(`c.age_rating >= $${values.length}`);
+  }
+
+  if (request.query.max_age) {
+    values.push(Number(request.query.max_age));
+    filters.push(`c.age_rating <= $${values.length}`);
+  }
+
+  if (request.query.kind && request.query.kind !== "series") {
+    values.push(request.query.kind);
+    filters.push(`cat.kind = $${values.length}`);
+  }
+
+  if (request.query.tag_ids) {
+    const tagIds = String(request.query.tag_ids).split(",").map((tag) => tag.trim()).filter(Boolean);
+    if (tagIds.length > 0) {
+      values.push(tagIds);
+      filters.push(`c.id IN (
+          SELECT content_id FROM content_tags
+          WHERE tag_id = ANY($${values.length}::uuid[])
+          GROUP BY content_id
+          HAVING COUNT(DISTINCT tag_id) = ${tagIds.length}
+        )`);
+    }
+  }
+
+  if (request.query.liked === "true") {
+    const userId = await ownerUserIdForActor(request.legacyDb, request.legacyActor);
+    values.push(userId);
+    filters.push(`EXISTS (SELECT 1 FROM likes l WHERE l.content_id = c.id AND l.user_id = $${values.length})`);
+  }
+
+  const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+  const total = await request.legacyDb.one(
+    `SELECT COUNT(*)::integer AS count FROM content c LEFT JOIN categories cat ON cat.id = c.category_id ${where}`,
+    values
+  );
+  values.push(limit, offset);
+  const rows = await request.legacyDb.many(
+    `
+      SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind,
+        (SELECT COUNT(DISTINCT season_number)::integer FROM content ce WHERE ce.series_id = c.series_id) AS season_count,
+        (SELECT COUNT(*)::integer FROM content ce WHERE ce.series_id = c.series_id) AS episode_count
+      FROM content c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      LEFT JOIN series s ON s.id = c.series_id
+      ${where}
+      ORDER BY c.created_at DESC
+      LIMIT $${values.length - 1} OFFSET $${values.length}
+    `,
+    values
+  );
+
+  let data = await Promise.all(rows.map((row) => contentListItem(request.legacyDb, row, request.legacyActor, lang)));
+
+  if (request.query.kind === "series") {
+    data = data.filter((item) => item.series_id || item.item_type === "series");
+  }
+
+  response.json({ data, total: total.count, limit, offset });
+}
+
 async function saveMediaAsset(db, media, ownerTable, ownerId) {
   if (!media) {
     return null;
@@ -1584,89 +1668,8 @@ export function createLegacyRoutes({ config, media }) {
     response.json(updatedSeries);
   }));
 
-  router.get("/content", requireActor, asyncHandler(async (request, response) => {
-    const { limit, offset } = parseLimitOffset(request.query);
-    const lang = requestedLang(request);
-    const filters = [];
-    const values = [];
-
-    if (request.query.admin !== "true") {
-      filters.push("c.published = true");
-    }
-
-    if (request.query.category_id) {
-      values.push(request.query.category_id);
-      filters.push(`c.category_id = $${values.length}`);
-    }
-
-    if (request.query.q) {
-      values.push(`%${request.query.q}%`);
-      filters.push(`(c.title->>'en' ILIKE $${values.length} OR c.title->>'ru' ILIKE $${values.length} OR c.title->>'uz' ILIKE $${values.length})`);
-    }
-
-    if (request.query.min_age) {
-      values.push(Number(request.query.min_age));
-      filters.push(`c.age_rating >= $${values.length}`);
-    }
-
-    if (request.query.max_age) {
-      values.push(Number(request.query.max_age));
-      filters.push(`c.age_rating <= $${values.length}`);
-    }
-
-    if (request.query.kind && request.query.kind !== "series") {
-      values.push(request.query.kind);
-      filters.push(`cat.kind = $${values.length}`);
-    }
-
-    if (request.query.tag_ids) {
-      const tagIds = String(request.query.tag_ids).split(",").map((tag) => tag.trim()).filter(Boolean);
-      if (tagIds.length > 0) {
-        values.push(tagIds);
-        filters.push(`c.id IN (
-          SELECT content_id FROM content_tags
-          WHERE tag_id = ANY($${values.length}::uuid[])
-          GROUP BY content_id
-          HAVING COUNT(DISTINCT tag_id) = ${tagIds.length}
-        )`);
-      }
-    }
-
-    if (request.query.liked === "true") {
-      const userId = await ownerUserIdForActor(request.legacyDb, request.legacyActor);
-      values.push(userId);
-      filters.push(`EXISTS (SELECT 1 FROM likes l WHERE l.content_id = c.id AND l.user_id = $${values.length})`);
-    }
-
-    const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
-    const total = await request.legacyDb.one(
-      `SELECT COUNT(*)::integer AS count FROM content c LEFT JOIN categories cat ON cat.id = c.category_id ${where}`,
-      values
-    );
-    values.push(limit, offset);
-    const rows = await request.legacyDb.many(
-      `
-        SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind,
-          (SELECT COUNT(DISTINCT season_number)::integer FROM content ce WHERE ce.series_id = c.series_id) AS season_count,
-          (SELECT COUNT(*)::integer FROM content ce WHERE ce.series_id = c.series_id) AS episode_count
-        FROM content c
-        LEFT JOIN categories cat ON cat.id = c.category_id
-        LEFT JOIN series s ON s.id = c.series_id
-        ${where}
-        ORDER BY c.created_at DESC
-        LIMIT $${values.length - 1} OFFSET $${values.length}
-      `,
-      values
-    );
-
-    let data = await Promise.all(rows.map((row) => contentListItem(request.legacyDb, row, request.legacyActor, lang)));
-
-    if (request.query.kind === "series") {
-      data = data.filter((item) => item.series_id || item.item_type === "series");
-    }
-
-    response.json({ data, total: total.count, limit, offset });
-  }));
+  router.get("/content", requireActor, asyncHandler(listLegacyContent));
+  router.get("/content/movies", requireActor, asyncHandler(listLegacyContent));
 
   router.post("/content", requireAdmin, asyncHandler(async (request, response) => {
     requireFields(request.body, ["title"]);
@@ -1703,6 +1706,10 @@ export function createLegacyRoutes({ config, media }) {
   }));
 
   router.get("/content/:id", requireActor, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(404, "content_not_found", "content not found");
+    }
+
     await assertCanAccessContent(request.legacyDb, request.legacyActor, request.params.id);
     const row = await request.legacyDb.one(
       "SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind FROM content c LEFT JOIN categories cat ON cat.id = c.category_id LEFT JOIN series s ON s.id = c.series_id WHERE c.id = $1",
