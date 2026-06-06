@@ -119,6 +119,90 @@ function optionalPresentBoolean(body, field) {
   return value;
 }
 
+function optionalIntegerValue(body, field, fallback = null, options = {}) {
+  const value = body?.[field];
+
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const numeric = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isInteger(numeric)) {
+    throw badRequest(`${field} must be an integer`, "VALIDATION_ERROR");
+  }
+
+  if (options.min !== undefined && numeric < options.min) {
+    throw badRequest(`${field} must be at least ${options.min}`, "VALIDATION_ERROR");
+  }
+
+  if (options.max !== undefined && numeric > options.max) {
+    throw badRequest(`${field} must be at most ${options.max}`, "VALIDATION_ERROR");
+  }
+
+  return numeric;
+}
+
+function optionalPresentInteger(body, field, options = {}) {
+  const value = optionalIntegerValue(body, field, null, options);
+
+  if (value === null) {
+    throw badRequest(`${field} must be an integer`, "VALIDATION_ERROR");
+  }
+
+  return value;
+}
+
+function movieMetadataAttributes(body, { includeDefaults = false } = {}) {
+  const attributes = {};
+
+  if (includeDefaults || Object.hasOwn(body, "series")) {
+    attributes.series = optionalStringArray(body, "series", []);
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "tag_ids")) {
+    attributes.tag_ids = optionalStringArray(body, "tag_ids", []);
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "tags")) {
+    attributes.tags = optionalStringArray(body, "tags", []);
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "is_premium")) {
+    attributes.is_premium = optionalBoolean(body, "is_premium", false);
+  }
+
+  if (Object.hasOwn(body, "category_id")) {
+    attributes.category_id = optionalString(body, "category_id");
+  }
+
+  if (Object.hasOwn(body, "series_id")) {
+    attributes.series_id = optionalString(body, "series_id");
+  }
+
+  if (Object.hasOwn(body, "content_type")) {
+    attributes.content_type = optionalString(body, "content_type");
+  }
+
+  if (Object.hasOwn(body, "year")) {
+    attributes.year = optionalIntegerValue(body, "year", null, { min: 0 });
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "age_rating")) {
+    attributes.age_rating = optionalIntegerValue(body, "age_rating", 0, { min: 0 });
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "duration_sec")) {
+    attributes.duration_sec = optionalIntegerValue(body, "duration_sec", 0, { min: 0 });
+  }
+
+  if (includeDefaults || Object.hasOwn(body, "published")) {
+    attributes.published = optionalBoolean(body, "published", false);
+  }
+
+  return attributes;
+}
+
 export function createContentController({ contentService }) {
   return {
     async createCategory(request, response) {
@@ -145,9 +229,7 @@ export function createContentController({ contentService }) {
         return await contentService.addSeriesMovie(request.params.movie_id, {
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
-          is_premium: optionalBoolean(body, "is_premium", false),
-          tag_ids: optionalStringArray(body, "tag_ids", []),
-          tags: optionalStringArray(body, "tags", []),
+          ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: uploadedFile(request, "video"),
           posterFile: uploadedFile(request, "poster")
         });
@@ -188,10 +270,7 @@ export function createContentController({ contentService }) {
         const createdMovie = await contentService.createMovie({
           title: requiredLocalizedText(body, "title"),
           description: requiredLocalizedText(body, "description"),
-          series: optionalStringArray(body, "series", []),
-          tag_ids: optionalStringArray(body, "tag_ids", []),
-          tags: optionalStringArray(body, "tags", []),
-          is_premium: optionalBoolean(body, "is_premium", false),
+          ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: videoFile,
           posterFile
         });
@@ -376,6 +455,34 @@ export function createContentController({ contentService }) {
 
         if (Object.hasOwn(body, "tags")) {
           attributes.tags = optionalStringArray(body, "tags", []);
+        }
+
+        if (Object.hasOwn(body, "category_id")) {
+          attributes.category_id = optionalString(body, "category_id");
+        }
+
+        if (Object.hasOwn(body, "series_id")) {
+          attributes.series_id = optionalString(body, "series_id");
+        }
+
+        if (Object.hasOwn(body, "content_type")) {
+          attributes.content_type = optionalString(body, "content_type");
+        }
+
+        if (Object.hasOwn(body, "year")) {
+          attributes.year = optionalIntegerValue(body, "year", null, { min: 0 });
+        }
+
+        if (Object.hasOwn(body, "age_rating")) {
+          attributes.age_rating = optionalPresentInteger(body, "age_rating", { min: 0 });
+        }
+
+        if (Object.hasOwn(body, "duration_sec")) {
+          attributes.duration_sec = optionalPresentInteger(body, "duration_sec", { min: 0 });
+        }
+
+        if (Object.hasOwn(body, "published")) {
+          attributes.published = optionalPresentBoolean(body, "published");
         }
 
         const posterFile = uploadedPosterFile(request);

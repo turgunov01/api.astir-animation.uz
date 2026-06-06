@@ -264,6 +264,12 @@ try {
         uz: "Movie created by smoke test UZ"
       },
       series: [],
+      category_id: categoryId,
+      series_id: "legacy-series-id",
+      year: 2026,
+      age_rating: 6,
+      duration_sec: 1234,
+      published: true,
       tag_ids: [tagId],
       tags: [`Auto Smoke Tag ${Date.now()}`],
       is_premium: false
@@ -275,6 +281,14 @@ try {
   assert.match(movieId, uuidPattern);
   assert.notEqual(movieId, "client-selected-movie-id");
   assert.equal(movieResponse.movie.is_premium, false);
+  assert.equal(movieResponse.movie.category_id, categoryId);
+  assert.equal(movieResponse.movie.series_id, "legacy-series-id");
+  assert.equal(movieResponse.movie.year, 2026);
+  assert.equal(movieResponse.movie.age_rating, 6);
+  assert.equal(movieResponse.movie.duration_sec, 1234);
+  assert.equal(movieResponse.movie.duration, 1234);
+  assert.equal(movieResponse.movie.published, true);
+  assert.equal(typeof movieResponse.movie.published_at, "string");
   assert.equal(movieResponse.movie.tag_ids.includes(tagId), true);
   assert.equal(
     movieResponse.movie.tags.some((tag) => tag.name.startsWith("Auto Smoke Tag")),
@@ -518,6 +532,12 @@ try {
   });
 
   assert.equal(singleMovie.movie.id, movieId);
+  assert.equal(singleMovie.movie.category_id, categoryId);
+  assert.equal(singleMovie.movie.series_id, "legacy-series-id");
+  assert.equal(singleMovie.movie.year, 2026);
+  assert.equal(singleMovie.movie.age_rating, 6);
+  assert.equal(singleMovie.movie.duration_sec, 1234);
+  assert.equal(singleMovie.movie.published, true);
   assert.equal(singleMovie.movie.playback.status, "missing_source");
 
   const updatedMovie = await request(baseUrl, `/v1/content/movies/${movieId}`, {
@@ -530,12 +550,26 @@ try {
         uz: `Updated Smoke Movie UZ ${Date.now()}`
       },
       is_premium: false,
+      category_id: null,
+      series_id: null,
+      year: 2027,
+      age_rating: 12,
+      duration_sec: 2345,
+      published: false,
       tags: [`Updated Auto Smoke Tag ${Date.now()}`]
     }
   });
 
   assert.equal(updatedMovie.movie.id, movieId);
   assert.equal(updatedMovie.movie.is_premium, false);
+  assert.equal(updatedMovie.movie.category_id, null);
+  assert.equal(updatedMovie.movie.series_id, null);
+  assert.equal(updatedMovie.movie.year, 2027);
+  assert.equal(updatedMovie.movie.age_rating, 12);
+  assert.equal(updatedMovie.movie.duration_sec, 2345);
+  assert.equal(updatedMovie.movie.duration, 2345);
+  assert.equal(updatedMovie.movie.published, false);
+  assert.equal(updatedMovie.movie.published_at, null);
   assert.equal(updatedMovie.movie.tags.some((tag) => tag.name.startsWith("Updated Auto Smoke Tag")), true);
 
   const replacedMovieTags = await request(baseUrl, `/v1/content/movies/${movieId}/tags`, {

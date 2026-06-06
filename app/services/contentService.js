@@ -152,6 +152,9 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     target_id: movie.id,
     title: toLocalizedText(movie.title),
     description: toLocalizedText(movie.description),
+    content_type: movie.content_type || "movie",
+    category_id: movie.category_id || null,
+    series_id: movie.series_id || null,
     series: series.length > 0
       ? await Promise.all(series.map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext)))
       : movie.series || [],
@@ -176,7 +179,12 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     video_url: videoUrl,
     storage_path: movie.source?.path || null,
     transcode_status: transcodeStatus,
-    duration: movie.duration ?? null,
+    age_rating: movie.age_rating ?? 0,
+    duration_sec: movie.duration_sec ?? 0,
+    duration: movie.duration ?? movie.duration_sec ?? null,
+    year: movie.year ?? null,
+    published: Boolean(movie.published),
+    published_at: movie.published_at || null,
     createdAt: movie.createdAt || null,
     updatedAt: movie.updatedAt || null,
     media: {
@@ -357,6 +365,16 @@ async function resolveMovieTagIds(contentTags, attributes = {}) {
   return [...new Set(tagIds)];
 }
 
+function assertMovieCategoryExists(contentCategories, categoryId) {
+  if (!categoryId) {
+    return;
+  }
+
+  if (!contentCategories.findById(categoryId)) {
+    throw badRequest("category_id contains an unknown category id", "VALIDATION_ERROR");
+  }
+}
+
 function initialTranscode(file) {
   if (!file) {
     return {
@@ -380,15 +398,37 @@ function initialTranscode(file) {
 }
 
 function movieAttributes(attributes) {
+  const published = Boolean(attributes.published);
+
   return {
     title: attributes.title,
     description: attributes.description,
     series: attributes.series || [],
+    category_id: attributes.category_id || null,
+    series_id: attributes.series_id || null,
+    content_type: attributes.content_type || "movie",
     is_premium: attributes.is_premium,
+    age_rating: attributes.age_rating ?? 0,
+    duration_sec: attributes.duration_sec ?? 0,
+    year: attributes.year ?? null,
+    published,
+    published_at: published ? new Date().toISOString() : null,
     poster: createSourceFromFile(attributes.posterFile),
     source: createSourceFromFile(attributes.file),
     transcode: initialTranscode(attributes.file)
   };
+}
+
+function normalizeMovieUpdateAttributes(movie, attributes) {
+  const movieUpdates = { ...attributes };
+
+  if (Object.hasOwn(movieUpdates, "published")) {
+    movieUpdates.published_at = movieUpdates.published
+      ? movie.published_at || new Date().toISOString()
+      : null;
+  }
+
+  return movieUpdates;
 }
 
 function assertCategoryTitleAvailable(contentCategories, title, currentCategoryId = null) {
@@ -617,6 +657,7 @@ export function createContentService({
       let seriesMovie = null;
 
       try {
+        assertMovieCategoryExists(contentCategories, attributes.category_id);
         const tagIds = await resolveMovieTagIds(contentTags, attributes);
         seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
         await contentMovieTags.replaceForMovie(seriesMovie.id, tagIds);
@@ -644,6 +685,7 @@ export function createContentService({
       let movie = null;
 
       try {
+        assertMovieCategoryExists(contentCategories, attributes.category_id);
         const tagIds = await resolveMovieTagIds(contentTags, attributes);
         movie = contentMovies.create(movieAttributes(attributes));
         await contentMovieTags.replaceForMovie(movie.id, tagIds);
@@ -844,7 +886,9 @@ export function createContentService({
 
     async updateMovie(movieId, attributes) {
       const movie = getMovieRecord(movieId);
-      const movieUpdates = { ...attributes };
+      const movieUpdates = normalizeMovieUpdateAttributes(movie, attributes);
+
+      assertMovieCategoryExists(contentCategories, movieUpdates.category_id);
 
       if (Object.hasOwn(movieUpdates, "tag_ids") || Object.hasOwn(movieUpdates, "tags")) {
         const tagIds = await resolveMovieTagIds(contentTags, movieUpdates);

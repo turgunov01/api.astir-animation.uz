@@ -459,6 +459,9 @@ export const openApiDocument = {
           },
           title: { $ref: "#/components/schemas/LocalizedText" },
           description: { $ref: "#/components/schemas/LocalizedText" },
+          content_type: { type: "string", example: "movie" },
+          category_id: { type: "string", nullable: true, example: "category-id" },
+          series_id: { type: "string", nullable: true, example: "series-id" },
           series: {
             type: "array",
             items: {
@@ -496,7 +499,12 @@ export const openApiDocument = {
           video_url: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
           storage_path: { type: "string", nullable: true },
           transcode_status: { type: "string", example: "queued" },
-          duration: { type: "number", nullable: true, example: null },
+          age_rating: { type: "integer", example: 6 },
+          duration_sec: { type: "integer", example: 1234 },
+          duration: { type: "number", nullable: true, example: 1234 },
+          year: { type: "integer", nullable: true, example: 2026 },
+          published: { type: "boolean", example: false },
+          published_at: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time", nullable: true },
           updatedAt: { type: "string", format: "date-time", nullable: true },
           media: {
@@ -5528,6 +5536,13 @@ export const openApiDocument = {
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
+                  category_id: { type: "string", nullable: true, example: "category-id" },
+                  series_id: { type: "string", nullable: true, example: "series-id" },
+                  content_type: { type: "string", example: "movie" },
+                  year: { type: "integer", nullable: true, example: 2026 },
+                  age_rating: { type: "integer", example: 6 },
+                  duration_sec: { type: "integer", example: 1234 },
+                  published: { type: "boolean", example: false },
                   is_premium: { type: "boolean", example: false },
                   tag_ids: {
                     type: "array",
@@ -5547,7 +5562,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "Optional JSON with title, description, is_premium, tag_ids, and tags"
+                    description: "Optional JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
                   },
                   poster: {
                     type: "string",
@@ -5780,6 +5795,13 @@ export const openApiDocument = {
                 properties: {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
+                  category_id: { type: "string", nullable: true, example: "category-id" },
+                  series_id: { type: "string", nullable: true, example: "series-id" },
+                  content_type: { type: "string", example: "episode" },
+                  year: { type: "integer", nullable: true, example: 2026 },
+                  age_rating: { type: "integer", example: 6 },
+                  duration_sec: { type: "integer", example: 1234 },
+                  published: { type: "boolean", example: false },
                   is_premium: { type: "boolean", example: false },
                   tag_ids: {
                     type: "array",
@@ -5800,7 +5822,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",
@@ -5853,6 +5875,13 @@ export const openApiDocument = {
                     type: "array",
                     items: { type: "string" }
                   },
+                  category_id: { type: "string", nullable: true, example: "category-id" },
+                  series_id: { type: "string", nullable: true, example: "series-id" },
+                  content_type: { type: "string", example: "movie" },
+                  year: { type: "integer", nullable: true, example: 2026 },
+                  age_rating: { type: "integer", example: 6 },
+                  duration_sec: { type: "integer", example: 1234 },
+                  published: { type: "boolean", example: false },
                   tag_ids: {
                     type: "array",
                     items: { type: "string" }
@@ -5873,7 +5902,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, series, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, series, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",

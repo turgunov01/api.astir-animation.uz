@@ -172,6 +172,7 @@ try {
   assert.equal(typeof gatedBody.message.en, "string");
 
   const missingContentId = "165f1d6e-2fb6-4785-812f-5fd18c020cfd";
+  const movieContentId = "791bfc32-2ce1-44f3-a1b0-91da4c70aa1b";
   const fakeUser = {
     id: "8f847c1c-bc7e-4c17-9d58-6f0c96917ca8",
     email: "parent@example.com",
@@ -196,7 +197,26 @@ try {
     },
     query(sql, values) {
       fakeQueries.push({ method: "query", sql, values });
+
+      if (/INSERT INTO comments/.test(sql)) {
+        return {
+          rows: [{
+            id: "0d4bf2c5-f39d-4e95-90c6-97df78ab0f6b",
+            user_id: values[0],
+            content_id: values[1],
+            target_type: values[2],
+            target_id: values[3],
+            body: values[4]
+          }]
+        };
+      }
+
       throw new Error(`unexpected write: ${sql}`);
+    }
+  };
+  const fakeContentMovies = {
+    findById(id) {
+      return id === movieContentId ? { id } : null;
     }
   };
   const fakeMedia = {
@@ -216,6 +236,7 @@ try {
   });
   commentsApp.use("/api/v1", createLegacyRoutes({
     config: { maxVideoUploadMb: 1 },
+    contentMovies: fakeContentMovies,
     media: fakeMedia
   }));
   const commentsServer = await listenApp(commentsApp);
@@ -236,6 +257,26 @@ try {
     assert.equal(missingContentBody.error, "content_not_found");
     assert.equal(missingContentBody.message.en, "content not found");
     assert.equal(fakeQueries.some((query) => query.method === "query" && /INSERT INTO comments/.test(query.sql)), false);
+
+    const movieCommentResponse = await fetch(`${commentsBaseUrl}/api/v1/content/${movieContentId}/comments`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${legacyUserToken(fakeUser)}`
+      },
+      body: JSON.stringify({ body: "Zaybal kament 2" })
+    });
+    const movieCommentBody = await movieCommentResponse.json();
+    const insertQuery = fakeQueries.find((query) => query.method === "query" && /INSERT INTO comments/.test(query.sql));
+
+    assert.equal(movieCommentResponse.status, 201);
+    assert.equal(movieCommentBody.content_id, movieContentId);
+    assert.equal(movieCommentBody.target_type, "content");
+    assert.equal(movieCommentBody.target_id, movieContentId);
+    assert.equal(movieCommentBody.body, "Zaybal kament 2");
+    assert.equal(insertQuery.values[1], null);
+    assert.equal(insertQuery.values[2], "content");
+    assert.equal(insertQuery.values[3], movieContentId);
   } finally {
     await closeServer(commentsServer);
   }

@@ -109,6 +109,7 @@ export function createApp({ container = createContainer() } = {}) {
     requireLegacyDb(legacyDb),
     createLegacyRoutes({
       config: container.config,
+      contentMovies: container.repositories.contentMovies,
       media: legacyMedia
     })
   );

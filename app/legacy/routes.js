@@ -313,16 +313,37 @@ async function getById(db, table, id) {
   return result.rows[0];
 }
 
-async function requireContentExists(db, contentId) {
-  if (!isUuid(contentId)) {
-    throw legacyError(404, "content_not_found", "content not found");
+async function resolveCommentTarget(db, contentId, contentMovies = null) {
+  if (isUuid(contentId)) {
+    const row = await db.one("SELECT id FROM content WHERE id = $1", [contentId]);
+
+    if (row) {
+      return {
+        contentId: row.id,
+        targetId: row.id,
+        targetType: "content"
+      };
+    }
   }
 
-  const row = await db.one("SELECT 1 FROM content WHERE id = $1", [contentId]);
+  const movie = contentMovies?.findById?.(contentId);
 
-  if (!row) {
-    throw legacyError(404, "content_not_found", "content not found");
+  if (movie) {
+    return {
+      contentId: null,
+      targetId: movie.id,
+      targetType: "content"
+    };
   }
+
+  throw legacyError(404, "content_not_found", "content not found");
+}
+
+function serializeComment(row) {
+  return {
+    ...row,
+    content_id: row.content_id || row.target_id || null
+  };
 }
 
 function normalizeLikeTargetType(value) {
@@ -881,7 +902,7 @@ async function maybeStartTranscode(db, config, content) {
   return job;
 }
 
-export function createLegacyRoutes({ config, media }) {
+export function createLegacyRoutes({ config, contentMovies = null, media }) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
@@ -2078,21 +2099,33 @@ export function createLegacyRoutes({ config, media }) {
 
   router.get("/content/:id/comments", asyncHandler(async (request, response) => {
     const { limit, offset } = parseLimitOffset(request.query, 50, 200);
-    response.json(await request.legacyDb.many(
-      "SELECT c.*, u.name AS user_name FROM comments c JOIN users u ON u.id = c.user_id WHERE content_id = $1 ORDER BY c.created_at DESC LIMIT $2 OFFSET $3",
-      [request.params.id, limit, offset]
-    ));
+    const target = await resolveCommentTarget(request.legacyDb, request.params.id, contentMovies);
+    const rows = await request.legacyDb.many(
+      `
+        SELECT c.*, COALESCE(c.target_id, c.content_id::text) AS content_id, u.name AS user_name
+        FROM comments c
+        JOIN users u ON u.id = c.user_id
+        WHERE (c.target_type = $1 AND c.target_id = $2)
+          OR ($3::uuid IS NOT NULL AND c.content_id = $3)
+        ORDER BY c.created_at DESC
+        LIMIT $4 OFFSET $5
+      `,
+      [target.targetType, target.targetId, target.contentId, limit, offset]
+    );
+    response.json(rows.map(serializeComment));
   }));
 
   router.post("/content/:id/comments", requireUser, asyncHandler(async (request, response) => {
     requireFields(request.body, ["body"]);
-    await requireContentExists(request.legacyDb, request.params.id);
+    const target = await resolveCommentTarget(request.legacyDb, request.params.id, contentMovies);
     const row = await insertRow(request.legacyDb, "comments", {
       user_id: request.legacyUser.id,
-      content_id: request.params.id,
+      content_id: target.contentId,
+      target_type: target.targetType,
+      target_id: target.targetId,
       body: request.body.body
     });
-    response.status(201).json(row);
+    response.status(201).json(serializeComment(row));
   }));
 
   router.put("/comments/:id", requireUser, asyncHandler(async (request, response) => {
@@ -2103,7 +2136,7 @@ export function createLegacyRoutes({ config, media }) {
     if (!row) {
       throw legacyError(404, "comment_not_found", "comment not found");
     }
-    response.json(row);
+    response.json(serializeComment(row));
   }));
 
   router.delete("/comments/:id", requireUser, asyncHandler(async (request, response) => {

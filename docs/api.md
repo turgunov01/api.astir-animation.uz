@@ -958,6 +958,12 @@ JSON body:
     "uz": "Movie description UZ"
   },
   "series": [],
+  "category_id": "category-id",
+  "series_id": "series-id",
+  "year": 2026,
+  "age_rating": 6,
+  "duration_sec": 1234,
+  "published": false,
   "tag_ids": ["tag-id"],
   "tags": ["New free-form tag"],
   "is_premium": false
@@ -966,7 +972,7 @@ JSON body:
 
 For video upload, send `multipart/form-data`:
 
-1. `metadata` - JSON string with the same fields, including optional `tag_ids` and `tags`.
+1. `metadata` - JSON string with the same fields, including optional `category_id`, `series_id`, `year`, `age_rating`, `duration_sec`, `published`, `tag_ids`, and `tags`.
 2. `video` - uploaded video file.
 3. `poster` - optional poster image.
 
@@ -986,6 +992,9 @@ Success response:
       "ru": "Movie description RU",
       "uz": "Movie description UZ"
     },
+    "content_type": "movie",
+    "category_id": "category-id",
+    "series_id": "series-id",
     "series": [],
     "tag_ids": ["tag-id"],
     "tags": [
@@ -997,6 +1006,12 @@ Success response:
       }
     ],
     "is_premium": false,
+    "age_rating": 6,
+    "duration_sec": 1234,
+    "duration": 1234,
+    "year": 2026,
+    "published": false,
+    "published_at": null,
     "poster_url": "/media/uploads/poster.png",
     "poster": {
       "url": "/media/uploads/poster.png",
@@ -1018,7 +1033,6 @@ Success response:
       "renditions": [],
       "error": null
     },
-    "duration": null,
     "createdAt": "2026-06-01T00:00:00.000Z"
   }
 }
@@ -1072,6 +1086,12 @@ Body can include:
     "ru": "New description RU",
     "uz": "New description UZ"
   },
+  "category_id": "category-id",
+  "series_id": "series-id",
+  "year": 2026,
+  "age_rating": 6,
+  "duration_sec": 1234,
+  "published": true,
   "is_premium": false,
   "tag_ids": ["tag-id"],
   "tags": ["New free-form tag"]
@@ -1080,7 +1100,7 @@ Body can include:
 
 For poster upload or combined metadata + poster update, send `multipart/form-data`:
 
-1. `metadata` - optional JSON string with `title`, `description`, `is_premium`, `tag_ids`, or `tags`.
+1. `metadata` - optional JSON string with `title`, `description`, `category_id`, `series_id`, `year`, `age_rating`, `duration_sec`, `published`, `is_premium`, `tag_ids`, or `tags`.
 2. `poster` - poster image. The `file` field is also accepted as an alias.
 
 Direct poster upload:

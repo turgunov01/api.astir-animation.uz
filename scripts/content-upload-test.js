@@ -308,8 +308,22 @@ try {
   assert.equal(updatedTag.body.tag.slug, "updated-upload-test-tag");
   assert.equal(updatedTag.body.tag.active, false);
 
+  const movieCategoryResponse = await requestJson(baseUrl, "/v1/content/categories/create", {
+    method: "POST",
+    body: categoryMetadata("movie-metadata-category")
+  });
+
+  assert.equal(movieCategoryResponse.status, 201);
+  const movieCategoryId = movieCategoryResponse.body.category.id;
+
   const movieWithTagsMetadata = {
     ...movieMetadata(),
+    category_id: movieCategoryId,
+    series_id: "legacy-series-id",
+    year: 2026,
+    age_rating: 6,
+    duration_sec: 1234,
+    published: true,
     tag_ids: [updatedTag.body.tag.id],
     tags: ["Auto Upload Test Tag"]
   };
@@ -328,6 +342,14 @@ try {
   assert.equal(typeof createResponse.body.data.transcode_job_id, "string");
   assert.match(createResponse.body.data.video_url, /^\/media\/uploads\//);
   assert.equal(createResponse.body.data.tag_ids.includes(updatedTag.body.tag.id), true);
+  assert.equal(createResponse.body.data.category_id, movieCategoryId);
+  assert.equal(createResponse.body.data.series_id, "legacy-series-id");
+  assert.equal(createResponse.body.data.year, 2026);
+  assert.equal(createResponse.body.data.age_rating, 6);
+  assert.equal(createResponse.body.data.duration_sec, 1234);
+  assert.equal(createResponse.body.data.duration, 1234);
+  assert.equal(createResponse.body.data.published, true);
+  assert.equal(typeof createResponse.body.data.published_at, "string");
   assert.equal(
     createResponse.body.data.tags.some((tag) => tag.name === "Auto Upload Test Tag"),
     true
@@ -357,7 +379,15 @@ try {
   const posterPatchResponse = await requestRaw(baseUrl, `/v1/content/movies/${movieId}`, {
     method: "PATCH",
     body: multipartPosterBody({
-      metadata: { is_premium: false },
+      metadata: {
+        is_premium: false,
+        category_id: null,
+        series_id: null,
+        year: 2027,
+        age_rating: 12,
+        duration_sec: 2345,
+        published: false
+      },
       field: "poster",
       fileName: "replacement-movie-poster.png"
     })
@@ -365,6 +395,14 @@ try {
 
   assert.equal(posterPatchResponse.status, 200);
   assert.equal(posterPatchResponse.body.movie.is_premium, false);
+  assert.equal(posterPatchResponse.body.movie.category_id, null);
+  assert.equal(posterPatchResponse.body.movie.series_id, null);
+  assert.equal(posterPatchResponse.body.movie.year, 2027);
+  assert.equal(posterPatchResponse.body.movie.age_rating, 12);
+  assert.equal(posterPatchResponse.body.movie.duration_sec, 2345);
+  assert.equal(posterPatchResponse.body.movie.duration, 2345);
+  assert.equal(posterPatchResponse.body.movie.published, false);
+  assert.equal(posterPatchResponse.body.movie.published_at, null);
   assert.equal(posterPatchResponse.body.movie.poster.original_name, "replacement-movie-poster.png");
   assert.equal(fs.existsSync(posterPatchResponse.body.movie.poster.storage_path), true);
   assert.equal(fs.existsSync(firstPosterPath), false);
@@ -396,6 +434,10 @@ try {
   assert.equal(singleMovie.status, 200);
   assert.equal(singleMovie.body.movie.id, movieId);
   assert.equal(singleMovie.body.movie.video_url, videoUrl);
+  assert.equal(singleMovie.body.movie.year, 2027);
+  assert.equal(singleMovie.body.movie.age_rating, 12);
+  assert.equal(singleMovie.body.movie.duration_sec, 2345);
+  assert.equal(singleMovie.body.movie.published, false);
   assert.equal(singleMovie.body.movie.tags[0].name, "Replacement Upload Test Tag");
 
   const deleteTagResponse = await requestJson(baseUrl, `/v1/content/tags/${replacementTagId}`, {
