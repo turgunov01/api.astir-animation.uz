@@ -313,6 +313,18 @@ async function getById(db, table, id) {
   return result.rows[0];
 }
 
+async function requireContentExists(db, contentId) {
+  if (!isUuid(contentId)) {
+    throw legacyError(404, "content_not_found", "content not found");
+  }
+
+  const row = await db.one("SELECT 1 FROM content WHERE id = $1", [contentId]);
+
+  if (!row) {
+    throw legacyError(404, "content_not_found", "content not found");
+  }
+}
+
 function normalizeLikeTargetType(value) {
   const normalized = String(value || "").trim().toLowerCase();
 
@@ -2074,6 +2086,7 @@ export function createLegacyRoutes({ config, media }) {
 
   router.post("/content/:id/comments", requireUser, asyncHandler(async (request, response) => {
     requireFields(request.body, ["body"]);
+    await requireContentExists(request.legacyDb, request.params.id);
     const row = await insertRow(request.legacyDb, "comments", {
       user_id: request.legacyUser.id,
       content_id: request.params.id,

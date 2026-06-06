@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import express from "express";
 import jwt from "jsonwebtoken";
 
 process.env.DATABASE_URL = "";
@@ -10,6 +11,7 @@ process.env.JWT_SECRET = "astir-legacy-test-secret";
 const { createServer } = await import("../app/server.js");
 const { openApiDocument } = await import("../app/openapi.js");
 const { requireAdmin, requireParent, requireSuperAdmin } = await import("../app/legacy/auth.js");
+const { createLegacyRoutes } = await import("../app/legacy/routes.js");
 
 const legacyRaw = JSON.parse(fs.readFileSync(path.resolve("app/legacy/legacy-doc.raw.json"), "utf8"));
 const server = createServer();
@@ -25,6 +27,27 @@ function listen() {
 function close() {
   return new Promise((resolve, reject) => {
     server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function listenApp(app) {
+  return new Promise((resolve) => {
+    const appServer = app.listen(0, "127.0.0.1", () => {
+      resolve(appServer);
+    });
+  });
+}
+
+function closeServer(appServer) {
+  return new Promise((resolve, reject) => {
+    appServer.close((error) => {
       if (error) {
         reject(error);
         return;
@@ -147,6 +170,75 @@ try {
   const gatedBody = await gatedResponse.json();
   assert.equal(gatedBody.error, "database_unavailable");
   assert.equal(typeof gatedBody.message.en, "string");
+
+  const missingContentId = "165f1d6e-2fb6-4785-812f-5fd18c020cfd";
+  const fakeUser = {
+    id: "8f847c1c-bc7e-4c17-9d58-6f0c96917ca8",
+    email: "parent@example.com",
+    name: "Parent",
+    role: "parent",
+    active: true
+  };
+  const fakeQueries = [];
+  const fakeLegacyDb = {
+    one(sql, values) {
+      fakeQueries.push({ method: "one", sql, values });
+
+      if (/FROM users/.test(sql)) {
+        return fakeUser;
+      }
+
+      if (/FROM content WHERE id = \$1/.test(sql)) {
+        return null;
+      }
+
+      throw new Error(`unexpected query: ${sql}`);
+    },
+    query(sql, values) {
+      fakeQueries.push({ method: "query", sql, values });
+      throw new Error(`unexpected write: ${sql}`);
+    }
+  };
+  const fakeMedia = {
+    upload() {
+      return {
+        single() {
+          return (request, response, next) => next();
+        }
+      };
+    }
+  };
+  const commentsApp = express();
+  commentsApp.use(express.json());
+  commentsApp.use((request, response, next) => {
+    request.legacyDb = fakeLegacyDb;
+    next();
+  });
+  commentsApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    media: fakeMedia
+  }));
+  const commentsServer = await listenApp(commentsApp);
+
+  try {
+    const commentsBaseUrl = `http://127.0.0.1:${commentsServer.address().port}`;
+    const missingContentResponse = await fetch(`${commentsBaseUrl}/api/v1/content/${missingContentId}/comments`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${legacyUserToken(fakeUser)}`
+      },
+      body: JSON.stringify({ body: "Jgar qarziyni qachon berasa?" })
+    });
+    const missingContentBody = await missingContentResponse.json();
+
+    assert.equal(missingContentResponse.status, 404);
+    assert.equal(missingContentBody.error, "content_not_found");
+    assert.equal(missingContentBody.message.en, "content not found");
+    assert.equal(fakeQueries.some((query) => query.method === "query" && /INSERT INTO comments/.test(query.sql)), false);
+  } finally {
+    await closeServer(commentsServer);
+  }
 
   console.log("Legacy contract test passed");
 } finally {
