@@ -5455,6 +5455,48 @@ export const openApiDocument = {
         security: [{ parentToken: [] }, { deviceToken: [] }],
         parameters: [
           {
+            name: "category",
+            in: "query",
+            required: false,
+            description: "Filter by category id, slug, or localized title. Alias: category_id.",
+            schema: { type: "string" }
+          },
+          {
+            name: "category_id",
+            in: "query",
+            required: false,
+            description: "Filter by category id. Alias: category.",
+            schema: { type: "string" }
+          },
+          {
+            name: "tags",
+            in: "query",
+            required: false,
+            description: "Comma-separated tag ids, slugs, or names. All tags must match. Alias: tag_ids.",
+            schema: { type: "string" }
+          },
+          {
+            name: "tag_ids",
+            in: "query",
+            required: false,
+            description: "Comma-separated tag ids. Alias: tags.",
+            schema: { type: "string" }
+          },
+          {
+            name: "q",
+            in: "query",
+            required: false,
+            description: "Text search in movie title, description, or content type. Alias: search.",
+            schema: { type: "string" }
+          },
+          {
+            name: "search",
+            in: "query",
+            required: false,
+            description: "Text search alias for q.",
+            schema: { type: "string" }
+          },
+          {
             name: "liked",
             in: "query",
             required: false,

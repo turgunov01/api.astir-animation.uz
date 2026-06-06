@@ -325,6 +325,32 @@ function uniqueStrings(values = []) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim() !== "").map((value) => value.trim()))];
 }
 
+function normalized(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function localizedValues(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return Object.values(value);
+  }
+
+  return [value];
+}
+
+function localizedIncludes(value, query) {
+  const needle = normalized(query);
+
+  if (!needle) {
+    return true;
+  }
+
+  return localizedValues(value).some((entry) => normalized(entry).includes(needle));
+}
+
 async function findOrCreateTagByName(contentTags, name) {
   const normalizedName = String(name || "").trim();
 
@@ -373,6 +399,47 @@ function assertMovieCategoryExists(contentCategories, categoryId) {
   if (!contentCategories.findById(categoryId)) {
     throw badRequest("category_id contains an unknown category id", "VALIDATION_ERROR");
   }
+}
+
+function categoryFilterValues(contentCategories, category) {
+  const value = String(category || "").trim();
+
+  if (!value) {
+    return [];
+  }
+
+  const normalizedValue = normalized(value);
+  const matches = contentCategories.list().filter((item) => (
+    normalized(item.id) === normalizedValue ||
+    normalized(item.slug) === normalizedValue ||
+    localizedValues(item.title || item.name).some((entry) => normalized(entry) === normalizedValue)
+  ));
+
+  return [...new Set([value, ...matches.map((item) => item.id)])];
+}
+
+async function tagFilterIds(contentTags, tags = []) {
+  const tagIds = [];
+
+  for (const value of uniqueStrings(tags)) {
+    const tag = (isUuid(value) ? await contentTags.findById(value) : null)
+      || await contentTags.findBySlug(value)
+      || await contentTags.findByName(value);
+
+    tagIds.push(tag?.id || value);
+  }
+
+  return [...new Set(tagIds)];
+}
+
+function movieMatchesSearch(movie, query) {
+  if (!query) {
+    return true;
+  }
+
+  return localizedIncludes(movie.title, query)
+    || localizedIncludes(movie.description, query)
+    || normalized(movie.content_type).includes(normalized(query));
 }
 
 function initialTranscode(file) {
@@ -756,22 +823,37 @@ export function createContentService({
       };
     },
 
-    listContent(actor, { liked = false } = {}) {
+    listContent(actor, { liked = false, q = "" } = {}) {
       const likeContext = likeContextForActor(actor);
-      const items = catalog.map((item) => serializeCatalogItem(item, likeContext));
+      const items = catalog
+        .filter((item) => localizedIncludes(item.title, q) || normalized(item.type).includes(normalized(q)))
+        .map((item) => serializeCatalogItem(item, likeContext));
 
       return liked ? items.filter((item) => item.is_liked) : items;
     },
 
-    async listMovies(actor, { liked = false } = {}) {
+    async listMovies(actor, { category = "", liked = false, q = "", tags = [] } = {}) {
       const likeContext = likeContextForActor(actor);
+      const categoryValues = categoryFilterValues(contentCategories, category);
+      const filterTagIds = await tagFilterIds(contentTags, tags);
+      const movieRows = await Promise.all(
+        contentMovies.list()
+          .filter((movie) => tariffService.canWatchMovie(actor, movie))
+          .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
+          .filter((movie) => movieMatchesSearch(movie, q))
+          .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
+          .map(async (movie) => ({
+            movie,
+            tagIds: await contentMovieTags.listByMovieId(movie.id)
+          }))
+      );
+      const filteredMovies = movieRows
+        .filter(({ tagIds }) => filterTagIds.every((tagId) => tagIds.includes(tagId)))
+        .map(({ movie }) => movie);
 
       return {
         movies: await Promise.all(
-          contentMovies.list()
-            .filter((movie) => tariffService.canWatchMovie(actor, movie))
-            .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
-            .map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
+          filteredMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
         )
       };
     },

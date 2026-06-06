@@ -883,18 +883,26 @@ What happens:
 Request:
 
 ```text
-GET /v1/content/movies
+GET /v1/content/movies?category=category-id-or-slug&tags=tag-id-or-slug,another-tag
 ```
 
 This request needs a parent token or a device token.
 
+Optional query filters:
+
+1. `category` or `category_id` - category id, slug, or localized category title.
+2. `tags` or `tag_ids` - comma-separated tag ids, slugs, or names. All listed tags must match.
+3. `q` or `search` - text search in movie title, description, or content type.
+4. `liked=true` - return only movies liked by the current actor.
+
 What happens:
 
 1. The backend checks the token.
-2. The backend returns movie records.
-3. The `free` tariff returns only non-premium movies.
-4. The `premium` tariff returns all movies.
-5. Each movie includes playback status.
+2. The backend applies only the filters that are present in the query.
+3. The backend returns movie records.
+4. The `free` tariff returns only non-premium movies.
+5. The `premium` tariff returns all movies.
+6. Each movie includes playback status.
 
 ## 38. Get One Movie
 

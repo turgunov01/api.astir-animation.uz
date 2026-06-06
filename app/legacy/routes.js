@@ -269,6 +269,23 @@ function contentKind(row) {
   return "content";
 }
 
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || "";
+  }
+
+  return value || "";
+}
+
+function queryValues(value) {
+  const values = Array.isArray(value) ? value : [value];
+
+  return values
+    .flatMap((entry) => String(entry || "").split(","))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 async function insertRow(db, table, attributes) {
   const entries = Object.entries(attributes).filter(([, value]) => value !== undefined);
   const columns = entries.map(([key]) => key);
@@ -506,9 +523,16 @@ async function listLegacyContent(request, response) {
     filters.push("c.published = true");
   }
 
-  if (request.query.category_id) {
-    values.push(request.query.category_id);
-    filters.push(`c.category_id = $${values.length}`);
+  const category = firstQueryValue(request.query.category || request.query.category_id);
+  if (category) {
+    values.push(category);
+    filters.push(`(
+      c.category_id::text = $${values.length}
+      OR lower(cat.slug) = lower($${values.length})
+      OR lower(cat.name->>'en') = lower($${values.length})
+      OR lower(cat.name->>'ru') = lower($${values.length})
+      OR lower(cat.name->>'uz') = lower($${values.length})
+    )`);
   }
 
   if (request.query.q) {
@@ -531,16 +555,23 @@ async function listLegacyContent(request, response) {
     filters.push(`cat.kind = $${values.length}`);
   }
 
-  if (request.query.tag_ids) {
-    const tagIds = String(request.query.tag_ids).split(",").map((tag) => tag.trim()).filter(Boolean);
-    if (tagIds.length > 0) {
-      values.push(tagIds);
-      filters.push(`c.id IN (
-          SELECT content_id FROM content_tags
-          WHERE tag_id = ANY($${values.length}::uuid[])
-          GROUP BY content_id
-          HAVING COUNT(DISTINCT tag_id) = ${tagIds.length}
-        )`);
+  const tags = queryValues(request.query.tags || request.query.tag_ids);
+  if (tags.length > 0) {
+    for (const tag of tags) {
+      values.push(tag.toLowerCase());
+      filters.push(`EXISTS (
+        SELECT 1
+        FROM content_tags ct
+        JOIN tags t ON t.id = ct.tag_id
+        WHERE ct.content_id = c.id
+          AND (
+            lower(ct.tag_id::text) = $${values.length}
+            OR lower(t.slug) = $${values.length}
+            OR lower(t.name->>'en') = $${values.length}
+            OR lower(t.name->>'ru') = $${values.length}
+            OR lower(t.name->>'uz') = $${values.length}
+          )
+      )`);
     }
   }
 

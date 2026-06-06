@@ -119,6 +119,23 @@ function optionalPresentBoolean(body, field) {
   return value;
 }
 
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || "";
+  }
+
+  return value || "";
+}
+
+function queryList(value) {
+  const values = Array.isArray(value) ? value : [value];
+
+  return values
+    .flatMap((entry) => String(entry || "").split(","))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function optionalIntegerValue(body, field, fallback = null, options = {}) {
   const value = body?.[field];
 
@@ -353,7 +370,8 @@ export function createContentController({ contentService }) {
     async list(request, response) {
       response.json({
         content: await contentService.listContent(request.actor, {
-          liked: request.query.liked === "true"
+          liked: request.query.liked === "true",
+          q: firstQueryValue(request.query.q || request.query.search)
         })
       });
     },
@@ -368,7 +386,10 @@ export function createContentController({ contentService }) {
 
     async listMovies(request, response) {
       response.json(await contentService.listMovies(request.actor, {
-        liked: request.query.liked === "true"
+        category: firstQueryValue(request.query.category || request.query.category_id),
+        liked: request.query.liked === "true",
+        q: firstQueryValue(request.query.q || request.query.search),
+        tags: queryList(request.query.tags || request.query.tag_ids)
       }));
     },
 

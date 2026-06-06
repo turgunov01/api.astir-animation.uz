@@ -295,6 +295,37 @@ try {
     true
   );
 
+  const moviesByCategory = await request(baseUrl, `/v1/content/movies?category=${encodeURIComponent(updatedCategory.category.slug)}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    moviesByCategory.movies.some((movie) => movie.id === movieId),
+    true
+  );
+
+  const moviesByTag = await request(baseUrl, `/v1/content/movies?tags=${encodeURIComponent(tagResponse.tag.slug)}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    moviesByTag.movies.some((movie) => movie.id === movieId),
+    true
+  );
+
+  const moviesByCategoryAndTag = await request(
+    baseUrl,
+    `/v1/content/movies?category=${encodeURIComponent(categoryId)}&tags=${encodeURIComponent(tagId)}`,
+    {
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(
+    moviesByCategoryAndTag.movies.some((movie) => movie.id === movieId),
+    true
+  );
+
   const initialLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
     headers: { authorization: `Bearer ${parentToken}` }
   });
