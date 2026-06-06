@@ -29,6 +29,7 @@ export const openApiDocument = {
     { name: "Movies" },
     { name: "Categories" },
     { name: "Tags" },
+    { name: "Likes" },
     { name: "Watch Sessions" }
   ],
   components: {
@@ -374,7 +375,12 @@ export const openApiDocument = {
           title: { $ref: "#/components/schemas/LocalizedText" },
           type: { type: "string", example: "cartoon" },
           ageRating: { type: "string", example: "G" },
-          durationMinutes: { type: "integer", example: 7 }
+          durationMinutes: { type: "integer", example: 7 },
+          item_type: { type: "string", example: "content" },
+          target_type: { type: "string", example: "content" },
+          target_id: { type: "string", example: "bluey-001" },
+          likes_count: { type: "integer", example: 1 },
+          is_liked: { type: "boolean", example: true }
         }
       },
       ContentCategory: {
@@ -444,6 +450,13 @@ export const openApiDocument = {
             readOnly: true,
             example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
           },
+          item_type: { type: "string", example: "movie" },
+          target_type: { type: "string", example: "content" },
+          target_id: {
+            type: "string",
+            format: "uuid",
+            example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
+          },
           title: { $ref: "#/components/schemas/LocalizedText" },
           description: { $ref: "#/components/schemas/LocalizedText" },
           series: {
@@ -465,6 +478,8 @@ export const openApiDocument = {
             items: { $ref: "#/components/schemas/ContentTag" }
           },
           is_premium: { type: "boolean", example: false },
+          likes_count: { type: "integer", example: 1 },
+          is_liked: { type: "boolean", example: true },
           poster_url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
           poster: {
             type: "object",
@@ -523,6 +538,18 @@ export const openApiDocument = {
               error: { type: "string", nullable: true }
             }
           }
+        }
+      },
+      LikeStatus: {
+        type: "object",
+        properties: {
+          liked: { type: "boolean", example: true },
+          content_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          target_type: { type: "string", example: "content" },
+          target_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          item_type: { type: "string", example: "movie" },
+          likes_count: { type: "integer", example: 1 },
+          is_liked: { type: "boolean", example: true }
         }
       },
       ContentStatus: {
@@ -5291,11 +5318,142 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/content/likes": {
+      get: {
+        tags: ["Likes"],
+        summary: "List liked content for the current actor",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        responses: {
+          200: {
+            description: "Liked content list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        oneOf: [
+                          { $ref: "#/components/schemas/ContentItem" },
+                          { $ref: "#/components/schemas/ContentMovie" }
+                        ]
+                      }
+                    },
+                    likes: {
+                      type: "array",
+                      items: {
+                        oneOf: [
+                          { $ref: "#/components/schemas/ContentItem" },
+                          { $ref: "#/components/schemas/ContentMovie" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/{content_id}/like": {
+      get: {
+        tags: ["Likes"],
+        summary: "Check whether the current actor liked a content item",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Like status",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LikeStatus" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Likes"],
+        summary: "Like a content item and save it to favorites",
+        description: "Idempotent: liking an already-liked item leaves one favorite record.",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          201: {
+            description: "Content liked",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LikeStatus" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Likes"],
+        summary: "Unlike a content item and remove it from favorites",
+        description: "Idempotent: unliking an item that is not liked is a no-op.",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content unliked",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LikeStatus" }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/v1/content/movies": {
       get: {
         tags: ["Movies"],
         summary: "List movies",
         security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "liked",
+            in: "query",
+            required: false,
+            description: "When true, return only movies liked by the current actor.",
+            schema: { type: "boolean" }
+          }
+        ],
         responses: {
           200: {
             description: "Movie list",

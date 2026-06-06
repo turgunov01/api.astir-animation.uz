@@ -281,6 +281,55 @@ try {
     true
   );
 
+  const initialLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(initialLikeStatus.liked, false);
+  assert.equal(initialLikeStatus.likes_count, 0);
+
+  const likedMovie = await requestWithStatus(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(likedMovie.status, 201);
+  assert.equal(likedMovie.body.liked, true);
+  assert.equal(likedMovie.body.likes_count, 1);
+
+  const likedStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(likedStatus.liked, true);
+  assert.equal(likedStatus.likes_count, 1);
+
+  const likedMovies = await request(baseUrl, "/v1/content/movies?liked=true", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    likedMovies.movies.some((movie) => movie.id === movieId && movie.is_liked === true),
+    true
+  );
+
+  const likedContent = await request(baseUrl, "/v1/content/likes", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    likedContent.data.some((item) => item.id === movieId && item.is_liked === true),
+    true
+  );
+
+  const unlikedMovie = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(unlikedMovie.liked, false);
+  assert.equal(unlikedMovie.likes_count, 0);
+
   const premiumMovieResponse = await request(baseUrl, "/v1/content/movies/create", {
     method: "POST",
     headers: { authorization: `Bearer ${parentToken}` },

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 
 const catalog = [
   {
@@ -51,6 +51,19 @@ function toLocalizedText(value) {
     en: value || "",
     ru: value || "",
     uz: value || ""
+  };
+}
+
+function serializeCatalogItem(item, likeContext = null) {
+  return {
+    ...item,
+    item_type: "content",
+    target_type: "content",
+    target_id: item.id,
+    likes_count: likeContext?.contentLikes?.countByTarget(item.id) || 0,
+    is_liked: likeContext?.ownerId
+      ? Boolean(likeContext.contentLikes.findByOwnerAndTarget(likeContext.ownerId, item.id))
+      : false
   };
 }
 
@@ -121,7 +134,7 @@ async function serializeMovieTags(tagIds, contentTags) {
   return tags.filter(Boolean).map(serializeTag);
 }
 
-async function serializeMovie(movie, series = [], contentTags, contentMovieTags) {
+async function serializeMovie(movie, series = [], contentTags, contentMovieTags, likeContext = null) {
   const videoUrl = sourceUrl(movie.source);
   const posterUrl = sourceUrl(movie.poster);
   const transcodeStatus = movie.transcode?.status || "missing_source";
@@ -134,14 +147,21 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags)
 
   return {
     id: movie.id,
+    item_type: "movie",
+    target_type: "content",
+    target_id: movie.id,
     title: toLocalizedText(movie.title),
     description: toLocalizedText(movie.description),
     series: series.length > 0
-      ? await Promise.all(series.map((item) => serializeMovie(item, [], contentTags, contentMovieTags)))
+      ? await Promise.all(series.map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext)))
       : movie.series || [],
     tag_ids: tagIds,
     tags: await serializeMovieTags(tagIds, contentTags),
     is_premium: Boolean(movie.is_premium),
+    likes_count: likeContext?.contentLikes?.countByTarget(movie.id) || 0,
+    is_liked: likeContext?.ownerId
+      ? Boolean(likeContext.contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id))
+      : false,
     poster_url: posterUrl,
     poster: movie.poster
       ? {
@@ -379,7 +399,34 @@ function assertCategoryTitleAvailable(contentCategories, title, currentCategoryI
   }
 }
 
-export function createContentService({ contentCategories, contentMovieTags, contentMovies, contentTags, tariffService, transcoder }) {
+export function createContentService({
+  contentCategories,
+  contentLikes,
+  contentMovieTags,
+  contentMovies,
+  contentTags,
+  tariffService,
+  transcoder
+}) {
+  function ownerIdForActor(actor) {
+    if (actor?.type === "parent" && actor.parent?.id) {
+      return actor.parent.id;
+    }
+
+    if (actor?.type === "device" && actor.device?.parentId) {
+      return actor.device.parentId;
+    }
+
+    throw forbidden("Like owner was not found", "LIKE_OWNER_NOT_FOUND");
+  }
+
+  function likeContextForActor(actor) {
+    return {
+      contentLikes,
+      ownerId: ownerIdForActor(actor)
+    };
+  }
+
   function getCategory(categoryId) {
     const category = contentCategories.findById(categoryId);
 
@@ -429,6 +476,46 @@ export function createContentService({ contentCategories, contentMovieTags, cont
     ];
   }
 
+  function resolveLikeTarget(actor, contentId) {
+    const movie = contentMovies.findById(contentId);
+
+    if (movie) {
+      tariffService.assertCanWatchMovie(actor, movie);
+
+      return {
+        id: movie.id,
+        targetType: "content",
+        itemType: "movie",
+        movie
+      };
+    }
+
+    const content = catalog.find((item) => item.id === contentId);
+
+    if (content) {
+      return {
+        id: content.id,
+        targetType: "content",
+        itemType: "content",
+        content
+      };
+    }
+
+    throw notFound("Content item not found", "CONTENT_NOT_FOUND");
+  }
+
+  function likeResponse(ownerId, target, liked) {
+    return {
+      liked,
+      content_id: target.id,
+      target_type: target.targetType,
+      target_id: target.id,
+      item_type: target.itemType,
+      likes_count: contentLikes.countByTarget(target.id, target.targetType),
+      is_liked: Boolean(contentLikes.findByOwnerAndTarget(ownerId, target.id, target.targetType))
+    };
+  }
+
   return {
     createCategory({ title, description, type, slug, active, file }) {
       assertCategoryTitleAvailable(contentCategories, title);
@@ -462,6 +549,67 @@ export function createContentService({ contentCategories, contentMovieTags, cont
 
     findContent(contentId) {
       return catalog.find((item) => item.id === contentId) || null;
+    },
+
+    getLikeStatus(actor, contentId) {
+      const ownerId = ownerIdForActor(actor);
+      const target = resolveLikeTarget(actor, contentId);
+      const liked = Boolean(contentLikes.findByOwnerAndTarget(ownerId, target.id, target.targetType));
+
+      return likeResponse(ownerId, target, liked);
+    },
+
+    likeContent(actor, contentId) {
+      const ownerId = ownerIdForActor(actor);
+      const target = resolveLikeTarget(actor, contentId);
+
+      contentLikes.findOrCreate(ownerId, target.id, target.targetType);
+
+      return likeResponse(ownerId, target, true);
+    },
+
+    async listLikedContent(actor) {
+      const likeContext = likeContextForActor(actor);
+      const items = [];
+
+      for (const like of contentLikes.listByOwnerId(likeContext.ownerId)) {
+        const movie = contentMovies.findById(like.targetId);
+
+        if (movie) {
+          if (!tariffService.canWatchMovie(actor, movie)) {
+            continue;
+          }
+
+          items.push({
+            ...await serializeMovie(movie, listSeriesRecords(movie), contentTags, contentMovieTags, likeContext),
+            liked_at: like.createdAt
+          });
+          continue;
+        }
+
+        const content = catalog.find((item) => item.id === like.targetId);
+
+        if (content) {
+          items.push({
+            ...serializeCatalogItem(content, likeContext),
+            liked_at: like.createdAt
+          });
+        }
+      }
+
+      return {
+        data: items,
+        likes: items
+      };
+    },
+
+    unlikeContent(actor, contentId) {
+      const ownerId = ownerIdForActor(actor);
+      const target = resolveLikeTarget(actor, contentId);
+
+      contentLikes.deleteByOwnerAndTarget(ownerId, target.id, target.targetType);
+
+      return likeResponse(ownerId, target, false);
     },
 
     async addSeriesMovie(parentMovieId, attributes) {
@@ -531,13 +679,15 @@ export function createContentService({ contentCategories, contentMovieTags, cont
       tariffService.assertCanWatchMovie(actor, movie);
 
       const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
+      const likeContext = likeContextForActor(actor);
 
       return {
         movie: await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode).filter((item) => tariffService.canWatchMovie(actor, item)),
           contentTags,
-          contentMovieTags
+          contentMovieTags,
+          likeContext
         )
       };
     },
@@ -546,13 +696,14 @@ export function createContentService({ contentCategories, contentMovieTags, cont
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
+      const likeContext = likeContextForActor(actor);
 
       return {
         movie_id: movie.id,
         series: await Promise.all(
           listSeriesRecords(movie)
             .filter((item) => tariffService.canWatchMovie(actor, item))
-            .map((item) => serializeMovie(item, [], contentTags, contentMovieTags))
+            .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
         )
       };
     },
@@ -563,16 +714,22 @@ export function createContentService({ contentCategories, contentMovieTags, cont
       };
     },
 
-    listContent() {
-      return catalog;
+    listContent(actor, { liked = false } = {}) {
+      const likeContext = likeContextForActor(actor);
+      const items = catalog.map((item) => serializeCatalogItem(item, likeContext));
+
+      return liked ? items.filter((item) => item.is_liked) : items;
     },
 
-    async listMovies(actor) {
+    async listMovies(actor, { liked = false } = {}) {
+      const likeContext = likeContextForActor(actor);
+
       return {
         movies: await Promise.all(
           contentMovies.list()
             .filter((movie) => tariffService.canWatchMovie(actor, movie))
-            .map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags))
+            .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
+            .map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
         )
       };
     },
@@ -587,6 +744,7 @@ export function createContentService({ contentCategories, contentMovieTags, cont
 
         if (deleted) {
           await contentMovieTags.removeMovie(movieToDelete.id);
+          contentLikes.deleteByTarget(movieToDelete.id);
           transcoder.removeMovieFiles(movieToDelete);
           removeStoredFile(movieToDelete.poster);
         }

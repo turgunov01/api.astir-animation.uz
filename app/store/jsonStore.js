@@ -9,6 +9,7 @@ const emptyData = {
   children: [],
   devices: [],
   contentCategories: [],
+  contentLikes: [],
   contentTags: [],
   contentMovies: [],
   pairingSessions: [],

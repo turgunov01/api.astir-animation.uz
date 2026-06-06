@@ -46,6 +46,7 @@ export function createContainer({ store = defaultStore } = {}) {
   });
   services.content = createContentService({
     contentCategories: repositories.contentCategories,
+    contentLikes: repositories.contentLikes,
     contentMovieTags: repositories.contentMovieTags,
     contentMovies: repositories.contentMovies,
     contentTags: repositories.contentTags,

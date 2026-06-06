@@ -87,6 +87,10 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
     authMiddleware.requireParent,
     asyncHandler(contentController.deleteTag)
   );
+  router.get("/likes", authMiddleware.requireActor, asyncHandler(contentController.listLikes));
+  router.get("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.checkLike));
+  router.post("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.likeContent));
+  router.delete("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.unlikeContent));
 
   // New version of the movie creation endpoint that accepts JSON body instead of multipart form data
 

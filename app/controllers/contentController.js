@@ -83,6 +83,10 @@ function logMovieUpload(request, event, details = {}) {
   }));
 }
 
+function contentIdParam(request) {
+  return request.params.content_id || request.params.movie_id;
+}
+
 async function withUploadCleanup(request, work) {
   try {
     return await work();
@@ -216,6 +220,10 @@ export function createContentController({ contentService }) {
       });
     },
 
+    async checkLike(request, response) {
+      response.json(contentService.getLikeStatus(request.actor, contentIdParam(request)));
+    },
+
     async createTag(request, response) {
       const tag = await contentService.createTag({
         name: requiredString(request.body, "name"),
@@ -264,15 +272,29 @@ export function createContentController({ contentService }) {
     },
 
     async list(request, response) {
-      response.json({ content: await contentService.listContent() });
+      response.json({
+        content: await contentService.listContent(request.actor, {
+          liked: request.query.liked === "true"
+        })
+      });
     },
 
     async listCategories(request, response) {
       response.json(await contentService.listCategories());
     },
 
+    async listLikes(request, response) {
+      response.json(await contentService.listLikedContent(request.actor));
+    },
+
     async listMovies(request, response) {
-      response.json(await contentService.listMovies(request.actor));
+      response.json(await contentService.listMovies(request.actor, {
+        liked: request.query.liked === "true"
+      }));
+    },
+
+    async likeContent(request, response) {
+      response.status(201).json(contentService.likeContent(request.actor, contentIdParam(request)));
     },
 
     async listTags(request, response) {
@@ -416,6 +438,10 @@ export function createContentController({ contentService }) {
       response.json({
         tag: await contentService.updateTag(request.params.tag_id, attributes)
       });
+    },
+
+    async unlikeContent(request, response) {
+      response.json(contentService.unlikeContent(request.actor, contentIdParam(request)));
     }
   };
 }
