@@ -165,6 +165,12 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     is_liked: likeContext?.ownerId
       ? Boolean(likeContext.contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id))
       : false,
+    views_count: movie.views_count || 0,
+    watch_time_sec: movie.watch_time_sec || 0,
+    last_viewed_at: movie.last_viewed_at || null,
+    series_views_count: movie.series_views_count || 0,
+    series_watch_time_sec: movie.series_watch_time_sec || 0,
+    series_last_viewed_at: movie.series_last_viewed_at || null,
     poster_url: posterUrl,
     poster: movie.poster
       ? {
@@ -442,6 +448,10 @@ function movieMatchesSearch(movie, query) {
     || normalized(movie.content_type).includes(normalized(query));
 }
 
+function metricValue(value) {
+  return Number.isFinite(value) ? value : 0;
+}
+
 function initialTranscode(file) {
   if (!file) {
     return {
@@ -480,6 +490,12 @@ function movieAttributes(attributes) {
     year: attributes.year ?? null,
     published,
     published_at: published ? new Date().toISOString() : null,
+    views_count: 0,
+    watch_time_sec: 0,
+    last_viewed_at: null,
+    series_views_count: 0,
+    series_watch_time_sec: 0,
+    series_last_viewed_at: null,
     poster: createSourceFromFile(attributes.posterFile),
     source: createSourceFromFile(attributes.file),
     transcode: initialTranscode(attributes.file)
@@ -570,6 +586,10 @@ export function createContentService({
       .filter(Boolean);
   }
 
+  function findParentSeriesMovie(movieId) {
+    return contentMovies.list().find((movie) => (movie.series || []).includes(movieId)) || null;
+  }
+
   function collectMovieTree(movie, seenMovieIds = new Set()) {
     if (!movie || seenMovieIds.has(movie.id)) {
       return [];
@@ -656,6 +676,72 @@ export function createContentService({
 
     findContent(contentId) {
       return catalog.find((item) => item.id === contentId) || null;
+    },
+
+    async findWatchContent(actor, contentId) {
+      const movie = contentMovies.findById(contentId);
+
+      if (movie) {
+        tariffService.assertCanWatchMovie(actor, movie);
+        const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
+        const likeContext = likeContextForActor(actor);
+        const parentSeries = findParentSeriesMovie(movie.id);
+
+        return {
+          content: await serializeMovie(movieWithTranscode, listSeriesRecords(movieWithTranscode), contentTags, contentMovieTags, likeContext),
+          target: {
+            type: "movie",
+            contentId: movie.id,
+            parentSeriesId: parentSeries?.id || null
+          }
+        };
+      }
+
+      const content = catalog.find((item) => item.id === contentId);
+
+      if (content) {
+        return {
+          content: serializeCatalogItem(content, likeContextForActor(actor)),
+          target: {
+            type: "catalog",
+            contentId: content.id,
+            parentSeriesId: null
+          }
+        };
+      }
+
+      throw notFound("Content item not found", "CONTENT_NOT_FOUND");
+    },
+
+    recordWatchProgress({ contentId, countedAsView = false, watchTimeDeltaSec = 0 }) {
+      const movie = contentMovies.findById(contentId);
+
+      if (!movie) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const delta = Math.max(0, watchTimeDeltaSec);
+      const updatedMovie = contentMovies.update(movie.id, {
+        views_count: metricValue(movie.views_count) + (countedAsView ? 1 : 0),
+        watch_time_sec: metricValue(movie.watch_time_sec) + delta,
+        last_viewed_at: countedAsView ? now : movie.last_viewed_at || null
+      });
+      const parentSeries = findParentSeriesMovie(movie.id);
+      let updatedSeries = null;
+
+      if (parentSeries) {
+        updatedSeries = contentMovies.update(parentSeries.id, {
+          series_views_count: metricValue(parentSeries.series_views_count) + (countedAsView ? 1 : 0),
+          series_watch_time_sec: metricValue(parentSeries.series_watch_time_sec) + delta,
+          series_last_viewed_at: countedAsView ? now : parentSeries.series_last_viewed_at || null
+        });
+      }
+
+      return {
+        movie: updatedMovie,
+        series: updatedSeries
+      };
     },
 
     getLikeStatus(actor, contentId) {

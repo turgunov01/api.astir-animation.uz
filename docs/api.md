@@ -903,6 +903,7 @@ What happens:
 4. The `free` tariff returns only non-premium movies.
 5. The `premium` tariff returns all movies.
 6. Each movie includes playback status.
+7. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
 
 ## 38. Get One Movie
 
@@ -1190,7 +1191,7 @@ Body:
 
 ```json
 {
-  "contentId": "bluey-001"
+  "contentId": "movie-id-or-catalog-id"
 }
 ```
 
@@ -1203,7 +1204,34 @@ What happens:
 5. The backend checks if the daily limit is already used.
 6. If all checks pass, the watch session starts.
 
-## 46. Stop A Watch Session
+## 46. Update Watch Progress
+
+Request:
+
+```text
+PATCH /v1/watch-sessions/:watchSessionId/progress
+```
+
+This request needs a device token.
+
+Body:
+
+```json
+{
+  "watchedSec": 12,
+  "positionSec": 12
+}
+```
+
+What happens:
+
+1. The backend checks that the session belongs to the same device.
+2. The backend stores cumulative watched seconds and current playback position.
+3. When `watchedSec` reaches 10, the backend counts one view for that session.
+4. For movie content, the backend increments `views_count` once and adds watch time to `watch_time_sec`.
+5. If the movie is an episode inside another movie's `series` array, the backend also updates the parent movie's `series_views_count` and `series_watch_time_sec`.
+
+## 47. Stop A Watch Session
 
 Request:
 

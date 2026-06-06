@@ -1,5 +1,7 @@
 import { badRequest, forbidden, notFound } from "../lib/errors.js";
 
+const countedViewThresholdSeconds = 10;
+
 function minutesSinceMidnight(date) {
   return date.getHours() * 60 + date.getMinutes();
 }
@@ -51,6 +53,13 @@ function usedSecondsToday(sessions, now) {
 }
 
 export function createWatchService({ childService, children, contentService, watchSessions }) {
+  function actorForDevice(device) {
+    return {
+      type: "device",
+      device
+    };
+  }
+
   function getDeviceConfig(device) {
     const child = children.findById(device.childId);
 
@@ -76,18 +85,14 @@ export function createWatchService({ childService, children, contentService, wat
     };
   }
 
-  function startWatchSession(device, { contentId }) {
-    const content = contentService.findContent(contentId);
-
-    if (!content) {
-      throw notFound("Content item not found", "CONTENT_NOT_FOUND");
-    }
-
+  async function startWatchSession(device, { contentId }) {
     const activeSession = watchSessions.findActiveByDeviceId(device.id);
 
     if (activeSession) {
       throw badRequest("Device already has an active watch session", "WATCH_SESSION_ACTIVE");
     }
+
+    const watchTarget = await contentService.findWatchContent(actorForDevice(device), contentId);
 
     const limit = childService.getLimits(device.parentId, device.childId);
     const now = new Date();
@@ -114,19 +119,25 @@ export function createWatchService({ childService, children, contentService, wat
       childId: device.childId,
       deviceId: device.id,
       contentId,
+      contentType: watchTarget.target.type,
+      parentSeriesId: watchTarget.target.parentSeriesId,
       startedAt: now.toISOString(),
       endedAt: null,
-      durationSeconds: null
+      durationSeconds: null,
+      positionSeconds: 0,
+      watchedSeconds: 0,
+      countedAsView: false,
+      viewCountedAt: null
     });
 
     return {
       ...session,
-      content,
+      content: watchTarget.content,
       remainingSecondsToday: limitSeconds - usedSeconds
     };
   }
 
-  function stopWatchSession(device, watchSessionId) {
+  function assertDeviceSession(device, watchSessionId) {
     const session = watchSessions.findById(watchSessionId);
 
     if (!session) {
@@ -137,21 +148,65 @@ export function createWatchService({ childService, children, contentService, wat
       throw forbidden("Watch session does not belong to this device", "WATCH_SESSION_FORBIDDEN");
     }
 
+    return session;
+  }
+
+  function applyWatchProgress(session, { positionSeconds = null, watchedSeconds }) {
+    const previousWatchedSeconds = session.watchedSeconds || 0;
+    const nextWatchedSeconds = Math.max(previousWatchedSeconds, watchedSeconds);
+    const watchTimeDeltaSec = nextWatchedSeconds - previousWatchedSeconds;
+    const countedAsView = !session.countedAsView && nextWatchedSeconds >= countedViewThresholdSeconds;
+    const updates = {
+      watchedSeconds: nextWatchedSeconds,
+      positionSeconds: positionSeconds ?? session.positionSeconds ?? nextWatchedSeconds,
+      countedAsView: session.countedAsView || countedAsView,
+      viewCountedAt: countedAsView ? new Date().toISOString() : session.viewCountedAt || null
+    };
+
+    if (session.contentType === "movie" && (watchTimeDeltaSec > 0 || countedAsView)) {
+      contentService.recordWatchProgress({
+        contentId: session.contentId,
+        countedAsView,
+        watchTimeDeltaSec
+      });
+    }
+
+    return watchSessions.update(session.id, updates);
+  }
+
+  function progressWatchSession(device, watchSessionId, { positionSeconds = null, watchedSeconds }) {
+    const session = assertDeviceSession(device, watchSessionId);
+
+    if (session.endedAt) {
+      throw badRequest("Watch session already stopped", "WATCH_SESSION_STOPPED");
+    }
+
+    return applyWatchProgress(session, { positionSeconds, watchedSeconds });
+  }
+
+  function stopWatchSession(device, watchSessionId) {
+    const session = assertDeviceSession(device, watchSessionId);
+
     if (session.endedAt) {
       return session;
     }
 
     const endedAt = new Date();
     const durationSeconds = Math.max(0, Math.floor((endedAt.getTime() - new Date(session.startedAt).getTime()) / 1000));
+    const progressedSession = applyWatchProgress(session, {
+      positionSeconds: session.positionSeconds ?? durationSeconds,
+      watchedSeconds: Math.max(session.watchedSeconds || 0, durationSeconds)
+    });
 
-    return watchSessions.update(session.id, {
+    return watchSessions.update(progressedSession.id, {
       endedAt: endedAt.toISOString(),
-      durationSeconds
+      durationSeconds: Math.max(durationSeconds, progressedSession.watchedSeconds || 0)
     });
   }
 
   return {
     getDeviceConfig,
+    progressWatchSession,
     startWatchSession,
     stopWatchSession
   };

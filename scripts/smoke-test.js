@@ -741,6 +741,47 @@ try {
 
   assert.equal(stopped.watchSession.id, watchSessionId);
 
+  const seriesWatchStarted = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: seriesItemId }
+  });
+  const seriesWatchSessionId = seriesWatchStarted.watchSession.id;
+
+  const seriesProgress = await request(baseUrl, `/v1/watch-sessions/${seriesWatchSessionId}/progress`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: {
+      watchedSec: 12,
+      positionSec: 12
+    }
+  });
+
+  assert.equal(seriesProgress.watchSession.countedAsView, true);
+  assert.equal(seriesProgress.watchSession.watchedSeconds, 12);
+
+  const seriesWatchStopped = await request(baseUrl, `/v1/watch-sessions/${seriesWatchSessionId}/stop`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(seriesWatchStopped.watchSession.id, seriesWatchSessionId);
+  assert.equal(seriesWatchStopped.watchSession.durationSeconds, 12);
+
+  const watchedSeriesItem = await request(baseUrl, `/v1/content/movies/${seriesItemId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(watchedSeriesItem.movie.views_count, 1);
+  assert.equal(watchedSeriesItem.movie.watch_time_sec, 12);
+
+  const watchedParentSeries = await request(baseUrl, `/v1/content/movies/${movieId}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(watchedParentSeries.movie.series_views_count, 1);
+  assert.equal(watchedParentSeries.movie.series_watch_time_sec, 12);
+
   const deletedCategory = await request(baseUrl, `/v1/content/categories/${categoryId}`, {
     method: "DELETE",
     headers: { authorization: `Bearer ${parentToken}` }

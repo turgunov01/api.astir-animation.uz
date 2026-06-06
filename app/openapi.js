@@ -483,6 +483,20 @@ export const openApiDocument = {
           is_premium: { type: "boolean", example: false },
           likes_count: { type: "integer", example: 1 },
           is_liked: { type: "boolean", example: true },
+          views_count: { type: "integer", example: 12 },
+          watch_time_sec: { type: "integer", example: 420 },
+          last_viewed_at: { type: "string", format: "date-time", nullable: true },
+          series_views_count: {
+            type: "integer",
+            example: 48,
+            description: "Aggregated view count from episodes linked in this movie's series array."
+          },
+          series_watch_time_sec: {
+            type: "integer",
+            example: 3600,
+            description: "Aggregated watch time from episodes linked in this movie's series array."
+          },
+          series_last_viewed_at: { type: "string", format: "date-time", nullable: true },
           poster_url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
           poster: {
             type: "object",
@@ -6381,7 +6395,11 @@ export const openApiDocument = {
                 type: "object",
                 required: ["contentId"],
                 properties: {
-                  contentId: { type: "string", example: "bluey-001" }
+                  contentId: {
+                    type: "string",
+                    example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8",
+                    description: "Catalog content id or /v1/content/movies movie id."
+                  }
                 }
               }
             }
@@ -6402,6 +6420,62 @@ export const openApiDocument = {
             }
           },
           403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/watch-sessions/{watchSessionId}/progress": {
+      patch: {
+        tags: ["Watch Sessions"],
+        summary: "Update watch session progress",
+        description: "Clients should call this every 10-15 seconds during playback. A view is counted once when watchedSec reaches 10 seconds.",
+        security: [{ deviceToken: [] }],
+        parameters: [
+          {
+            name: "watchSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["watchedSec"],
+                properties: {
+                  watchedSec: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "Cumulative seconds actually watched in this session."
+                  },
+                  positionSec: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "Current playback position in seconds."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Watch session progress saved",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    watchSession: { type: "object" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          404: { $ref: "#/components/responses/NotFound" }
         }
       }
     },
