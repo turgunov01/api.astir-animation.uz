@@ -86,13 +86,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   async function startWatchSession(device, { contentId }) {
-    const activeSession = watchSessions.findActiveByDeviceId(device.id);
-
-    if (activeSession) {
-      throw badRequest("Device already has an active watch session", "WATCH_SESSION_ACTIVE");
-    }
-
     const watchTarget = await contentService.findWatchContent(actorForDevice(device), contentId);
+    const activeSession = watchSessions.findActiveByDeviceId(device.id);
 
     const limit = childService.getLimits(device.parentId, device.childId);
     const now = new Date();
@@ -109,6 +104,18 @@ export function createWatchService({ childService, children, contentService, wat
     const sessions = watchSessions.listByChildId(device.childId);
     const usedSeconds = usedSecondsToday(sessions, now);
     const limitSeconds = limit.dailyMinutes * 60;
+
+    if (activeSession?.contentId === contentId) {
+      return {
+        ...activeSession,
+        content: watchTarget.content,
+        remainingSecondsToday: Math.max(0, limitSeconds - usedSeconds)
+      };
+    }
+
+    if (activeSession) {
+      finalizeWatchSession(activeSession, now);
+    }
 
     if (usedSeconds >= limitSeconds) {
       throw forbidden("Daily watch limit reached", "WATCH_LIMIT_REACHED");
@@ -184,14 +191,11 @@ export function createWatchService({ childService, children, contentService, wat
     return applyWatchProgress(session, { positionSeconds, watchedSeconds });
   }
 
-  function stopWatchSession(device, watchSessionId) {
-    const session = assertDeviceSession(device, watchSessionId);
-
+  function finalizeWatchSession(session, endedAt = new Date()) {
     if (session.endedAt) {
       return session;
     }
 
-    const endedAt = new Date();
     const durationSeconds = Math.max(0, Math.floor((endedAt.getTime() - new Date(session.startedAt).getTime()) / 1000));
     const progressedSession = applyWatchProgress(session, {
       positionSeconds: session.positionSeconds ?? durationSeconds,
@@ -202,6 +206,12 @@ export function createWatchService({ childService, children, contentService, wat
       endedAt: endedAt.toISOString(),
       durationSeconds: Math.max(durationSeconds, progressedSession.watchedSeconds || 0)
     });
+  }
+
+  function stopWatchSession(device, watchSessionId) {
+    const session = assertDeviceSession(device, watchSessionId);
+
+    return finalizeWatchSession(session);
   }
 
   return {

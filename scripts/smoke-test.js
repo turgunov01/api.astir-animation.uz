@@ -734,6 +734,14 @@ try {
   const watchSessionId = started.watchSession.id;
   assert.equal(typeof watchSessionId, "string");
 
+  const duplicateStarted = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: content.content[0].id }
+  });
+
+  assert.equal(duplicateStarted.watchSession.id, watchSessionId);
+
   const stopped = await request(baseUrl, `/v1/watch-sessions/${watchSessionId}/stop`, {
     method: "PATCH",
     headers: { authorization: `Bearer ${deviceToken}` }
@@ -741,12 +749,19 @@ try {
 
   assert.equal(stopped.watchSession.id, watchSessionId);
 
+  const danglingStarted = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: content.content[0].id }
+  });
+
   const seriesWatchStarted = await request(baseUrl, "/v1/watch-sessions/start", {
     method: "POST",
     headers: { authorization: `Bearer ${deviceToken}` },
     body: { contentId: seriesItemId }
   });
   const seriesWatchSessionId = seriesWatchStarted.watchSession.id;
+  assert.notEqual(seriesWatchSessionId, danglingStarted.watchSession.id);
 
   const seriesProgress = await request(baseUrl, `/v1/watch-sessions/${seriesWatchSessionId}/progress`, {
     method: "PATCH",
