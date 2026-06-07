@@ -195,6 +195,10 @@ try {
         return null;
       }
 
+      if (/FROM series WHERE id = \$1/.test(sql)) {
+        return values[0] === movieSeriesId ? { id: movieSeriesId } : null;
+      }
+
       throw new Error(`unexpected query: ${sql}`);
     },
     many(sql, values) {
@@ -312,6 +316,28 @@ try {
     assert.equal(insertQuery.values[2], "content");
     assert.equal(insertQuery.values[3], movieContentId);
 
+    const seriesCommentResponse = await fetch(`${commentsBaseUrl}/api/v1/content/${movieSeriesId}/comments`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${legacyUserToken(fakeUser)}`
+      },
+      body: JSON.stringify({ body: "Series comment" })
+    });
+    const seriesCommentBody = await seriesCommentResponse.json();
+    const seriesInsertQuery = fakeQueries
+      .filter((query) => query.method === "query" && /INSERT INTO comments/.test(query.sql))
+      .at(-1);
+
+    assert.equal(seriesCommentResponse.status, 201);
+    assert.equal(seriesCommentBody.content_id, movieSeriesId);
+    assert.equal(seriesCommentBody.target_type, "content");
+    assert.equal(seriesCommentBody.target_id, movieSeriesId);
+    assert.equal(seriesCommentBody.body, "Series comment");
+    assert.equal(seriesInsertQuery.values[1], null);
+    assert.equal(seriesInsertQuery.values[2], "content");
+    assert.equal(seriesInsertQuery.values[3], movieSeriesId);
+
     const seriesEpisodesResponse = await fetch(`${commentsBaseUrl}/api/v1/series/${movieSeriesId}/episodes`);
     const seriesEpisodesBody = await seriesEpisodesResponse.json();
 
@@ -322,6 +348,169 @@ try {
     assert.equal(seriesEpisodesBody[0].series_id, movieSeriesId);
   } finally {
     await closeServer(commentsServer);
+  }
+
+  const seriesPosterId = "069f50f5-e0c8-48d3-adc2-d2647ba16d36";
+  const seriesPosterAdmin = {
+    id: "4df2191a-fe3d-4b2b-a260-162e793516ba",
+    email: "poster-admin@example.com",
+    name: "Poster Admin",
+    role: "admin",
+    active: true
+  };
+  const seriesPosterState = {
+    id: seriesPosterId,
+    title: { en: "Series" },
+    kind: "seasons",
+    poster_path: "posters/old-series.png",
+    poster_url: "http://127.0.0.1/api/v1/media/posters%2Fold-series.png?expires=1&signature=expired",
+    active: true
+  };
+  const seriesPosterAssets = [
+    {
+      owner_table: "series",
+      owner_id: seriesPosterId,
+      kind: "series_poster",
+      path: "posters/old-series.png"
+    },
+    {
+      owner_table: "series",
+      owner_id: "d7f4a9e7-9f2a-42e7-a132-3c9767fef59f",
+      kind: "series_poster",
+      path: "posters/other-series.png"
+    }
+  ];
+  const removedPosterPaths = [];
+  const fakePosterDb = {
+    one(sql, values) {
+      if (/FROM users/.test(sql)) return seriesPosterAdmin;
+      if (/SELECT \* FROM series WHERE id = \$1/.test(sql)) return values[0] === seriesPosterId ? { ...seriesPosterState } : null;
+      throw new Error(`unexpected poster one query: ${sql}`);
+    },
+    many(sql, values) {
+      if (/SELECT \* FROM series WHERE active = true/.test(sql)) {
+        return [{ ...seriesPosterState }];
+      }
+
+      if (/SELECT path FROM media_assets/.test(sql)) {
+        return seriesPosterAssets
+          .filter((asset) => asset.owner_table === values[0] && asset.owner_id === values[1] && asset.kind === values[2])
+          .map((asset) => ({ path: asset.path }));
+      }
+
+      throw new Error(`unexpected poster many query: ${sql}`);
+    },
+    query(sql, values) {
+      if (/SELECT \* FROM series WHERE id = \$1/.test(sql)) {
+        return { rows: values[0] === seriesPosterId ? [{ ...seriesPosterState }] : [] };
+      }
+
+      if (/INSERT INTO media_assets/.test(sql)) {
+        const asset = {
+          owner_table: values[0],
+          owner_id: values[1],
+          kind: values[2],
+          path: values[3],
+          original_name: values[4],
+          mime_type: values[5],
+          size: values[6]
+        };
+        seriesPosterAssets.push(asset);
+        return { rows: [asset] };
+      }
+
+      if (/UPDATE series SET/.test(sql)) {
+        seriesPosterState.poster_path = values[1];
+        seriesPosterState.poster_url = values[2];
+        return { rows: [{ ...seriesPosterState }] };
+      }
+
+      if (/DELETE FROM media_assets/.test(sql)) {
+        const paths = new Set(values[2]);
+        for (let index = seriesPosterAssets.length - 1; index >= 0; index -= 1) {
+          const asset = seriesPosterAssets[index];
+          if (asset.owner_table === values[0] && asset.owner_id === values[1] && paths.has(asset.path)) {
+            seriesPosterAssets.splice(index, 1);
+          }
+        }
+        return { rows: [] };
+      }
+
+      throw new Error(`unexpected poster query: ${sql}`);
+    }
+  };
+  const fakePosterMedia = {
+    upload() {
+      return {
+        single() {
+          return (request, response, next) => {
+            request.file = {
+              originalname: "new-series.png",
+              mimetype: "image/png",
+              size: 128,
+              path: "unused"
+            };
+            next();
+          };
+        }
+      };
+    },
+    persistFile(kind, file) {
+      assert.equal(kind, "series_poster");
+      assert.equal(file.originalname, "new-series.png");
+      return {
+        kind,
+        path: "posters/new-series.png",
+        original_name: file.originalname,
+        mime_type: file.mimetype,
+        size: file.size,
+        url: "http://127.0.0.1/api/v1/media/posters%2Fnew-series.png?expires=1&signature=temporary"
+      };
+    },
+    remove(storedPath) {
+      removedPosterPaths.push(storedPath);
+    }
+  };
+  const seriesPosterApp = express();
+  seriesPosterApp.use((request, response, next) => {
+    request.legacyDb = fakePosterDb;
+    next();
+  });
+  seriesPosterApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    media: fakePosterMedia
+  }));
+  const seriesPosterServer = await listenApp(seriesPosterApp);
+
+  try {
+    const seriesPosterBaseUrl = `http://127.0.0.1:${seriesPosterServer.address().port}`;
+    const posterResponse = await fetch(`${seriesPosterBaseUrl}/api/v1/series/${seriesPosterId}/poster`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${legacyUserToken(seriesPosterAdmin)}`
+      }
+    });
+    const posterBody = await posterResponse.json();
+
+    assert.equal(posterResponse.status, 200);
+    assert.equal(posterBody.poster_path, "posters/new-series.png");
+    assert.equal(posterBody.poster_url, `/api/v1/series/${seriesPosterId}/poster`);
+    assert.deepEqual(removedPosterPaths, ["posters/old-series.png"]);
+    assert.equal(seriesPosterAssets.some((asset) => asset.path === "posters/new-series.png"), true);
+    assert.equal(seriesPosterAssets.some((asset) => asset.path === "posters/old-series.png"), false);
+    assert.equal(seriesPosterAssets.some((asset) => asset.path === "posters/other-series.png"), true);
+
+    const posterDetailResponse = await fetch(`${seriesPosterBaseUrl}/api/v1/series/${seriesPosterId}`);
+    const posterDetailBody = await posterDetailResponse.json();
+    const posterListResponse = await fetch(`${seriesPosterBaseUrl}/api/v1/series`);
+    const posterListBody = await posterListResponse.json();
+
+    assert.equal(posterDetailResponse.status, 200);
+    assert.equal(posterDetailBody.poster_url, `/api/v1/series/${seriesPosterId}/poster`);
+    assert.equal(posterListResponse.status, 200);
+    assert.equal(posterListBody[0].poster_url, `/api/v1/series/${seriesPosterId}/poster`);
+  } finally {
+    await closeServer(seriesPosterServer);
   }
 
   console.log("Legacy contract test passed");

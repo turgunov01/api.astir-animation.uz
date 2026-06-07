@@ -124,7 +124,7 @@ function serializeSeries(row) {
     slug: row.slug,
     kind: row.kind || "seasons",
     poster_path: row.poster_path || "",
-    poster_url: row.poster_url || "",
+    poster_url: row.poster_path ? legacyPosterUrl("series", row.id) : row.poster_url || "",
     active: row.active !== false,
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -429,6 +429,28 @@ async function resolveCommentTarget(db, contentId, contentMovies = null) {
     };
   }
 
+  const seriesMovie = contentMovies?.list?.().find((item) => item.series_id === contentId);
+
+  if (seriesMovie) {
+    return {
+      contentId: null,
+      targetId: contentId,
+      targetType: "content"
+    };
+  }
+
+  if (isUuid(contentId)) {
+    const series = await db.one("SELECT id FROM series WHERE id = $1", [contentId]);
+
+    if (series) {
+      return {
+        contentId: null,
+        targetId: series.id,
+        targetType: "content"
+      };
+    }
+  }
+
   throw legacyError(404, "content_not_found", "content not found");
 }
 
@@ -705,6 +727,17 @@ async function saveMediaAsset(db, media, ownerTable, ownerId) {
 
 function uniquePaths(paths) {
   return [...new Set(paths.filter(Boolean))];
+}
+
+function legacyPosterUrl(ownerTable, ownerId) {
+  const routeByTable = {
+    categories: "categories",
+    content: "content",
+    series: "series"
+  };
+  const route = routeByTable[ownerTable];
+
+  return route ? `/api/v1/${route}/${encodeURIComponent(String(ownerId))}/poster` : "";
 }
 
 function removeStoredMedia(media, storedPaths) {
@@ -1720,7 +1753,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
     await saveMediaAsset(request.legacyDb, stored, "categories", request.params.id);
     const updatedCategory = await updateById(request.legacyDb, "categories", request.params.id, {
       poster_path: stored.path,
-      poster_url: stored.url
+      poster_url: legacyPosterUrl("categories", request.params.id)
     });
     const replacedPaths = uniquePaths([category.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
     if (replacedPaths.length > 0) {
@@ -1815,7 +1848,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
   router.get("/series", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
     const rows = await request.legacyDb.many("SELECT * FROM series WHERE active = true ORDER BY created_at DESC");
-    response.json(rows.map((row) => localizeRecord(row, lang)));
+    response.json(rows.map((row) => localizeRecord(serializeSeries(row), lang)));
   }));
 
   router.post("/series", requireAdmin, asyncHandler(async (request, response) => {
@@ -1833,7 +1866,8 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
   }));
 
   router.get("/series/:id", asyncHandler(async (request, response) => {
-    response.json(localizeRecord(await getById(request.legacyDb, "series", request.params.id), requestedLang(request)));
+    const row = await getById(request.legacyDb, "series", request.params.id);
+    response.json(localizeRecord(serializeSeries(row), requestedLang(request)));
   }));
 
   router.put("/series/:id", requireAdmin, asyncHandler(async (request, response) => {
@@ -1885,7 +1919,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
     await saveMediaAsset(request.legacyDb, stored, "series", request.params.id);
     const updatedSeries = await updateById(request.legacyDb, "series", request.params.id, {
       poster_path: stored.path,
-      poster_url: stored.url
+      poster_url: legacyPosterUrl("series", request.params.id)
     });
     const replacedPaths = uniquePaths([row.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
     if (replacedPaths.length > 0) {
@@ -1996,7 +2030,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
     await saveMediaAsset(request.legacyDb, stored, "content", request.params.id);
     const updatedContent = await updateById(request.legacyDb, "content", request.params.id, {
       poster_path: stored.path,
-      poster_url: stored.url
+      poster_url: legacyPosterUrl("content", request.params.id)
     });
     const replacedPaths = uniquePaths([row.poster_path, ...oldPaths]).filter((storedPath) => storedPath !== stored.path);
     if (replacedPaths.length > 0) {
