@@ -173,6 +173,8 @@ try {
 
   const missingContentId = "165f1d6e-2fb6-4785-812f-5fd18c020cfd";
   const movieContentId = "791bfc32-2ce1-44f3-a1b0-91da4c70aa1b";
+  const movieSeriesId = "87d4f2af-ee4d-4783-b905-971a392ba483";
+  const movieEpisodeId = "5fe224b5-e8c0-4543-9f30-64e2f7ef103d";
   const fakeUser = {
     id: "8f847c1c-bc7e-4c17-9d58-6f0c96917ca8",
     email: "parent@example.com",
@@ -195,6 +197,15 @@ try {
 
       throw new Error(`unexpected query: ${sql}`);
     },
+    many(sql, values) {
+      fakeQueries.push({ method: "many", sql, values });
+
+      if (/FROM content WHERE series_id = \$1/.test(sql)) {
+        return [];
+      }
+
+      throw new Error(`unexpected many query: ${sql}`);
+    },
     query(sql, values) {
       fakeQueries.push({ method: "query", sql, values });
 
@@ -214,9 +225,32 @@ try {
       throw new Error(`unexpected write: ${sql}`);
     }
   };
+  const fakeMovieRecords = [
+    {
+      id: movieContentId,
+      title: { en: "Movie", ru: "Movie RU", uz: "Movie UZ" },
+      description: { en: "Movie description", ru: "Movie description RU", uz: "Movie description UZ" },
+      series: []
+    },
+    {
+      id: movieEpisodeId,
+      title: { en: "Episode", ru: "Episode RU", uz: "Episode UZ" },
+      description: { en: "Episode description", ru: "Episode description RU", uz: "Episode description UZ" },
+      series_id: movieSeriesId,
+      season_number: 1,
+      episode_number: 1,
+      published: false,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z"
+    }
+  ];
   const fakeContentMovies = {
+    list() {
+      return fakeMovieRecords;
+    },
+
     findById(id) {
-      return id === movieContentId ? { id } : null;
+      return fakeMovieRecords.find((movie) => movie.id === id) || null;
     }
   };
   const fakeMedia = {
@@ -277,6 +311,15 @@ try {
     assert.equal(insertQuery.values[1], null);
     assert.equal(insertQuery.values[2], "content");
     assert.equal(insertQuery.values[3], movieContentId);
+
+    const seriesEpisodesResponse = await fetch(`${commentsBaseUrl}/api/v1/series/${movieSeriesId}/episodes`);
+    const seriesEpisodesBody = await seriesEpisodesResponse.json();
+
+    assert.equal(seriesEpisodesResponse.status, 200);
+    assert.equal(seriesEpisodesBody.length, 1);
+    assert.equal(seriesEpisodesBody[0].id, movieEpisodeId);
+    assert.equal(seriesEpisodesBody[0].title.en, "Episode");
+    assert.equal(seriesEpisodesBody[0].series_id, movieSeriesId);
   } finally {
     await closeServer(commentsServer);
   }

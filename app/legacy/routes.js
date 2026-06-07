@@ -131,6 +131,82 @@ function serializeSeries(row) {
   };
 }
 
+function legacyStatusForMovie(movie) {
+  const status = movie.status || movie.transcode?.status || "";
+
+  if (status === "ready" || status === "failed" || status === "uploaded") {
+    return status;
+  }
+
+  if (status === "queued" || status === "transcoding") {
+    return "transcoding";
+  }
+
+  return "uploaded";
+}
+
+function serializeMovieAsLegacyContent(movie, seriesId = null) {
+  return {
+    id: movie.id,
+    title: movie.title || {},
+    description: movie.description || {},
+    slug: movie.slug || movie.id,
+    category_id: movie.category_id || "",
+    series_id: movie.series_id || seriesId || "",
+    poster_url: movie.poster?.url || "",
+    source_path: movie.source?.path || "",
+    status: legacyStatusForMovie(movie),
+    age_rating: movie.age_rating || 0,
+    duration_sec: movie.duration_sec || movie.duration || 0,
+    season_number: movie.season_number,
+    episode_number: movie.episode_number,
+    year: movie.year,
+    published: movie.published,
+    published_at: movie.published_at,
+    views_count: movie.views_count || 0,
+    created_by_id: movie.created_by_id,
+    created_at: movie.createdAt || movie.created_at,
+    updated_at: movie.updatedAt || movie.updated_at
+  };
+}
+
+function compareEpisodeRows(left, right) {
+  return (left.season_number ?? 0) - (right.season_number ?? 0)
+    || (left.episode_number ?? 0) - (right.episode_number ?? 0)
+    || String(left.created_at || "").localeCompare(String(right.created_at || ""));
+}
+
+function movieEpisodesForSeries(contentMovies, seriesId) {
+  if (!contentMovies?.list || !contentMovies?.findById) {
+    return [];
+  }
+
+  const episodes = [];
+  const seen = new Set();
+  const addMovie = (movie, fallbackSeriesId = seriesId) => {
+    if (!movie || seen.has(movie.id)) {
+      return;
+    }
+
+    seen.add(movie.id);
+    episodes.push(serializeMovieAsLegacyContent(movie, fallbackSeriesId));
+  };
+
+  for (const movie of contentMovies.list()) {
+    if (movie.series_id === seriesId) {
+      addMovie(movie, seriesId);
+    }
+  }
+
+  const parentMovie = contentMovies.findById(seriesId);
+
+  for (const episodeId of parentMovie?.series || []) {
+    addMovie(contentMovies.findById(episodeId), seriesId);
+  }
+
+  return episodes.sort(compareEpisodeRows);
+}
+
 function supportMessageBody(body = {}) {
   for (const field of ["body", "message", "text", "content"]) {
     const value = body[field];
@@ -1785,7 +1861,10 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
       "SELECT * FROM content WHERE series_id = $1 AND published = true ORDER BY season_number NULLS FIRST, episode_number NULLS FIRST, created_at",
       [request.params.id]
     );
-    response.json(rows.map((row) => localizeRecord(serializeContent(row), lang)));
+    const movieRows = movieEpisodesForSeries(contentMovies, request.params.id);
+    const data = [...rows.map(serializeContent), ...movieRows];
+
+    response.json(data.map((row) => localizeRecord(row, lang)));
   }));
 
   router.get("/series/:id/poster", asyncHandler(async (request, response) => {
