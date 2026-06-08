@@ -1,4 +1,5 @@
 import { createChildRepository } from "./childRepository.js";
+import { createChildContentBlacklistRepository } from "./childContentBlacklistRepository.js";
 import { createContentCategoryRepository } from "./contentCategoryRepository.js";
 import { createContentLikeRepository } from "./contentLikeRepository.js";
 import { createContentMovieRepository } from "./contentMovieRepository.js";
@@ -24,6 +25,7 @@ export function createRepositories(store, { contentDb = null } = {}) {
     : createContentMovieTagRepository(store);
 
   return {
+    childContentBlacklist: createChildContentBlacklistRepository(store),
     children: createChildRepository(store),
     contentCategories: createContentCategoryRepository(store),
     contentLikes: createContentLikeRepository(store),

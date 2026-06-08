@@ -59,7 +59,10 @@ const scopes = [
       "GET /v1/billing/subscription/current",
       "POST /v1/billing/apple/verify",
       "POST /v1/billing/google/verify",
-      "POST /v1/pairing/sessions/{sessionId}/approve"
+      "POST /v1/pairing/sessions/{sessionId}/approve",
+      "GET /v1/children/{childId}/blacklist",
+      "POST /v1/children/{childId}/blacklist",
+      "DELETE /v1/children/{childId}/blacklist/{contentId}"
     ]
   },
   {

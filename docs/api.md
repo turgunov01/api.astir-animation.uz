@@ -349,6 +349,32 @@ What happens:
 1. The parent updates the child rules.
 2. The child device receives the new rules the next time it loads config.
 
+### Child Content Blacklist
+
+Requests:
+
+```text
+GET /v1/children/:childId/blacklist
+POST /v1/children/:childId/blacklist
+DELETE /v1/children/:childId/blacklist/:contentId
+```
+
+These requests need a parent token.
+
+POST body:
+
+```json
+{
+  "contentId": "movie-id"
+}
+```
+
+What happens:
+
+1. The parent adds or removes a movie from the child's blacklist.
+2. The child device receives `blacklist` in `/v1/device/config`.
+3. Blacklisted movies are hidden from the child movie list and blocked on playback.
+
 ## 14. List Content
 
 Request:
@@ -883,7 +909,7 @@ What happens:
 Request:
 
 ```text
-GET /v1/content/movies?category=category-id-or-slug&tags=tag-id-or-slug,another-tag
+GET /v1/content/movies?category=category-id-or-slug&tags=tag-id-or-slug,another-tag&page=1&limit=20
 ```
 
 This request needs a parent token or a device token.
@@ -894,16 +920,20 @@ Optional query filters:
 2. `tags` or `tag_ids` - comma-separated tag ids, slugs, or names. All listed tags must match.
 3. `q` or `search` - text search in movie title, description, or content type.
 4. `liked=true` - return only movies liked by the current actor.
+5. `page` - page number for paginated results. Default: `1`.
+6. `limit` - number of movies per page. Default: `20`.
 
 What happens:
 
 1. The backend checks the token.
 2. The backend applies only the filters that are present in the query.
-3. The backend returns movie records.
+3. The backend returns movie records and pagination metadata.
 4. The `free` tariff returns only non-premium movies.
 5. The `premium` tariff returns all movies.
-6. Each movie includes playback status.
-7. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
+6. Series items are returned from the series endpoints, not as top-level movies in this list.
+7. Each movie includes playback status.
+8. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
+9. Each movie also includes `duration_sec`, duration aliases, and `play_count`.
 
 ## 38. Get One Movie
 

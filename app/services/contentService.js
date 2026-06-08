@@ -135,6 +135,8 @@ async function serializeMovieTags(tagIds, contentTags) {
 }
 
 async function serializeMovie(movie, series = [], contentTags, contentMovieTags, likeContext = null) {
+  const durationSeconds = movie.duration_sec ?? 0;
+  const durationMinutes = durationSeconds > 0 ? Math.ceil(durationSeconds / 60) : 0;
   const videoUrl = sourceUrl(movie.source);
   const posterUrl = sourceUrl(movie.poster);
   const transcodeStatus = movie.transcode?.status || "missing_source";
@@ -166,6 +168,7 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
       ? Boolean(likeContext.contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id))
       : false,
     views_count: movie.views_count || 0,
+    play_count: movie.views_count || 0,
     watch_time_sec: movie.watch_time_sec || 0,
     last_viewed_at: movie.last_viewed_at || null,
     series_views_count: movie.series_views_count || 0,
@@ -186,8 +189,12 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     storage_path: movie.source?.path || null,
     transcode_status: transcodeStatus,
     age_rating: movie.age_rating ?? 0,
-    duration_sec: movie.duration_sec ?? 0,
-    duration: movie.duration ?? movie.duration_sec ?? null,
+    duration_sec: durationSeconds,
+    duration_seconds: durationSeconds,
+    durationSec: durationSeconds,
+    duration: movie.duration ?? durationSeconds,
+    duration_minutes: durationMinutes,
+    durationMinutes,
     year: movie.year ?? null,
     published: Boolean(movie.published),
     published_at: movie.published_at || null,
@@ -523,6 +530,7 @@ function assertCategoryTitleAvailable(contentCategories, title, currentCategoryI
 }
 
 export function createContentService({
+  childService,
   contentCategories,
   contentLikes,
   contentMovieTags,
@@ -588,6 +596,39 @@ export function createContentService({
 
   function findParentSeriesMovie(movieId) {
     return contentMovies.list().find((movie) => (movie.series || []).includes(movieId)) || null;
+  }
+
+  function isSeriesMovie(movie) {
+    return Boolean(findParentSeriesMovie(movie.id));
+  }
+
+  function blacklistIdsForMovie(movie) {
+    const ids = [movie.id];
+    const parentSeries = findParentSeriesMovie(movie.id);
+
+    if (parentSeries) {
+      ids.push(parentSeries.id);
+    }
+
+    return ids;
+  }
+
+  function isMovieBlacklistedForActor(actor, movie) {
+    if (actor?.type !== "device" || !childService?.isAnyContentBlacklisted) {
+      return false;
+    }
+
+    return childService.isAnyContentBlacklisted(
+      actor.device.parentId,
+      actor.device.childId,
+      blacklistIdsForMovie(movie)
+    );
+  }
+
+  function assertMovieNotBlacklisted(actor, movie) {
+    if (isMovieBlacklistedForActor(actor, movie)) {
+      throw forbidden("Content is blocked for this child", "CONTENT_BLACKLISTED");
+    }
   }
 
   function collectMovieTree(movie, seenMovieIds = new Set()) {
@@ -683,6 +724,7 @@ export function createContentService({
 
       if (movie) {
         tariffService.assertCanWatchMovie(actor, movie);
+        assertMovieNotBlacklisted(actor, movie);
         const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
         const likeContext = likeContextForActor(actor);
         const parentSeries = findParentSeriesMovie(movie.id);
@@ -770,6 +812,10 @@ export function createContentService({
 
         if (movie) {
           if (!tariffService.canWatchMovie(actor, movie)) {
+            continue;
+          }
+
+          if (isMovieBlacklistedForActor(actor, movie)) {
             continue;
           }
 
@@ -872,6 +918,7 @@ export function createContentService({
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
+      assertMovieNotBlacklisted(actor, movie);
 
       const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
       const likeContext = likeContextForActor(actor);
@@ -879,7 +926,9 @@ export function createContentService({
       return {
         movie: await serializeMovie(
           movieWithTranscode,
-          listSeriesRecords(movieWithTranscode).filter((item) => tariffService.canWatchMovie(actor, item)),
+          listSeriesRecords(movieWithTranscode)
+            .filter((item) => tariffService.canWatchMovie(actor, item))
+            .filter((item) => !isMovieBlacklistedForActor(actor, item)),
           contentTags,
           contentMovieTags,
           likeContext
@@ -891,6 +940,7 @@ export function createContentService({
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
+      assertMovieNotBlacklisted(actor, movie);
       const likeContext = likeContextForActor(actor);
 
       return {
@@ -898,6 +948,7 @@ export function createContentService({
         series: await Promise.all(
           listSeriesRecords(movie)
             .filter((item) => tariffService.canWatchMovie(actor, item))
+            .filter((item) => !isMovieBlacklistedForActor(actor, item))
             .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
         )
       };
@@ -918,13 +969,28 @@ export function createContentService({
       return liked ? items.filter((item) => item.is_liked) : items;
     },
 
-    async listMovies(actor, { category = "", liked = false, q = "", tags = [] } = {}) {
+    async listMovies(
+      actor,
+      {
+        category = "",
+        liked = false,
+        q = "",
+        tags = [],
+        page = 1,
+        limit = 20
+      } = {}
+    ) {
       const likeContext = likeContextForActor(actor);
       const categoryValues = categoryFilterValues(contentCategories, category);
       const filterTagIds = await tagFilterIds(contentTags, tags);
+      const currentPage = Math.max(Number(page) || 1, 1);
+      const perPage = Math.max(Number(limit) || 20, 1);
+
       const movieRows = await Promise.all(
         contentMovies.list()
+          .filter((movie) => !isSeriesMovie(movie))
           .filter((movie) => tariffService.canWatchMovie(actor, movie))
+          .filter((movie) => !isMovieBlacklistedForActor(actor, movie))
           .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
           .filter((movie) => movieMatchesSearch(movie, q))
           .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
@@ -936,11 +1002,23 @@ export function createContentService({
       const filteredMovies = movieRows
         .filter(({ tagIds }) => filterTagIds.every((tagId) => tagIds.includes(tagId)))
         .map(({ movie }) => movie);
+      const total = filteredMovies.length;
+      const totalPages = Math.ceil(total / perPage);
+      const start = (currentPage - 1) * perPage;
+      const paginatedMovies = filteredMovies.slice(start, start + perPage);
 
       return {
         movies: await Promise.all(
-          filteredMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
-        )
+          paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
+        ),
+        pagination: {
+          page: currentPage,
+          limit: perPage,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPrevPage: currentPage > 1
+        }
       };
     },
 
@@ -955,6 +1033,7 @@ export function createContentService({
         if (deleted) {
           await contentMovieTags.removeMovie(movieToDelete.id);
           contentLikes.deleteByTarget(movieToDelete.id);
+          childService?.removeContentFromAllBlacklists?.(movieToDelete.id);
           transcoder.removeMovieFiles(movieToDelete);
           removeStoredFile(movieToDelete.poster);
         }

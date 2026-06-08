@@ -60,6 +60,59 @@ export function createWatchService({ childService, children, contentService, wat
     };
   }
 
+  function limitStatusForDevice(device, now = new Date()) {
+    const limit = childService.getLimits(device.parentId, device.childId);
+    const sessions = watchSessions.listByChildId(device.childId);
+    const usedSeconds = usedSecondsToday(sessions, now);
+
+    return {
+      day: isoDay(now),
+      limit,
+      limitSeconds: limit.dailyMinutes * 60,
+      usedSeconds
+    };
+  }
+
+  function assertDeviceCanWatchNow(device, now = new Date()) {
+    const status = limitStatusForDevice(device, now);
+
+    if (!status.limit.allowedDays.includes(status.day)) {
+      throw forbidden("Watching is not allowed today", "WATCH_DAY_BLOCKED");
+    }
+
+    if (!isWithinWindow(status.limit, now)) {
+      throw forbidden("Watching is outside the allowed time window", "WATCH_TIME_BLOCKED");
+    }
+
+    if (status.usedSeconds >= status.limitSeconds) {
+      throw forbidden("Daily watch limit reached", "WATCH_LIMIT_REACHED");
+    }
+
+    return status;
+  }
+
+  function isSessionBlacklisted(device, session) {
+    const contentIds = [
+      session.contentId,
+      session.parentSeriesId
+    ].filter(Boolean);
+
+    return childService.isAnyContentBlacklisted?.(device.parentId, device.childId, contentIds) || false;
+  }
+
+  function assertSessionCanContinue(device, session, now = new Date()) {
+    try {
+      if (isSessionBlacklisted(device, session)) {
+        throw forbidden("Content is blocked for this child", "CONTENT_BLACKLISTED");
+      }
+
+      return assertDeviceCanWatchNow(device, now);
+    } catch (error) {
+      finalizeWatchSession(session, now);
+      throw error;
+    }
+  }
+
   function getDeviceConfig(device) {
     const child = children.findById(device.childId);
 
@@ -68,6 +121,7 @@ export function createWatchService({ childService, children, contentService, wat
     }
 
     const limit = childService.getLimits(device.parentId, device.childId);
+    const blacklist = childService.listBlacklist(device.parentId, device.childId);
 
     return {
       device: {
@@ -81,44 +135,48 @@ export function createWatchService({ childService, children, contentService, wat
         name: child.name,
         birthYear: child.birthYear
       },
-      limit
+      limit,
+      blacklist
     };
   }
 
   async function startWatchSession(device, { contentId }) {
-    const watchTarget = await contentService.findWatchContent(actorForDevice(device), contentId);
     const activeSession = watchSessions.findActiveByDeviceId(device.id);
+    let watchTarget;
 
-    const limit = childService.getLimits(device.parentId, device.childId);
+    try {
+      watchTarget = await contentService.findWatchContent(actorForDevice(device), contentId);
+    } catch (error) {
+      if (activeSession?.contentId === contentId) {
+        finalizeWatchSession(activeSession);
+      }
+
+      throw error;
+    }
+
     const now = new Date();
-    const day = isoDay(now);
+    let limitStatus;
 
-    if (!limit.allowedDays.includes(day)) {
-      throw forbidden("Watching is not allowed today", "WATCH_DAY_BLOCKED");
+    try {
+      limitStatus = assertDeviceCanWatchNow(device, now);
+    } catch (error) {
+      if (activeSession) {
+        finalizeWatchSession(activeSession, now);
+      }
+
+      throw error;
     }
-
-    if (!isWithinWindow(limit, now)) {
-      throw forbidden("Watching is outside the allowed time window", "WATCH_TIME_BLOCKED");
-    }
-
-    const sessions = watchSessions.listByChildId(device.childId);
-    const usedSeconds = usedSecondsToday(sessions, now);
-    const limitSeconds = limit.dailyMinutes * 60;
 
     if (activeSession?.contentId === contentId) {
       return {
         ...activeSession,
         content: watchTarget.content,
-        remainingSecondsToday: Math.max(0, limitSeconds - usedSeconds)
+        remainingSecondsToday: Math.max(0, limitStatus.limitSeconds - limitStatus.usedSeconds)
       };
     }
 
     if (activeSession) {
       finalizeWatchSession(activeSession, now);
-    }
-
-    if (usedSeconds >= limitSeconds) {
-      throw forbidden("Daily watch limit reached", "WATCH_LIMIT_REACHED");
     }
 
     const session = watchSessions.create({
@@ -140,7 +198,7 @@ export function createWatchService({ childService, children, contentService, wat
     return {
       ...session,
       content: watchTarget.content,
-      remainingSecondsToday: limitSeconds - usedSeconds
+      remainingSecondsToday: limitStatus.limitSeconds - limitStatus.usedSeconds
     };
   }
 
@@ -187,6 +245,8 @@ export function createWatchService({ childService, children, contentService, wat
     if (session.endedAt) {
       throw badRequest("Watch session already stopped", "WATCH_SESSION_STOPPED");
     }
+
+    assertSessionCanContinue(device, session);
 
     return applyWatchProgress(session, { positionSeconds, watchedSeconds });
   }

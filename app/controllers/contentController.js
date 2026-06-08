@@ -170,6 +170,26 @@ function optionalPresentInteger(body, field, options = {}) {
   return value;
 }
 
+const durationFields = ["duration_sec", "duration_seconds", "durationSec", "duration"];
+
+function firstPresentField(body, fields) {
+  return fields.find((field) => Object.hasOwn(body, field));
+}
+
+function optionalDurationSeconds(body, fallback = 0) {
+  const field = firstPresentField(body, durationFields);
+
+  return field
+    ? optionalIntegerValue(body, field, fallback, { min: 0 })
+    : fallback;
+}
+
+function optionalPresentDurationSeconds(body) {
+  const field = firstPresentField(body, durationFields);
+
+  return optionalPresentInteger(body, field, { min: 0 });
+}
+
 function movieMetadataAttributes(body, { includeDefaults = false } = {}) {
   const attributes = {};
 
@@ -209,8 +229,8 @@ function movieMetadataAttributes(body, { includeDefaults = false } = {}) {
     attributes.age_rating = optionalIntegerValue(body, "age_rating", 0, { min: 0 });
   }
 
-  if (includeDefaults || Object.hasOwn(body, "duration_sec")) {
-    attributes.duration_sec = optionalIntegerValue(body, "duration_sec", 0, { min: 0 });
+  if (includeDefaults || firstPresentField(body, durationFields)) {
+    attributes.duration_sec = optionalDurationSeconds(body, 0);
   }
 
   if (includeDefaults || Object.hasOwn(body, "published")) {
@@ -389,7 +409,9 @@ export function createContentController({ contentService }) {
         category: firstQueryValue(request.query.category || request.query.category_id),
         liked: request.query.liked === "true",
         q: firstQueryValue(request.query.q || request.query.search),
-        tags: queryList(request.query.tags || request.query.tag_ids)
+        tags: queryList(request.query.tags || request.query.tag_ids),
+        page: firstQueryValue(request.query.page),
+        limit: firstQueryValue(request.query.limit)
       }));
     },
 
@@ -498,8 +520,8 @@ export function createContentController({ contentService }) {
           attributes.age_rating = optionalPresentInteger(body, "age_rating", { min: 0 });
         }
 
-        if (Object.hasOwn(body, "duration_sec")) {
-          attributes.duration_sec = optionalPresentInteger(body, "duration_sec", { min: 0 });
+        if (firstPresentField(body, durationFields)) {
+          attributes.duration_sec = optionalPresentDurationSeconds(body);
         }
 
         if (Object.hasOwn(body, "published")) {

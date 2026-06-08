@@ -368,6 +368,18 @@ export const openApiDocument = {
           updatedAt: { type: "string", format: "date-time" }
         }
       },
+      ChildContentBlacklistItem: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          parentId: { type: "string" },
+          childId: { type: "string" },
+          contentId: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          content_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" }
+        }
+      },
       ContentItem: {
         type: "object",
         properties: {
@@ -484,6 +496,7 @@ export const openApiDocument = {
           likes_count: { type: "integer", example: 1 },
           is_liked: { type: "boolean", example: true },
           views_count: { type: "integer", example: 12 },
+          play_count: { type: "integer", example: 12 },
           watch_time_sec: { type: "integer", example: 420 },
           last_viewed_at: { type: "string", format: "date-time", nullable: true },
           series_views_count: {
@@ -515,7 +528,11 @@ export const openApiDocument = {
           transcode_status: { type: "string", example: "queued" },
           age_rating: { type: "integer", example: 6 },
           duration_sec: { type: "integer", example: 1234 },
+          duration_seconds: { type: "integer", example: 1234 },
+          durationSec: { type: "integer", example: 1234 },
           duration: { type: "number", nullable: true, example: 1234 },
+          duration_minutes: { type: "integer", example: 21 },
+          durationMinutes: { type: "integer", example: 21 },
           year: { type: "integer", nullable: true, example: 2026 },
           published: { type: "boolean", example: false },
           published_at: { type: "string", format: "date-time", nullable: true },
@@ -4749,6 +4766,138 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/children/{childId}/blacklist": {
+      get: {
+        tags: ["Children"],
+        summary: "List child content blacklist",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Child content blacklist",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    blacklist: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ChildContentBlacklistItem" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Children"],
+        summary: "Add movie to child content blacklist",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["contentId"],
+                properties: {
+                  contentId: {
+                    type: "string",
+                    example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
+                  },
+                  content_id: {
+                    type: "string",
+                    example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8",
+                    description: "Alias for contentId."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Movie added to child content blacklist",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    blacklist_item: { $ref: "#/components/schemas/ChildContentBlacklistItem" },
+                    item: { $ref: "#/components/schemas/ChildContentBlacklistItem" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/children/{childId}/blacklist/{contentId}": {
+      delete: {
+        tags: ["Children"],
+        summary: "Remove movie from child content blacklist",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "contentId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Movie removed from child content blacklist",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    contentId: { type: "string" },
+                    content_id: { type: "string" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/v1/pairing/sessions": {
       post: {
         tags: ["Pairing"],
@@ -4893,7 +5042,11 @@ export const openApiDocument = {
                   properties: {
                     device: { type: "object" },
                     child: { $ref: "#/components/schemas/Child" },
-                    limit: { $ref: "#/components/schemas/WatchLimit" }
+                    limit: { $ref: "#/components/schemas/WatchLimit" },
+                    blacklist: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ChildContentBlacklistItem" }
+                    }
                   }
                 }
               }
@@ -5516,6 +5669,20 @@ export const openApiDocument = {
             required: false,
             description: "When true, return only movies liked by the current actor.",
             schema: { type: "boolean" }
+          },
+          {
+            name: "page",
+            in: "query",
+            required: false,
+            description: "Page number for paginated movie results.",
+            schema: { type: "integer", minimum: 1, default: 1, example: 1 }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            description: "Number of movies per page.",
+            schema: { type: "integer", minimum: 1, default: 20, example: 20 }
           }
         ],
         responses: {
@@ -5529,6 +5696,17 @@ export const openApiDocument = {
                     movies: {
                       type: "array",
                       items: { $ref: "#/components/schemas/ContentMovie" }
+                    },
+                    pagination: {
+                      type: "object",
+                      properties: {
+                        page: { type: "integer", example: 1 },
+                        limit: { type: "integer", example: 20 },
+                        total: { type: "integer", example: 42 },
+                        totalPages: { type: "integer", example: 3 },
+                        hasNextPage: { type: "boolean", example: true },
+                        hasPrevPage: { type: "boolean", example: false }
+                      }
                     }
                   }
                 }
@@ -5598,6 +5776,9 @@ export const openApiDocument = {
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
                   duration_sec: { type: "integer", example: 1234 },
+                  duration_seconds: { type: "integer", example: 1234 },
+                  durationSec: { type: "integer", example: 1234 },
+                  duration: { type: "integer", example: 1234 },
                   published: { type: "boolean", example: false },
                   is_premium: { type: "boolean", example: false },
                   tag_ids: {
@@ -5618,7 +5799,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "Optional JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
+                    description: "Optional JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
                   },
                   poster: {
                     type: "string",
@@ -5857,6 +6038,9 @@ export const openApiDocument = {
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
                   duration_sec: { type: "integer", example: 1234 },
+                  duration_seconds: { type: "integer", example: 1234 },
+                  durationSec: { type: "integer", example: 1234 },
+                  duration: { type: "integer", example: 1234 },
                   published: { type: "boolean", example: false },
                   is_premium: { type: "boolean", example: false },
                   tag_ids: {
@@ -5878,7 +6062,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",
@@ -5937,6 +6121,9 @@ export const openApiDocument = {
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
                   duration_sec: { type: "integer", example: 1234 },
+                  duration_seconds: { type: "integer", example: 1234 },
+                  durationSec: { type: "integer", example: 1234 },
+                  duration: { type: "integer", example: 1234 },
                   published: { type: "boolean", example: false },
                   tag_ids: {
                     type: "array",
@@ -5958,7 +6145,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, series, category_id, series_id, content_type, year, age_rating, duration_sec, published, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, series, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
                   },
                   video: {
                     type: "string",

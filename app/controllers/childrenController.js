@@ -1,5 +1,11 @@
 import { allowedDays, requiredInteger, requiredString, timeOfDay } from "../lib/validation.js";
 
+function requiredContentId(body) {
+  return requiredString({
+    contentId: body?.contentId || body?.content_id
+  }, "contentId");
+}
+
 export function createChildrenController({ childService }) {
   return {
     list(request, response) {
@@ -34,6 +40,33 @@ export function createChildrenController({ childService }) {
       });
 
       response.json({ limit });
+    },
+
+    listBlacklist(request, response) {
+      response.json({
+        blacklist: childService.listBlacklist(request.parent.id, request.params.childId)
+      });
+    },
+
+    addToBlacklist(request, response) {
+      const blacklistItem = childService.addToBlacklist(
+        request.parent.id,
+        request.params.childId,
+        requiredContentId(request.body)
+      );
+
+      response.status(201).json({
+        blacklist_item: blacklistItem,
+        item: blacklistItem
+      });
+    },
+
+    removeFromBlacklist(request, response) {
+      response.json(childService.removeFromBlacklist(
+        request.parent.id,
+        request.params.childId,
+        request.params.contentId
+      ));
     }
   };
 }

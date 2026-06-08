@@ -27,7 +27,9 @@ export function createContainer({ store = defaultStore } = {}) {
     parents: repositories.parents
   });
   services.children = createChildService({
+    childContentBlacklist: repositories.childContentBlacklist,
     children: repositories.children,
+    contentMovies: repositories.contentMovies,
     watchLimits: repositories.watchLimits
   });
   services.subscriptions = createSubscriptionService({
@@ -50,6 +52,7 @@ export function createContainer({ store = defaultStore } = {}) {
     contentMovieTags: repositories.contentMovieTags,
     contentMovies: repositories.contentMovies,
     contentTags: repositories.contentTags,
+    childService: services.children,
     tariffService: services.tariffs,
     transcoder: services.transcoder
   });
