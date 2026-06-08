@@ -631,6 +631,21 @@ export function createContentService({
     }
   }
 
+  async function attributesWithVideoDuration(attributes) {
+    if (!attributes.file?.path || !transcoder?.probeVideoDuration) {
+      return attributes;
+    }
+
+    const durationSeconds = await transcoder.probeVideoDuration(attributes.file.path);
+
+    return durationSeconds === null
+      ? attributes
+      : {
+          ...attributes,
+          duration_sec: durationSeconds
+        };
+  }
+
   function collectMovieTree(movie, seenMovieIds = new Set()) {
     if (!movie || seenMovieIds.has(movie.id)) {
       return [];
@@ -858,7 +873,8 @@ export function createContentService({
       try {
         assertMovieCategoryExists(contentCategories, attributes.category_id);
         const tagIds = await resolveMovieTagIds(contentTags, attributes);
-        seriesMovie = contentMovies.create(movieAttributes({ ...attributes, series: [] }));
+        const movieCreateAttributes = await attributesWithVideoDuration({ ...attributes, series: [] });
+        seriesMovie = contentMovies.create(movieAttributes(movieCreateAttributes));
         await contentMovieTags.replaceForMovie(seriesMovie.id, tagIds);
         const transcodeJob = transcoder.queueMovieTranscode(seriesMovie);
         const series = [...(parentMovie.series || []), seriesMovie.id];
@@ -886,7 +902,8 @@ export function createContentService({
       try {
         assertMovieCategoryExists(contentCategories, attributes.category_id);
         const tagIds = await resolveMovieTagIds(contentTags, attributes);
-        movie = contentMovies.create(movieAttributes(attributes));
+        const movieCreateAttributes = await attributesWithVideoDuration(attributes);
+        movie = contentMovies.create(movieAttributes(movieCreateAttributes));
         await contentMovieTags.replaceForMovie(movie.id, tagIds);
         const transcodeJob = transcoder.queueMovieTranscode(movie);
 

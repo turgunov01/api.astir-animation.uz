@@ -527,7 +527,11 @@ export const openApiDocument = {
           storage_path: { type: "string", nullable: true },
           transcode_status: { type: "string", example: "queued" },
           age_rating: { type: "integer", example: 6 },
-          duration_sec: { type: "integer", example: 1234 },
+          duration_sec: {
+            type: "integer",
+            example: 1234,
+            description: "Video duration in seconds. For uploaded videos, the backend tries to read it with ffprobe."
+          },
           duration_seconds: { type: "integer", example: 1234 },
           durationSec: { type: "integer", example: 1234 },
           duration: { type: "number", nullable: true, example: 1234 },
@@ -5775,7 +5779,11 @@ export const openApiDocument = {
                   content_type: { type: "string", example: "movie" },
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
-                  duration_sec: { type: "integer", example: 1234 },
+                  duration_sec: {
+                    type: "integer",
+                    example: 1234,
+                    description: "Optional fallback. For uploaded videos, backend-computed ffprobe duration has priority."
+                  },
                   duration_seconds: { type: "integer", example: 1234 },
                   durationSec: { type: "integer", example: 1234 },
                   duration: { type: "integer", example: 1234 },
@@ -5799,7 +5807,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "Optional JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
+                    description: "Optional JSON with title, description, category_id, series_id, content_type, year, age_rating, duration aliases, published, is_premium, tag_ids, and tags. When video is uploaded, backend-computed ffprobe duration has priority."
                   },
                   poster: {
                     type: "string",
@@ -6037,7 +6045,11 @@ export const openApiDocument = {
                   content_type: { type: "string", example: "episode" },
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
-                  duration_sec: { type: "integer", example: 1234 },
+                  duration_sec: {
+                    type: "integer",
+                    example: 1234,
+                    description: "Optional fallback. For uploaded videos, backend-computed ffprobe duration has priority."
+                  },
                   duration_seconds: { type: "integer", example: 1234 },
                   durationSec: { type: "integer", example: 1234 },
                   duration: { type: "integer", example: 1234 },
@@ -6062,7 +6074,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, category_id, series_id, content_type, year, age_rating, duration aliases, published, is_premium, tag_ids, and tags. When video is uploaded, backend-computed ffprobe duration has priority."
                   },
                   video: {
                     type: "string",
@@ -6120,7 +6132,11 @@ export const openApiDocument = {
                   content_type: { type: "string", example: "movie" },
                   year: { type: "integer", nullable: true, example: 2026 },
                   age_rating: { type: "integer", example: 6 },
-                  duration_sec: { type: "integer", example: 1234 },
+                  duration_sec: {
+                    type: "integer",
+                    example: 1234,
+                    description: "Optional fallback. For uploaded videos, backend-computed ffprobe duration has priority."
+                  },
                   duration_seconds: { type: "integer", example: 1234 },
                   durationSec: { type: "integer", example: 1234 },
                   duration: { type: "integer", example: 1234 },
@@ -6145,7 +6161,7 @@ export const openApiDocument = {
                 properties: {
                   metadata: {
                     type: "string",
-                    description: "JSON with title, description, series, category_id, series_id, content_type, year, age_rating, duration_sec, duration_seconds, durationSec, duration, published, is_premium, tag_ids, and tags"
+                    description: "JSON with title, description, series, category_id, series_id, content_type, year, age_rating, duration aliases, published, is_premium, tag_ids, and tags. When video is uploaded, backend-computed ffprobe duration has priority."
                   },
                   video: {
                     type: "string",

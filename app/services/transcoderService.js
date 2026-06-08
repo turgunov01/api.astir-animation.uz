@@ -6,6 +6,7 @@ import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles
 export function createTranscoderService({ config, contentMovies, spawnProcess = spawn }) {
   const runningJobs = new Map();
   const queuedJobs = new Set();
+  const probeTimeoutMs = 5000;
 
   function hlsDirectory(movieId) {
     return path.resolve(config.mediaRoot, "hls", movieId);
@@ -104,6 +105,79 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
         }
 
         reject(new Error(`ffmpeg exited with code ${code}`));
+      });
+    });
+  }
+
+  function parsedDurationSeconds(output) {
+    try {
+      const data = JSON.parse(output);
+      const duration = Number(data?.format?.duration);
+
+      return Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function probeVideoDuration(sourcePath) {
+    if (!sourcePath) {
+      return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+      let childProcess;
+      let output = "";
+      let settled = false;
+
+      function settle(durationSeconds) {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeout);
+        resolve(durationSeconds);
+      }
+
+      const timeout = setTimeout(() => {
+        if (childProcess?.kill) {
+          childProcess.kill("SIGTERM");
+        }
+
+        settle(null);
+      }, probeTimeoutMs);
+
+      try {
+        childProcess = spawnProcess(config.ffprobePath || "ffprobe", [
+          "-v",
+          "error",
+          "-show_entries",
+          "format=duration",
+          "-of",
+          "json",
+          sourcePath
+        ], {
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+      } catch {
+        settle(null);
+        return;
+      }
+
+      if (childProcess.stdout) {
+        childProcess.stdout.setEncoding?.("utf8");
+        childProcess.stdout.on("data", (chunk) => {
+          output += chunk;
+        });
+      }
+
+      childProcess.on("error", () => {
+        settle(null);
+      });
+
+      childProcess.on("close", (code) => {
+        settle(code === 0 ? parsedDurationSeconds(output) : null);
       });
     });
   }
@@ -325,6 +399,7 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
   return {
     ensureMovieTranscoded,
     hlsUrl,
+    probeVideoDuration,
     queueMovieTranscode,
     removeMovieFiles
   };

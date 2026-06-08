@@ -1011,9 +1011,11 @@ JSON body:
 
 For video upload, send `multipart/form-data`:
 
-1. `metadata` - JSON string with the same fields, including optional `category_id`, `series_id`, `year`, `age_rating`, `duration_sec`, `published`, `tag_ids`, and `tags`.
+1. `metadata` - JSON string with the same fields, including optional `category_id`, `series_id`, `year`, `age_rating`, `duration_sec`, `duration_seconds`, `durationSec`, `duration`, `published`, `tag_ids`, and `tags`.
 2. `video` - uploaded video file.
 3. `poster` - optional poster image.
+
+When `video` is uploaded, the backend tries to read the real video duration with `ffprobe` and stores it in `duration_sec`. If `ffprobe` cannot read the file, the backend keeps the duration value from `metadata` or uses `0`.
 
 Success response:
 
@@ -1047,7 +1049,11 @@ Success response:
     "is_premium": false,
     "age_rating": 6,
     "duration_sec": 1234,
+    "duration_seconds": 1234,
+    "durationSec": 1234,
     "duration": 1234,
+    "duration_minutes": 21,
+    "durationMinutes": 21,
     "year": 2026,
     "published": false,
     "published_at": null,
@@ -1139,7 +1145,7 @@ Body can include:
 
 For poster upload or combined metadata + poster update, send `multipart/form-data`:
 
-1. `metadata` - optional JSON string with `title`, `description`, `category_id`, `series_id`, `year`, `age_rating`, `duration_sec`, `published`, `is_premium`, `tag_ids`, or `tags`.
+1. `metadata` - optional JSON string with `title`, `description`, `category_id`, `series_id`, `year`, `age_rating`, duration aliases, `published`, `is_premium`, `tag_ids`, or `tags`.
 2. `poster` - poster image. The `file` field is also accepted as an alias.
 
 Direct poster upload:

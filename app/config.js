@@ -23,6 +23,7 @@ export const config = {
   mediaRoot: process.env.MEDIA_ROOT || "media",
   maxVideoUploadMb: Number(process.env.MAX_VIDEO_UPLOAD_MB || 2048),
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
+  ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
   transcoderEnabled: parseBoolean(process.env.TRANSCODER_ENABLED, true),
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
   otpDefaultCode: process.env.OTP_DEFAULT_CODE || "",
