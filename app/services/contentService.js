@@ -687,6 +687,21 @@ export function createContentService({
     throw notFound("Content item not found", "CONTENT_NOT_FOUND");
   }
 
+  function resolveBlacklistTarget(contentId) {
+    const movie = contentMovies.findById(contentId);
+
+    if (!movie) {
+      throw notFound("Content movie not found", "CONTENT_MOVIE_NOT_FOUND");
+    }
+
+    return {
+      id: movie.id,
+      targetType: "content",
+      itemType: "movie",
+      movie
+    };
+  }
+
   function likeResponse(ownerId, target, liked) {
     return {
       liked,
@@ -696,6 +711,32 @@ export function createContentService({
       item_type: target.itemType,
       likes_count: contentLikes.countByTarget(target.id, target.targetType),
       is_liked: Boolean(contentLikes.findByOwnerAndTarget(ownerId, target.id, target.targetType))
+    };
+  }
+
+  function childBlacklistItem(parentId, childId, contentId) {
+    if (!childService?.listBlacklist) {
+      return null;
+    }
+
+    return childService
+      .listBlacklist(parentId, childId)
+      .find((item) => item.contentId === contentId || item.content_id === contentId) || null;
+  }
+
+  function blacklistResponse(parentId, childId, contentId, blacklisted, item = null) {
+    const blacklistItem = item || childBlacklistItem(parentId, childId, contentId);
+
+    return {
+      blacklisted,
+      is_blacklisted: blacklisted,
+      content_id: contentId,
+      target_type: "content",
+      target_id: contentId,
+      item_type: "movie",
+      childId,
+      child_id: childId,
+      blacklist_item: blacklistItem
     };
   }
 
@@ -809,6 +850,16 @@ export function createContentService({
       return likeResponse(ownerId, target, liked);
     },
 
+    getBlacklistStatus(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+
+      childService.getChildForParent(parentId, childId);
+
+      const item = childBlacklistItem(parentId, childId, target.id);
+
+      return blacklistResponse(parentId, childId, target.id, Boolean(item), item);
+    },
+
     likeContent(actor, contentId) {
       const ownerId = ownerIdForActor(actor);
       const target = resolveLikeTarget(actor, contentId);
@@ -816,6 +867,13 @@ export function createContentService({
       contentLikes.findOrCreate(ownerId, target.id, target.targetType);
 
       return likeResponse(ownerId, target, true);
+    },
+
+    blacklistContent(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+      const item = childService.addToBlacklist(parentId, childId, target.id);
+
+      return blacklistResponse(parentId, childId, target.id, true, item);
     },
 
     async listLikedContent(actor) {
@@ -864,6 +922,16 @@ export function createContentService({
       contentLikes.deleteByOwnerAndTarget(ownerId, target.id, target.targetType);
 
       return likeResponse(ownerId, target, false);
+    },
+
+    unblacklistContent(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+      const result = childService.removeFromBlacklist(parentId, childId, target.id);
+
+      return {
+        ...blacklistResponse(parentId, childId, target.id, false),
+        deleted: result.deleted
+      };
     },
 
     async addSeriesMovie(parentMovieId, attributes) {

@@ -595,6 +595,24 @@ export const openApiDocument = {
           is_liked: { type: "boolean", example: true }
         }
       },
+      ContentBlacklistStatus: {
+        type: "object",
+        properties: {
+          blacklisted: { type: "boolean", example: true },
+          is_blacklisted: { type: "boolean", example: true },
+          content_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          target_type: { type: "string", example: "content" },
+          target_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          item_type: { type: "string", example: "movie" },
+          childId: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+          child_id: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+          deleted: { type: "boolean", example: false },
+          blacklist_item: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/ChildContentBlacklistItem" }]
+          }
+        }
+      },
       ContentStatus: {
         type: "string",
         enum: ["uploaded", "transcoding", "ready", "failed"],
@@ -5534,6 +5552,138 @@ export const openApiDocument = {
             }
           },
           401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/content/{content_id}/blacklist": {
+      get: {
+        tags: ["Children"],
+        summary: "Check whether a movie is blacklisted for a child",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "childId",
+            in: "query",
+            required: true,
+            description: "Child id. Alias: child_id.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "query",
+            required: false,
+            description: "Alias for childId.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Content blacklist status",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ContentBlacklistStatus" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      post: {
+        tags: ["Children"],
+        summary: "Add a movie to a child's blacklist",
+        description: "Idempotent: adding an already-blacklisted movie leaves one blacklist record.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["childId"],
+                properties: {
+                  childId: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+                  child_id: {
+                    type: "string",
+                    example: "b219a2f6-0670-44ed-8e18-57f887bd4e94",
+                    description: "Alias for childId."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Movie blacklisted for child",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ContentBlacklistStatus" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      delete: {
+        tags: ["Children"],
+        summary: "Remove a movie from a child's blacklist",
+        description: "Idempotent: removing a movie that is not blacklisted is a no-op.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "content_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "childId",
+            in: "query",
+            required: true,
+            description: "Child id. Alias: child_id.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "query",
+            required: false,
+            description: "Alias for childId.",
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Movie removed from child blacklist",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ContentBlacklistStatus" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
         }
       }
     },

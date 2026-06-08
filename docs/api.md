@@ -359,6 +359,14 @@ POST /v1/children/:childId/blacklist
 DELETE /v1/children/:childId/blacklist/:contentId
 ```
 
+You can also use content-style endpoints, similar to the like endpoint:
+
+```text
+GET /v1/content/:content_id/blacklist?childId=child-id
+POST /v1/content/:content_id/blacklist
+DELETE /v1/content/:content_id/blacklist?childId=child-id
+```
+
 These requests need a parent token.
 
 POST body:
@@ -366,6 +374,14 @@ POST body:
 ```json
 {
   "contentId": "movie-id"
+}
+```
+
+For `POST /v1/content/:content_id/blacklist`, body is:
+
+```json
+{
+  "childId": "child-id"
 }
 ```
 

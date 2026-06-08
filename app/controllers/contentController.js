@@ -87,6 +87,21 @@ function contentIdParam(request) {
   return request.params.content_id || request.params.movie_id;
 }
 
+function blacklistChildIdParam(request) {
+  const childId = firstQueryValue(
+    request.body?.childId
+      || request.body?.child_id
+      || request.query.childId
+      || request.query.child_id
+  );
+
+  if (!childId) {
+    throw badRequest("childId is required", "VALIDATION_ERROR");
+  }
+
+  return childId;
+}
+
 async function withUploadCleanup(request, work) {
   try {
     return await work();
@@ -340,6 +355,14 @@ export function createContentController({ contentService }) {
       response.json(contentService.getLikeStatus(request.actor, contentIdParam(request)));
     },
 
+    async checkBlacklist(request, response) {
+      response.json(contentService.getBlacklistStatus(
+        request.parent.id,
+        blacklistChildIdParam(request),
+        contentIdParam(request)
+      ));
+    },
+
     async createTag(request, response) {
       const tag = await contentService.createTag({
         name: requiredString(request.body, "name"),
@@ -417,6 +440,14 @@ export function createContentController({ contentService }) {
 
     async likeContent(request, response) {
       response.status(201).json(contentService.likeContent(request.actor, contentIdParam(request)));
+    },
+
+    async blacklistContent(request, response) {
+      response.status(201).json(contentService.blacklistContent(
+        request.parent.id,
+        blacklistChildIdParam(request),
+        contentIdParam(request)
+      ));
     },
 
     async listTags(request, response) {
@@ -592,6 +623,14 @@ export function createContentController({ contentService }) {
 
     async unlikeContent(request, response) {
       response.json(contentService.unlikeContent(request.actor, contentIdParam(request)));
+    },
+
+    async unblacklistContent(request, response) {
+      response.json(contentService.unblacklistContent(
+        request.parent.id,
+        blacklistChildIdParam(request),
+        contentIdParam(request)
+      ));
     }
   };
 }

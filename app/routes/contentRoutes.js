@@ -88,6 +88,9 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
     asyncHandler(contentController.deleteTag)
   );
   router.get("/likes", authMiddleware.requireActor, asyncHandler(contentController.listLikes));
+  router.get("/:content_id/blacklist", authMiddleware.requireParent, asyncHandler(contentController.checkBlacklist));
+  router.post("/:content_id/blacklist", authMiddleware.requireParent, asyncHandler(contentController.blacklistContent));
+  router.delete("/:content_id/blacklist", authMiddleware.requireParent, asyncHandler(contentController.unblacklistContent));
   router.get("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.checkLike));
   router.post("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.likeContent));
   router.delete("/:content_id/like", authMiddleware.requireActor, asyncHandler(contentController.unlikeContent));

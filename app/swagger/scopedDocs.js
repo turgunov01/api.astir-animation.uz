@@ -62,7 +62,10 @@ const scopes = [
       "POST /v1/pairing/sessions/{sessionId}/approve",
       "GET /v1/children/{childId}/blacklist",
       "POST /v1/children/{childId}/blacklist",
-      "DELETE /v1/children/{childId}/blacklist/{contentId}"
+      "DELETE /v1/children/{childId}/blacklist/{contentId}",
+      "GET /v1/content/{content_id}/blacklist",
+      "POST /v1/content/{content_id}/blacklist",
+      "DELETE /v1/content/{content_id}/blacklist"
     ]
   },
   {
@@ -225,7 +228,10 @@ const scopes = [
       "GET /v1/content/tags/{tag_id}",
       "POST /v1/content/tags/create",
       "PATCH /v1/content/tags/{tag_id}",
-      "DELETE /v1/content/tags/{tag_id}"
+      "DELETE /v1/content/tags/{tag_id}",
+      "GET /v1/content/{content_id}/blacklist",
+      "POST /v1/content/{content_id}/blacklist",
+      "DELETE /v1/content/{content_id}/blacklist"
     ]
   },
   {
