@@ -10,11 +10,11 @@ const defaultLimit = {
 export function serializeChild(child) {
   return {
     id: child.id,
-    parentId: child.parentId,
+    parentId: child.parentId || child.parent_id,
     name: child.name,
-    birthYear: child.birthYear,
-    createdAt: child.createdAt,
-    updatedAt: child.updatedAt
+    birthYear: child.birthYear || child.birth_year,
+    createdAt: child.createdAt || child.created_at,
+    updatedAt: child.updatedAt || child.updated_at
   };
 }
 
@@ -32,7 +32,30 @@ function serializeBlacklistItem(item) {
 
 export function createChildService({ childContentBlacklist, children, contentMovies, watchLimits }) {
   function listChildren(parentId) {
-    return children.listByParentId(parentId).map(serializeChild);
+    const list = children.listByParentId(parentId);
+    // Handle both sync arrays and async promises
+    if (list && typeof list.then === 'function') {
+      // This is async, shouldn't happen in sync context
+      throw new Error('listChildren must be called with await when using async repositories');
+    }
+    return list.map(serializeChild);
+  }
+
+  async function getChildForParentAsync(parentId, childId) {
+    let child = children.findById(childId);
+    if (child && typeof child.then === 'function') {
+      child = await child;
+    }
+
+    if (!child) {
+      throw notFound("Child not found", "CHILD_NOT_FOUND");
+    }
+
+    if ((child.parentId || child.parent_id) !== parentId) {
+      throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
+    }
+
+    return child;
   }
 
   function getChildForParent(parentId, childId) {
@@ -42,7 +65,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    if (child.parentId !== parentId) {
+    if ((child.parentId || child.parent_id) !== parentId) {
       throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
     }
 
@@ -110,8 +133,27 @@ export function createChildService({ childContentBlacklist, children, contentMov
     return serializeBlacklistItem(childContentBlacklist.findOrCreate(parentId, childId, contentId));
   }
 
+  async function addToBlacklistAsync(parentId, childId, contentId) {
+    await getChildForParentAsync(parentId, childId);
+    assertBlacklistMovieExists(contentId);
+
+    return serializeBlacklistItem(childContentBlacklist.findOrCreate(parentId, childId, contentId));
+  }
+
   function removeFromBlacklist(parentId, childId, contentId) {
     getChildForParent(parentId, childId);
+
+    const deleted = childContentBlacklist.deleteByChildAndContent(childId, contentId);
+
+    return {
+      deleted: Boolean(deleted),
+      contentId,
+      content_id: contentId
+    };
+  }
+
+  async function removeFromBlacklistAsync(parentId, childId, contentId) {
+    await getChildForParentAsync(parentId, childId);
 
     const deleted = childContentBlacklist.deleteByChildAndContent(childId, contentId);
 
@@ -138,8 +180,10 @@ export function createChildService({ childContentBlacklist, children, contentMov
 
   return {
     addToBlacklist,
+    addToBlacklistAsync,
     createChild,
     getChildForParent,
+    getChildForParentAsync,
     getLimits,
     isAnyContentBlacklisted,
     isContentBlacklisted,
@@ -147,6 +191,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
     listChildren,
     removeContentFromAllBlacklists,
     removeFromBlacklist,
+    removeFromBlacklistAsync,
     serializeChild,
     updateLimits
   };

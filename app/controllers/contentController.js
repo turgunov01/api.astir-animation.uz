@@ -356,11 +356,12 @@ export function createContentController({ contentService }) {
     },
 
     async checkBlacklist(request, response) {
-      response.json(contentService.getBlacklistStatus(
+      const result = await contentService.getBlacklistStatusAsync(
         request.parent.id,
         blacklistChildIdParam(request),
         contentIdParam(request)
-      ));
+      );
+      response.json(result);
     },
 
     async createTag(request, response) {
@@ -443,11 +444,12 @@ export function createContentController({ contentService }) {
     },
 
     async blacklistContent(request, response) {
-      response.status(201).json(contentService.blacklistContent(
+      const result = await contentService.blacklistContentAsync(
         request.parent.id,
         blacklistChildIdParam(request),
         contentIdParam(request)
-      ));
+      );
+      response.status(201).json(result);
     },
 
     async listTags(request, response) {
@@ -626,11 +628,12 @@ export function createContentController({ contentService }) {
     },
 
     async unblacklistContent(request, response) {
-      response.json(contentService.unblacklistContent(
+      const result = await contentService.unblacklistContentAsync(
         request.parent.id,
         blacklistChildIdParam(request),
         contentIdParam(request)
-      ));
+      );
+      response.json(result);
     }
   };
 }

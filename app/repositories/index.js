@@ -8,8 +8,10 @@ import { createContentTagRepository } from "./contentTagRepository.js";
 import { createDeviceRepository } from "./deviceRepository.js";
 import { createPairingSessionRepository } from "./pairingSessionRepository.js";
 import { createParentRepository } from "./parentRepository.js";
+import { createPostgresChildRepository } from "./postgresChildRepository.js";
 import { createPostgresContentMovieTagRepository } from "./postgresContentMovieTagRepository.js";
 import { createPostgresContentTagRepository } from "./postgresContentTagRepository.js";
+import { createPostgresParentRepository } from "./postgresParentRepository.js";
 import { createOtpCodeRepository } from "./otpCodeRepository.js";
 import { createSubscriptionRepository } from "./subscriptionRepository.js";
 import { createTariffRepository } from "./tariffRepository.js";
@@ -24,10 +26,16 @@ export function createRepositories(store, { contentDb = null } = {}) {
   const contentMovieTags = contentDb
     ? createPostgresContentMovieTagRepository(contentDb)
     : createContentMovieTagRepository(store);
+  const children = contentDb
+    ? createPostgresChildRepository(contentDb)
+    : createChildRepository(store);
+  const parents = contentDb
+    ? createPostgresParentRepository(contentDb)
+    : createParentRepository(store);
 
   return {
     childContentBlacklist: createChildContentBlacklistRepository(store),
-    children: createChildRepository(store),
+    children,
     contentCategories: createContentCategoryRepository(store),
     contentLikes: createContentLikeRepository(store),
     contentMovieTags,
@@ -36,7 +44,7 @@ export function createRepositories(store, { contentDb = null } = {}) {
     devices: createDeviceRepository(store),
     otpCodes: createOtpCodeRepository(store),
     pairingSessions: createPairingSessionRepository(store),
-    parents: createParentRepository(store),
+    parents,
     subscriptions: createSubscriptionRepository(store),
     tariffs: createTariffRepository(store),
     transactions: createTransactionRepository(store),

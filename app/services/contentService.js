@@ -860,6 +860,16 @@ export function createContentService({
       return blacklistResponse(parentId, childId, target.id, Boolean(item), item);
     },
 
+    async getBlacklistStatusAsync(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+
+      await childService.getChildForParentAsync(parentId, childId);
+
+      const item = childBlacklistItem(parentId, childId, target.id);
+
+      return blacklistResponse(parentId, childId, target.id, Boolean(item), item);
+    },
+
     likeContent(actor, contentId) {
       const ownerId = ownerIdForActor(actor);
       const target = resolveLikeTarget(actor, contentId);
@@ -872,6 +882,13 @@ export function createContentService({
     blacklistContent(parentId, childId, contentId) {
       const target = resolveBlacklistTarget(contentId);
       const item = childService.addToBlacklist(parentId, childId, target.id);
+
+      return blacklistResponse(parentId, childId, target.id, true, item);
+    },
+
+    async blacklistContentAsync(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+      const item = await childService.addToBlacklistAsync(parentId, childId, target.id);
 
       return blacklistResponse(parentId, childId, target.id, true, item);
     },
@@ -927,6 +944,16 @@ export function createContentService({
     unblacklistContent(parentId, childId, contentId) {
       const target = resolveBlacklistTarget(contentId);
       const result = childService.removeFromBlacklist(parentId, childId, target.id);
+
+      return {
+        ...blacklistResponse(parentId, childId, target.id, false),
+        deleted: result.deleted
+      };
+    },
+
+    async unblacklistContentAsync(parentId, childId, contentId) {
+      const target = resolveBlacklistTarget(contentId);
+      const result = await childService.removeFromBlacklistAsync(parentId, childId, target.id);
 
       return {
         ...blacklistResponse(parentId, childId, target.id, false),
