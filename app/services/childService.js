@@ -61,7 +61,9 @@ export function createChildService({ childContentBlacklist, children, contentMov
       childParentid: child?.parentid
     });
 
-    if ((child.parentId || child.parent_id) !== parentId) {
+    const childParentId = child.parentId || child.parent_id || child.parentid;
+
+    if (childParentId !== parentId) {
       throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
     }
 
@@ -75,7 +77,9 @@ export function createChildService({ childContentBlacklist, children, contentMov
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    if ((child.parentId || child.parent_id) !== parentId) {
+    const childParentId = child.parentId || child.parent_id || child.parentid;
+
+    if (childParentId !== parentId) {
       throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
     }
 
