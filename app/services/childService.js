@@ -42,6 +42,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
   }
 
   async function getChildForParentAsync(parentId, childId) {
+
     let child = children.findById(childId);
     if (child && typeof child.then === 'function') {
       child = await child;
@@ -50,6 +51,15 @@ export function createChildService({ childContentBlacklist, children, contentMov
     if (!child) {
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
+
+    console.log("CHILD OWNERSHIP DEBUG", {
+      expectedParentId: parentId,
+      childId,
+      child,
+      childParentId: child?.parentId,
+      childParent_id: child?.parent_id,
+      childParentid: child?.parentid
+    });
 
     if ((child.parentId || child.parent_id) !== parentId) {
       throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
