@@ -45,20 +45,75 @@ function legacySuperAdminParent(payload) {
 export function createAuthMiddleware({ children, config, devices, parents, watchLimits }) {
   let localContext = null;
 
-  function getLocalContext() {
+  function firstValue(...values) {
+    return values.find((value) => value !== undefined && value !== null && value !== "") || null;
+  }
+
+  function legacyUserId(payload) {
+    return firstValue(payload.user_id, payload.userId, payload.sub);
+  }
+
+  function legacyDeviceId(payload) {
+    return firstValue(payload.device_id, payload.deviceId, payload.tv_device_id, payload.tvDeviceId, payload.sub);
+  }
+
+  function legacyChildId(payload) {
+    return firstValue(payload.child_id, payload.childId, payload.current_child_id, payload.currentChildId);
+  }
+
+  function legacyParentId(payload) {
+    return firstValue(payload.parent_id, payload.parentId);
+  }
+
+  function isLegacyParentPayload(payload) {
+    return payload.kind === "user" && payload.role === "parent" && Boolean(legacyUserId(payload));
+  }
+
+  async function normalizeDevice(device, payload = {}) {
+    if (!device && !legacyDeviceId(payload)) {
+      return null;
+    }
+
+    const normalized = { ...(device || {}) };
+
+    normalized.id = firstValue(normalized.id, legacyDeviceId(payload));
+    normalized.parentId = firstValue(normalized.parentId, normalized.parent_id, legacyParentId(payload));
+    normalized.childId = firstValue(normalized.childId, normalized.child_id, legacyChildId(payload));
+    normalized.tokenHash = firstValue(normalized.tokenHash, normalized.token_hash);
+    normalized.pairedAt = firstValue(normalized.pairedAt, normalized.paired_at);
+
+    if (!normalized.parentId && normalized.childId) {
+      const child = await children.findById(normalized.childId);
+      normalized.parentId = firstValue(child?.parentId, child?.parent_id);
+    }
+
+    if (normalized.parentId && !normalized.parent) {
+      normalized.parent = await parents.findById(normalized.parentId);
+    }
+
+    return normalized;
+  }
+
+  async function storedDeviceFromPayload(payload) {
+    const deviceId = legacyDeviceId(payload);
+
+    return deviceId ? await devices.findById(deviceId) : null;
+  }
+
+  async function getLocalContext() {
     if (localContext) {
       return localContext;
     }
 
     const now = new Date().toISOString();
-    const parent = parents.findByEmail(localParentEmail) || parents.create({
+    const parent = await parents.findByEmail(localParentEmail) || await parents.create({
       name: "Local Parent",
       email: localParentEmail,
       passwordHash: hashSecret("password123"),
       pinHash: hashSecret("1234"),
       tariff: "free"
     });
-    const child = children.findByParentIdAndName(parent.id, localChildName) || children.create({
+    const child = await children.findByParentIdAndName(parent.id, localChildName) || await children.create({
       parentId: parent.id,
       name: localChildName,
       birthYear: 2018
@@ -94,29 +149,41 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
     return localContext;
   }
 
-  function attachLocalParent(request, response, next) {
-    const context = getLocalContext();
+  async function attachLocalParent(request, response, next) {
+    try {
+      const context = await getLocalContext();
 
-    request.parent = context.parent;
-    request.actor = context.actor;
-    next();
+      request.parent = context.parent;
+      request.actor = context.actor;
+      next();
+    } catch (error) {
+      next(error);
+    }
   }
 
-  function attachLocalDevice(request, response, next) {
-    const context = getLocalContext();
+  async function attachLocalDevice(request, response, next) {
+    try {
+      const context = await getLocalContext();
 
-    request.device = context.device;
-    request.actor = { type: "device", device: context.device };
-    next();
+      request.device = context.device;
+      request.actor = { type: "device", device: context.device };
+      next();
+    } catch (error) {
+      next(error);
+    }
   }
 
-  function attachLocalActor(request, response, next) {
-    const context = getLocalContext();
+  async function attachLocalActor(request, response, next) {
+    try {
+      const context = await getLocalContext();
 
-    request.parent = context.parent;
-    request.device = context.device;
-    request.actor = context.actor;
-    next();
+      request.parent = context.parent;
+      request.device = context.device;
+      request.actor = context.actor;
+      next();
+    } catch (error) {
+      next(error);
+    }
   }
 
   if (!config.requireAuth) {
@@ -128,7 +195,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
   }
 
   function requireParent(request, response, next) {
-    try {
+    Promise.resolve().then(async () => {
       const { payload } = verifyRequestToken(request);
 
       if (isLegacySuperAdminPayload(payload)) {
@@ -138,10 +205,22 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       }
 
       if (payload.type !== "parent") {
-        throw unauthorized("Parent token is required");
+        if (!isLegacyParentPayload(payload)) {
+          throw unauthorized("Parent token is required");
+        }
+
+        const parent = await parents.findById(legacyUserId(payload));
+
+        if (!parent) {
+          throw unauthorized("Parent account no longer exists");
+        }
+
+        request.parent = parent;
+        next();
+        return;
       }
 
-      const parent = parents.findById(payload.parentId);
+      const parent = await parents.findById(payload.parentId);
 
       if (!parent) {
         throw unauthorized("Parent account no longer exists");
@@ -149,38 +228,66 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
 
       request.parent = parent;
       next();
-    } catch (error) {
-      next(error);
-    }
+    }).catch(next);
   }
 
   function requireDevice(request, response, next) {
-    try {
+    Promise.resolve().then(async () => {
       const { token, payload } = verifyRequestToken(request);
 
-      if (payload.type !== "device") {
-        throw unauthorized("Device token is required");
+      if (payload.type === "device") {
+        const device = await normalizeDevice(await storedDeviceFromPayload(payload), payload);
+
+        if (!device || device.tokenHash !== sha256(token)) {
+          throw unauthorized("Device token is no longer valid");
+        }
+
+        request.device = device;
+        next();
+        return;
       }
 
-      const device = devices.findById(payload.deviceId);
+      if (payload.kind === "child_device" || payload.kind === "tv_device") {
+        const storedDevice = await storedDeviceFromPayload(payload);
+        const device = await normalizeDevice(storedDevice, payload);
+        const storedTokenHash = firstValue(storedDevice?.tokenHash, storedDevice?.token_hash);
 
-      if (!device || device.tokenHash !== sha256(token)) {
-        throw unauthorized("Device token is no longer valid");
+        if (storedTokenHash && storedTokenHash !== sha256(token)) {
+          throw unauthorized("Device token is no longer valid");
+        }
+
+        if (!device?.id || !device.parentId) {
+          throw unauthorized("Device token owner was not found");
+        }
+
+        request.device = device;
+        next();
+        return;
       }
 
-      request.device = device;
-      next();
-    } catch (error) {
-      next(error);
-    }
+      throw unauthorized("Device token is required");
+    }).catch(next);
   }
 
   function requireActor(request, response, next) {
-    try {
+    Promise.resolve().then(async () => {
       const { token, payload } = verifyRequestToken(request);
 
       if (payload.type === "parent") {
-        const parent = parents.findById(payload.parentId);
+        const parent = await parents.findById(payload.parentId);
+
+        if (!parent) {
+          throw unauthorized("Parent account no longer exists");
+        }
+
+        request.parent = parent;
+        request.actor = { type: "parent", parent };
+        next();
+        return;
+      }
+
+      if (isLegacyParentPayload(payload)) {
+        const parent = await parents.findById(legacyUserId(payload));
 
         if (!parent) {
           throw unauthorized("Parent account no longer exists");
@@ -202,7 +309,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       }
 
       if (payload.type === "device") {
-        const device = devices.findById(payload.deviceId);
+        const device = await normalizeDevice(await storedDeviceFromPayload(payload), payload);
 
         if (!device || device.tokenHash !== sha256(token)) {
           throw unauthorized("Device token is no longer valid");
@@ -214,10 +321,27 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
         return;
       }
 
+      if (payload.kind === "child_device" || payload.kind === "tv_device") {
+        const storedDevice = await storedDeviceFromPayload(payload);
+        const device = await normalizeDevice(storedDevice, payload);
+        const storedTokenHash = firstValue(storedDevice?.tokenHash, storedDevice?.token_hash);
+
+        if (storedTokenHash && storedTokenHash !== sha256(token)) {
+          throw unauthorized("Device token is no longer valid");
+        }
+
+        if (!device?.id || !device.parentId) {
+          throw unauthorized("Device token owner was not found");
+        }
+
+        request.device = device;
+        request.actor = { type: "device", device };
+        next();
+        return;
+      }
+
       throw unauthorized("Unsupported token type");
-    } catch (error) {
-      next(error);
-    }
+    }).catch(next);
   }
 
   return {

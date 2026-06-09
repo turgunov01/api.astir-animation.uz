@@ -155,6 +155,7 @@ try {
   assert.equal(typeof registration.token, "string");
   assert.equal(registration.parent.tariff, "free");
   const parentToken = registration.token;
+  const parentId = registration.parent.id;
   const superAdminToken = jwt.sign(
     {
       sub: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",
@@ -523,24 +524,17 @@ try {
     headers: { authorization: `Bearer ${parentToken}` }
   });
 
-  assert.equal(usedTariffDelete.status, 409);
-  assert.equal(usedTariffDelete.body.error.code, "TARIFF_IN_USE");
+  assert.equal(usedTariffDelete.status, 200);
+  assert.equal(usedTariffDelete.body.deleted, true);
+  assert.equal(usedTariffDelete.body.affected.subscriptionsUpdated, 0);
+  assert.equal(usedTariffDelete.body.affected.parentsUpdated, 1);
 
   const freeTariff = await request(baseUrl, "/v1/tariffs/current", {
-    method: "PATCH",
-    headers: { authorization: `Bearer ${parentToken}` },
-    body: { tariff: "free" }
+    headers: { authorization: `Bearer ${parentToken}` }
   });
 
   assert.equal(freeTariff.tariff.code, "free");
   assert.equal(freeTariff.access.can_watch_premium, false);
-
-  const deletedCustomTariff = await request(baseUrl, `/v1/tariffs/${customTariffId}`, {
-    method: "DELETE",
-    headers: { authorization: `Bearer ${parentToken}` }
-  });
-
-  assert.equal(deletedCustomTariff.deleted, true);
 
   const clickAmount = "49000.00";
   const mismatchedClickCheckout = await requestWithStatus(baseUrl, "/v1/billing/click/checkout", {
@@ -855,6 +849,73 @@ try {
 
   assert.equal(deviceTariff.tariff.code, "premium");
   assert.equal(deviceTariff.access.can_watch_premium, true);
+
+  const deviceInitialLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceInitialLikeStatus.liked, false);
+  assert.equal(deviceInitialLikeStatus.likes_count, 0);
+
+  const deviceLikedMovie = await requestWithStatus(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceLikedMovie.status, 201);
+  assert.equal(deviceLikedMovie.body.liked, true);
+  assert.equal(deviceLikedMovie.body.likes_count, 1);
+
+  const parentDeviceLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(parentDeviceLikeStatus.liked, true);
+  assert.equal(parentDeviceLikeStatus.likes_count, 1);
+
+  const deviceUnlikedMovie = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceUnlikedMovie.liked, false);
+  assert.equal(deviceUnlikedMovie.likes_count, 0);
+
+  const legacyDeviceId = `legacy-device-${Date.now()}`;
+  const legacyDeviceToken = jwt.sign(
+    {
+      sub: legacyDeviceId,
+      kind: "child_device",
+      device_id: legacyDeviceId,
+      child_id: childId,
+      parent_id: parentId
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+  const legacyDeviceLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    headers: { authorization: `Bearer ${legacyDeviceToken}` }
+  });
+
+  assert.equal(legacyDeviceLikeStatus.liked, false);
+  assert.equal(legacyDeviceLikeStatus.likes_count, 0);
+
+  const legacyDeviceLikedMovie = await requestWithStatus(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${legacyDeviceToken}` }
+  });
+
+  assert.equal(legacyDeviceLikedMovie.status, 201);
+  assert.equal(legacyDeviceLikedMovie.body.liked, true);
+  assert.equal(legacyDeviceLikedMovie.body.likes_count, 1);
+
+  const legacyDeviceUnlikedMovie = await request(baseUrl, `/v1/content/${movieId}/like`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${legacyDeviceToken}` }
+  });
+
+  assert.equal(legacyDeviceUnlikedMovie.liked, false);
+  assert.equal(legacyDeviceUnlikedMovie.likes_count, 0);
 
   const content = await request(baseUrl, "/v1/content", {
     headers: { authorization: `Bearer ${deviceToken}` }

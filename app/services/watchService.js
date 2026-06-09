@@ -52,15 +52,34 @@ function usedSecondsToday(sessions, now) {
     }, 0);
 }
 
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") || null;
+}
+
+function normalizeDevice(device) {
+  if (!device) {
+    return device;
+  }
+
+  return {
+    ...device,
+    parentId: firstValue(device.parentId, device.parent_id),
+    childId: firstValue(device.childId, device.child_id, device.currentChildId, device.current_child_id),
+    pairedAt: firstValue(device.pairedAt, device.paired_at)
+  };
+}
+
 export function createWatchService({ childService, children, contentService, watchSessions }) {
   function actorForDevice(device) {
     return {
       type: "device",
-      device
+      device: normalizeDevice(device)
     };
   }
 
   function limitStatusForDevice(device, now = new Date()) {
+    device = normalizeDevice(device);
+
     const limit = childService.getLimits(device.parentId, device.childId);
     const sessions = watchSessions.listByChildId(device.childId);
     const usedSeconds = usedSecondsToday(sessions, now);
@@ -92,6 +111,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   function isSessionBlacklisted(device, session) {
+    device = normalizeDevice(device);
+
     const contentIds = [
       session.contentId,
       session.parentSeriesId
@@ -114,6 +135,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   function getDeviceConfig(device) {
+    device = normalizeDevice(device);
+
     const child = children.findById(device.childId);
 
     if (!child) {
@@ -141,6 +164,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   async function startWatchSession(device, { contentId }) {
+    device = normalizeDevice(device);
+
     const activeSession = watchSessions.findActiveByDeviceId(device.id);
     let watchTarget;
 
@@ -240,6 +265,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   function progressWatchSession(device, watchSessionId, { positionSeconds = null, watchedSeconds }) {
+    device = normalizeDevice(device);
+
     const session = assertDeviceSession(device, watchSessionId);
 
     if (session.endedAt) {
@@ -269,6 +296,8 @@ export function createWatchService({ childService, children, contentService, wat
   }
 
   function stopWatchSession(device, watchSessionId) {
+    device = normalizeDevice(device);
+
     const session = assertDeviceSession(device, watchSessionId);
 
     return finalizeWatchSession(session);

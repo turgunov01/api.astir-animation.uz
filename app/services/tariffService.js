@@ -81,6 +81,10 @@ function tariffResponse(tariff, subscription = null) {
   };
 }
 
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") || null;
+}
+
 export function createTariffService({ parents, subscriptions, tariffs }) {
   function seedDefaultTariffs() {
     for (const tariff of defaultTariffs) {
@@ -131,14 +135,18 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
 
   function parentFromActor(actor) {
     if (actor?.type === "parent" && actor.parent) {
-      return parents.findById(actor.parent.id) || actor.parent;
+      return actor.parent;
     }
 
-    if (actor?.type === "device" && actor.device?.parentId) {
-      const parent = parents.findById(actor.device.parentId);
+    if (actor?.type === "device") {
+      if (actor.device?.parent?.id) {
+        return actor.device.parent;
+      }
 
-      if (parent) {
-        return parent;
+      const parentId = firstValue(actor.device?.parentId, actor.device?.parent_id);
+
+      if (parentId) {
+        return { id: parentId, tariff: firstValue(actor.device?.parentTariff, actor.device?.parent_tariff, "free") };
       }
     }
 

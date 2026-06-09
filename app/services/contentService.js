@@ -529,6 +529,30 @@ function assertCategoryTitleAvailable(contentCategories, title, currentCategoryI
   }
 }
 
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") || null;
+}
+
+function deviceParentId(device) {
+  return firstValue(device?.parentId, device?.parent_id, device?.parent?.id, device?.parent?.user_id);
+}
+
+function deviceChildId(device) {
+  return firstValue(device?.childId, device?.child_id, device?.currentChildId, device?.current_child_id);
+}
+
+function actorOwnerId(actor) {
+  if (actor?.type === "parent") {
+    return firstValue(actor.parent?.id, actor.parent?.user_id, actor.parentId, actor.parent_id);
+  }
+
+  if (actor?.type === "device") {
+    return deviceParentId(actor.device);
+  }
+
+  return null;
+}
+
 export function createContentService({
   childService,
   contentCategories,
@@ -540,12 +564,10 @@ export function createContentService({
   transcoder
 }) {
   function ownerIdForActor(actor) {
-    if (actor?.type === "parent" && actor.parent?.id) {
-      return actor.parent.id;
-    }
+    const ownerId = actorOwnerId(actor);
 
-    if (actor?.type === "device" && actor.device?.parentId) {
-      return actor.device.parentId;
+    if (ownerId) {
+      return ownerId;
     }
 
     throw forbidden("Like owner was not found", "LIKE_OWNER_NOT_FOUND");
@@ -618,9 +640,16 @@ export function createContentService({
       return false;
     }
 
+    const parentId = deviceParentId(actor.device);
+    const childId = deviceChildId(actor.device);
+
+    if (!parentId || !childId) {
+      return false;
+    }
+
     return childService.isAnyContentBlacklisted(
-      actor.device.parentId,
-      actor.device.childId,
+      parentId,
+      childId,
       blacklistIdsForMovie(movie)
     );
   }

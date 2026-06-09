@@ -14,13 +14,16 @@ export function signParentToken(parent) {
 }
 
 export function signDeviceToken(device) {
+  const parentId = device.parentId || device.parent_id;
+  const childId = device.childId || device.child_id;
+
   return jwt.sign(
     {
       sub: device.id,
       type: "device",
       deviceId: device.id,
-      parentId: device.parentId,
-      childId: device.childId
+      parentId,
+      childId
     },
     config.jwtSecret,
     { expiresIn: config.deviceTokenTtl }
