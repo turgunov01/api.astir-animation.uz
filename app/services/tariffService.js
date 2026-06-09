@@ -218,19 +218,28 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
         throw badRequest("Default tariff cannot be deleted", "DEFAULT_TARIFF_DELETE_FORBIDDEN");
       }
 
-      const parentUsingTariff = parents.list().find((parent) => parent.tariff === tariff.id);
+      // Get the free/default tariff
+      const freeTariff = defaultTariff();
 
-      if (parentUsingTariff) {
-        throw conflict("Tariff is used by parent accounts", "TARIFF_IN_USE");
+      // Cascade: Update all subscriptions using this tariff to free tariff
+      const subscriptionsUsingTariff = subscriptions.listByTariffId(tariff.id);
+      for (const subscription of subscriptionsUsingTariff) {
+        subscriptions.update(subscription.id, { tariffId: freeTariff.id });
       }
 
-      if (subscriptions.listByTariffId(tariff.id).length > 0) {
-        throw conflict("Tariff is used by subscriptions", "TARIFF_IN_USE");
+      // Cascade: Update all parent accounts using this tariff to free tariff
+      const parentsUsingTariff = parents.list().filter((parent) => parent.tariff === tariff.id);
+      for (const parent of parentsUsingTariff) {
+        parents.update(parent.id, { tariff: freeTariff.id });
       }
 
       return {
         deleted: true,
-        tariff: serializeTariff(tariffs.delete(tariff.id))
+        tariff: serializeTariff(tariffs.delete(tariff.id)),
+        affected: {
+          subscriptionsUpdated: subscriptionsUsingTariff.length,
+          parentsUpdated: parentsUsingTariff.length
+        }
       };
     },
 
