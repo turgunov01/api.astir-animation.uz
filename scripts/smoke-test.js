@@ -850,6 +850,66 @@ try {
   assert.equal(deviceTariff.tariff.code, "premium");
   assert.equal(deviceTariff.access.can_watch_premium, true);
 
+  const parentBlacklistedMovie = await requestWithStatus(
+    baseUrl,
+    `/v1/content/${movieId}/blacklist?childId=${encodeURIComponent(childId)}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(parentBlacklistedMovie.status, 201);
+  assert.equal(parentBlacklistedMovie.body.blacklisted, true);
+  assert.equal(parentBlacklistedMovie.body.child_id, childId);
+
+  const deviceBlacklistStatus = await request(baseUrl, `/v1/content/${movieId}/blacklist`, {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceBlacklistStatus.blacklisted, true);
+  assert.equal(deviceBlacklistStatus.child_id, childId);
+
+  const deviceUnblacklistedMovie = await request(baseUrl, `/v1/content/${movieId}/blacklist`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceUnblacklistedMovie.blacklisted, false);
+  assert.equal(deviceUnblacklistedMovie.child_id, childId);
+
+  const parentBlacklistStatus = await request(
+    baseUrl,
+    `/v1/content/${movieId}/blacklist?childId=${encodeURIComponent(childId)}`,
+    {
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(parentBlacklistStatus.blacklisted, false);
+  assert.equal(parentBlacklistStatus.child_id, childId);
+
+  const deviceBlacklistedMovie = await requestWithStatus(baseUrl, `/v1/content/${movieId}/blacklist`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceBlacklistedMovie.status, 201);
+  assert.equal(deviceBlacklistedMovie.body.blacklisted, true);
+  assert.equal(deviceBlacklistedMovie.body.child_id, childId);
+
+  const parentUnblacklistedMovie = await request(
+    baseUrl,
+    `/v1/content/${movieId}/blacklist?childId=${encodeURIComponent(childId)}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(parentUnblacklistedMovie.blacklisted, false);
+  assert.equal(parentUnblacklistedMovie.child_id, childId);
+
   const deviceInitialLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
     headers: { authorization: `Bearer ${deviceToken}` }
   });

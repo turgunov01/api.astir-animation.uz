@@ -142,6 +142,37 @@ function firstQueryValue(value) {
   return value || "";
 }
 
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") || "";
+}
+
+function deviceParentId(device) {
+  return firstValue(device?.parentId, device?.parent_id, device?.parent?.id);
+}
+
+function deviceChildId(device) {
+  return firstValue(device?.childId, device?.child_id, device?.currentChildId, device?.current_child_id);
+}
+
+function blacklistTarget(request) {
+  if (request.actor?.type === "device") {
+    const device = request.device || request.actor.device;
+    const parentId = deviceParentId(device);
+    const childId = deviceChildId(device);
+
+    if (!parentId || !childId) {
+      throw badRequest("Device must be paired to a child", "VALIDATION_ERROR");
+    }
+
+    return { parentId, childId };
+  }
+
+  return {
+    parentId: request.parent?.id || request.actor?.parent?.id,
+    childId: blacklistChildIdParam(request)
+  };
+}
+
 function queryList(value) {
   const values = Array.isArray(value) ? value : [value];
 
@@ -356,9 +387,10 @@ export function createContentController({ contentService }) {
     },
 
     async checkBlacklist(request, response) {
+      const target = blacklistTarget(request);
       const result = await contentService.getBlacklistStatusAsync(
-        request.parent.id,
-        blacklistChildIdParam(request),
+        target.parentId,
+        target.childId,
         contentIdParam(request)
       );
       response.json(result);
@@ -444,9 +476,10 @@ export function createContentController({ contentService }) {
     },
 
     async blacklistContent(request, response) {
+      const target = blacklistTarget(request);
       const result = await contentService.blacklistContentAsync(
-        request.parent.id,
-        blacklistChildIdParam(request),
+        target.parentId,
+        target.childId,
         contentIdParam(request)
       );
       response.status(201).json(result);
@@ -628,9 +661,10 @@ export function createContentController({ contentService }) {
     },
 
     async unblacklistContent(request, response) {
+      const target = blacklistTarget(request);
       const result = await contentService.unblacklistContentAsync(
-        request.parent.id,
-        blacklistChildIdParam(request),
+        target.parentId,
+        target.childId,
         contentIdParam(request)
       );
       response.json(result);

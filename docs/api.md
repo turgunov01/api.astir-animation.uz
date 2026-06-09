@@ -367,7 +367,10 @@ POST /v1/content/:content_id/blacklist
 DELETE /v1/content/:content_id/blacklist?childId=child-id
 ```
 
-These requests need a parent token.
+These requests need a parent token or a device token.
+
+With a parent token, pass `childId` in query or body.
+With a device token, omit `childId`; the backend uses the child paired to the device token.
 
 POST body:
 
@@ -377,7 +380,7 @@ POST body:
 }
 ```
 
-For `POST /v1/content/:content_id/blacklist`, body is:
+For `POST /v1/content/:content_id/blacklist` with a parent token, body can be:
 
 ```json
 {
@@ -387,7 +390,7 @@ For `POST /v1/content/:content_id/blacklist`, body is:
 
 What happens:
 
-1. The parent adds or removes a movie from the child's blacklist.
+1. The parent or paired child device adds or removes a movie from that child's blacklist.
 2. The child device receives `blacklist` in `/v1/device/config`.
 3. Blacklisted movies are hidden from the child movie list and blocked on playback.
 

@@ -4852,7 +4852,7 @@ export const openApiDocument = {
       get: {
         tags: ["Children"],
         summary: "List child content blacklist",
-        security: [{ parentToken: [] }],
+        security: [{ parentToken: [] }, { deviceToken: [] }],
         parameters: [
           {
             name: "childId",
@@ -5788,8 +5788,8 @@ export const openApiDocument = {
           {
             name: "childId",
             in: "query",
-            required: true,
-            description: "Child id. Alias: child_id.",
+            required: false,
+            description: "Child id for parent tokens. Alias: child_id. Device tokens use their paired child.",
             schema: { type: "string" }
           },
           {
@@ -5818,8 +5818,8 @@ export const openApiDocument = {
       post: {
         tags: ["Children"],
         summary: "Add a movie to a child's blacklist",
-        description: "Idempotent: adding an already-blacklisted movie leaves one blacklist record.",
-        security: [{ parentToken: [] }],
+        description: "Idempotent: adding an already-blacklisted movie leaves one blacklist record. Parent tokens must pass childId; device tokens use their paired child.",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
         parameters: [
           {
             name: "content_id",
@@ -5829,18 +5829,21 @@ export const openApiDocument = {
           }
         ],
         requestBody: {
-          required: true,
+          required: false,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["childId"],
                 properties: {
-                  childId: { type: "string", example: "b219a2f6-0670-44ed-8e18-57f887bd4e94" },
+                  childId: {
+                    type: "string",
+                    example: "b219a2f6-0670-44ed-8e18-57f887bd4e94",
+                    description: "Required for parent tokens. Ignored for device tokens."
+                  },
                   child_id: {
                     type: "string",
                     example: "b219a2f6-0670-44ed-8e18-57f887bd4e94",
-                    description: "Alias for childId."
+                    description: "Alias for childId. Required for parent tokens. Ignored for device tokens."
                   }
                 }
               }
@@ -5865,8 +5868,8 @@ export const openApiDocument = {
       delete: {
         tags: ["Children"],
         summary: "Remove a movie from a child's blacklist",
-        description: "Idempotent: removing a movie that is not blacklisted is a no-op.",
-        security: [{ parentToken: [] }],
+        description: "Idempotent: removing a movie that is not blacklisted is a no-op. Parent tokens must pass childId; device tokens use their paired child.",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
         parameters: [
           {
             name: "content_id",
@@ -5877,8 +5880,8 @@ export const openApiDocument = {
           {
             name: "childId",
             in: "query",
-            required: true,
-            description: "Child id. Alias: child_id.",
+            required: false,
+            description: "Child id for parent tokens. Alias: child_id. Device tokens use their paired child.",
             schema: { type: "string" }
           },
           {
