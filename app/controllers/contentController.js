@@ -90,9 +90,9 @@ function contentIdParam(request) {
 function blacklistChildIdParam(request) {
   const childId = firstQueryValue(
     request.body?.childId
-      || request.body?.child_id
-      || request.query.childId
-      || request.query.child_id
+    || request.body?.child_id
+    || request.query.childId
+    || request.query.child_id
   );
 
   if (!childId) {
@@ -155,6 +155,14 @@ function deviceChildId(device) {
 }
 
 function blacklistTarget(request) {
+  console.log("BLACKLIST DEBUG", {
+    actor: request.actor,
+    parent: request.parent,
+    device: request.device,
+    query: request.query,
+    body: request.body
+  });
+  
   if (request.actor?.type === "device") {
     const device = request.device || request.actor.device;
     const parentId = deviceParentId(device);
