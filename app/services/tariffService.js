@@ -16,7 +16,9 @@ const defaultTariffs = [
       uz: "Bepul kontent uchun asosiy kirish."
     },
     is_default: true,
-    can_watch_premium: false
+    can_watch_premium: false,
+    price_cents: 0,
+    currency: "UZS"
   },
   {
     id: "premium",
@@ -31,11 +33,27 @@ const defaultTariffs = [
       uz: "Barcha bepul va premium kontentga kirish."
     },
     is_default: false,
-    can_watch_premium: true
+    can_watch_premium: true,
+    price_cents: 4900000,
+    currency: "UZS"
   }
 ];
 
+function priceString(priceCents) {
+  return (priceCents / 100).toFixed(2);
+}
+
+function tariffPriceCents(tariff) {
+  const priceCents = Number(tariff.price_cents);
+
+  return Number.isFinite(priceCents) && priceCents >= 0
+    ? Math.round(priceCents)
+    : 0;
+}
+
 function serializeTariff(tariff) {
+  const priceCents = tariffPriceCents(tariff);
+
   return {
     id: tariff.id,
     code: tariff.id,
@@ -43,6 +61,9 @@ function serializeTariff(tariff) {
     description: { ...tariff.description },
     is_default: Boolean(tariff.is_default),
     can_watch_premium: Boolean(tariff.can_watch_premium),
+    price: priceString(priceCents),
+    price_cents: priceCents,
+    currency: tariff.currency || "UZS",
     createdAt: tariff.createdAt,
     updatedAt: tariff.updatedAt
   };
@@ -63,8 +84,25 @@ function tariffResponse(tariff, subscription = null) {
 export function createTariffService({ parents, subscriptions, tariffs }) {
   function seedDefaultTariffs() {
     for (const tariff of defaultTariffs) {
-      if (!tariffs.findById(tariff.id)) {
+      const existingTariff = tariffs.findById(tariff.id);
+
+      if (!existingTariff) {
         tariffs.create(tariff);
+        continue;
+      }
+
+      const attributes = {};
+
+      if (existingTariff.price_cents === undefined || existingTariff.price_cents === null) {
+        attributes.price_cents = tariff.price_cents;
+      }
+
+      if (!existingTariff.currency) {
+        attributes.currency = tariff.currency;
+      }
+
+      if (Object.keys(attributes).length > 0) {
+        tariffs.update(existingTariff.id, attributes);
       }
     }
   }

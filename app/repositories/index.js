@@ -13,6 +13,7 @@ import { createPostgresContentTagRepository } from "./postgresContentTagReposito
 import { createOtpCodeRepository } from "./otpCodeRepository.js";
 import { createSubscriptionRepository } from "./subscriptionRepository.js";
 import { createTariffRepository } from "./tariffRepository.js";
+import { createTransactionRepository } from "./transactionRepository.js";
 import { createWatchLimitRepository } from "./watchLimitRepository.js";
 import { createWatchSessionRepository } from "./watchSessionRepository.js";
 
@@ -38,6 +39,7 @@ export function createRepositories(store, { contentDb = null } = {}) {
     parents: createParentRepository(store),
     subscriptions: createSubscriptionRepository(store),
     tariffs: createTariffRepository(store),
+    transactions: createTransactionRepository(store),
     watchLimits: createWatchLimitRepository(store),
     watchSessions: createWatchSessionRepository(store)
   };

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,12 @@ process.env.CONTENT_STORAGE = "json";
 process.env.JWT_SECRET = "astir-smoke-test-secret";
 process.env.REQUIRE_AUTH = "true";
 process.env.OTP_DEFAULT_CODE = "123456";
+process.env.CLICK_PAYMENT_URL = "https://my.click.uz/services/pay";
+process.env.CLICK_MERCHANT_ID = "123";
+process.env.CLICK_MERCHANT_USER_ID = "456";
+process.env.CLICK_SERVICE_ID = "789";
+process.env.CLICK_SECRET_KEY = "click-smoke-secret";
+process.env.CLICK_RETURN_URL = "https://astir.example/payments/return";
 
 const { createServer } = await import("../app/server.js");
 
@@ -54,6 +61,25 @@ async function request(baseUrl, pathName, options = {}) {
   return body;
 }
 
+async function requestForm(baseUrl, pathName, formBody, options = {}) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    method: "POST",
+    ...options,
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      ...(options.headers || {})
+    },
+    body: new URLSearchParams(Object.entries(formBody).map(([key, value]) => [key, String(value)]))
+  });
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${JSON.stringify(body)}`);
+  }
+
+  return body;
+}
+
 async function requestWithStatus(baseUrl, pathName, options = {}) {
   const response = await fetch(`${baseUrl}${pathName}`, {
     ...options,
@@ -74,6 +100,10 @@ async function requestWithStatus(baseUrl, pathName, options = {}) {
 const port = await listen();
 const baseUrl = `http://127.0.0.1:${port}`;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function md5(value) {
+  return createHash("md5").update(String(value)).digest("hex");
+}
 
 try {
   const parentEmail = `smoke-${Date.now()}@example.com`;
@@ -152,9 +182,13 @@ try {
   assert.equal(pinVerification.verified, true);
 
   const tariffs = await request(baseUrl, "/v1/tariffs");
+  const premiumTariff = tariffs.tariffs.find((tariff) => tariff.code === "premium");
 
   assert.equal(tariffs.tariffs.some((tariff) => tariff.code === "free"), true);
   assert.equal(tariffs.tariffs.some((tariff) => tariff.code === "premium"), true);
+  assert.equal(premiumTariff.price, "49000.00");
+  assert.equal(premiumTariff.price_cents, 4900000);
+  assert.equal(premiumTariff.currency, "UZS");
 
   const defaultTariff = await request(baseUrl, "/v1/tariffs/current", {
     headers: { authorization: `Bearer ${parentToken}` }
@@ -441,12 +475,16 @@ try {
         uz: "Created by smoke test UZ"
       },
       is_default: false,
-      can_watch_premium: false
+      can_watch_premium: false,
+      price: 99000,
+      currency: "UZS"
     }
   });
 
   assert.equal(customTariff.tariff.id, customTariffId);
   assert.equal(customTariff.tariff.can_watch_premium, false);
+  assert.equal(customTariff.tariff.price, "99000.00");
+  assert.equal(customTariff.tariff.price_cents, 9900000);
 
   const customTariffById = await request(baseUrl, `/v1/tariffs/${customTariffId}`);
 
@@ -455,10 +493,15 @@ try {
   const updatedCustomTariff = await request(baseUrl, `/v1/tariffs/${customTariffId}`, {
     method: "PATCH",
     headers: { authorization: `Bearer ${parentToken}` },
-    body: { can_watch_premium: true }
+    body: {
+      can_watch_premium: true,
+      price: 129000
+    }
   });
 
   assert.equal(updatedCustomTariff.tariff.can_watch_premium, true);
+  assert.equal(updatedCustomTariff.tariff.price, "129000.00");
+  assert.equal(updatedCustomTariff.tariff.price_cents, 12900000);
 
   const customCurrentTariff = await request(baseUrl, "/v1/tariffs/current", {
     method: "PATCH",
@@ -498,6 +541,112 @@ try {
   });
 
   assert.equal(deletedCustomTariff.deleted, true);
+
+  const clickAmount = "49000.00";
+  const mismatchedClickCheckout = await requestWithStatus(baseUrl, "/v1/billing/click/checkout", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      tariff_id: "premium",
+      amount: 1
+    }
+  });
+
+  assert.equal(mismatchedClickCheckout.status, 400);
+  assert.equal(mismatchedClickCheckout.body.error.code, "CLICK_AMOUNT_MISMATCH");
+
+  const clickCheckout = await request(baseUrl, "/v1/billing/click/checkout", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      tariff_id: "premium",
+      return_url: "https://app.example/payments/return",
+      card_type: "uzcard"
+    }
+  });
+  const clickPaymentUrl = new URL(clickCheckout.payment_url);
+
+  assert.equal(clickCheckout.transaction.status, "pending");
+  assert.equal(clickCheckout.transaction.provider, "click");
+  assert.equal(clickCheckout.transaction.amount, clickAmount);
+  assert.equal(clickPaymentUrl.searchParams.get("service_id"), process.env.CLICK_SERVICE_ID);
+  assert.equal(clickPaymentUrl.searchParams.get("merchant_id"), process.env.CLICK_MERCHANT_ID);
+  assert.equal(clickPaymentUrl.searchParams.get("merchant_user_id"), process.env.CLICK_MERCHANT_USER_ID);
+  assert.equal(clickPaymentUrl.searchParams.get("amount"), clickAmount);
+  assert.equal(clickPaymentUrl.searchParams.get("transaction_param"), clickCheckout.transaction.id);
+  assert.equal(clickPaymentUrl.searchParams.get("return_url"), "https://app.example/payments/return");
+
+  const clickTransId = "987654321";
+  const clickPaydocId = "555333";
+  const clickPrepareSignTime = "2026-06-09 12:00:00";
+  const clickPrepareBody = {
+    click_trans_id: clickTransId,
+    service_id: process.env.CLICK_SERVICE_ID,
+    click_paydoc_id: clickPaydocId,
+    merchant_trans_id: clickCheckout.transaction.id,
+    amount: clickAmount,
+    action: 0,
+    sign_time: clickPrepareSignTime
+  };
+  clickPrepareBody.sign_string = md5(
+    `${clickPrepareBody.click_trans_id}`
+    + `${clickPrepareBody.service_id}`
+    + `${process.env.CLICK_SECRET_KEY}`
+    + `${clickPrepareBody.merchant_trans_id}`
+    + `${clickPrepareBody.amount}`
+    + `${clickPrepareBody.action}`
+    + `${clickPrepareBody.sign_time}`
+  );
+
+  const clickPrepare = await requestForm(baseUrl, "/v1/billing/click/prepare", clickPrepareBody);
+
+  assert.equal(clickPrepare.error, 0);
+  assert.equal(clickPrepare.merchant_trans_id, clickCheckout.transaction.id);
+  assert.ok(clickPrepare.merchant_prepare_id);
+
+  const clickCompleteSignTime = "2026-06-09 12:01:00";
+  const clickCompleteBody = {
+    click_trans_id: clickTransId,
+    service_id: process.env.CLICK_SERVICE_ID,
+    click_paydoc_id: clickPaydocId,
+    merchant_trans_id: clickCheckout.transaction.id,
+    merchant_prepare_id: clickPrepare.merchant_prepare_id,
+    amount: clickAmount,
+    action: 1,
+    error: 0,
+    sign_time: clickCompleteSignTime
+  };
+  clickCompleteBody.sign_string = md5(
+    `${clickCompleteBody.click_trans_id}`
+    + `${clickCompleteBody.service_id}`
+    + `${process.env.CLICK_SECRET_KEY}`
+    + `${clickCompleteBody.merchant_trans_id}`
+    + `${clickCompleteBody.merchant_prepare_id}`
+    + `${clickCompleteBody.amount}`
+    + `${clickCompleteBody.action}`
+    + `${clickCompleteBody.sign_time}`
+  );
+
+  const clickComplete = await requestForm(baseUrl, "/v1/billing/click/complete", clickCompleteBody);
+
+  assert.equal(clickComplete.error, 0);
+  assert.equal(clickComplete.subscription.provider, "click");
+  assert.equal(clickComplete.subscription.tariffId, "premium");
+  assert.equal(clickComplete.transaction.status, "succeeded");
+  assert.ok(clickComplete.merchant_confirm_id);
+
+  const clickTransaction = await request(baseUrl, `/v1/billing/click/transactions/${clickCheckout.transaction.id}`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(clickTransaction.transaction.status, "succeeded");
+  assert.equal(clickTransaction.transaction.subscription_id, clickComplete.subscription.id);
+
+  const clickCurrentSubscription = await request(baseUrl, "/v1/billing/subscription/current", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(clickCurrentSubscription.subscription.id, clickComplete.subscription.id);
 
   const appleSubscriptionId = `apple-sub-${Date.now()}`;
   const applePurchase = await request(baseUrl, "/v1/billing/apple/verify", {

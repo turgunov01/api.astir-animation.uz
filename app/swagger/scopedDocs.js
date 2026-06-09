@@ -57,6 +57,9 @@ const scopes = [
       "PATCH /v1/tariffs/{tariff_id}",
       "DELETE /v1/tariffs/{tariff_id}",
       "GET /v1/billing/subscription/current",
+      "POST /v1/billing/click/checkout",
+      "POST /v1/billing/click/checkout/deeplink",
+      "GET /v1/billing/click/transactions/{transactionId}",
       "POST /v1/billing/apple/verify",
       "POST /v1/billing/google/verify",
       "POST /v1/pairing/sessions/{sessionId}/approve",
@@ -139,7 +142,12 @@ const scopes = [
       "POST /api/v1/payments/click/card/verify",
       "GET /api/v1/payments/click/mock-pay",
       "DELETE /api/v1/payments/click/payment/{payment_id}/reversal",
-      "GET /api/v1/payments/click/payment/{payment_id}/status"
+      "GET /api/v1/payments/click/payment/{payment_id}/status",
+      "POST /v1/billing/click/checkout",
+      "POST /v1/billing/click/checkout/deeplink",
+      "GET /v1/billing/click/transactions/{transactionId}",
+      "POST /v1/billing/click/prepare",
+      "POST /v1/billing/click/complete"
     ]
   },
   {
@@ -188,6 +196,11 @@ const scopes = [
       "PATCH /v1/tariffs/{tariff_id}",
       "DELETE /v1/tariffs/{tariff_id}",
       "GET /v1/billing/subscription/current",
+      "POST /v1/billing/click/checkout",
+      "POST /v1/billing/click/checkout/deeplink",
+      "GET /v1/billing/click/transactions/{transactionId}",
+      "POST /v1/billing/click/prepare",
+      "POST /v1/billing/click/complete",
       "POST /v1/billing/apple/verify",
       "POST /v1/billing/google/verify",
       "POST /v1/billing/webhook/apple",

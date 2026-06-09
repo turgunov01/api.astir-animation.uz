@@ -50,8 +50,11 @@ Stored fields:
 3. `description`
 4. `is_default`
 5. `can_watch_premium`
-6. `createdAt`
-7. `updatedAt`
+6. `price`
+7. `price_cents`
+8. `currency`
+9. `createdAt`
+10. `updatedAt`
 
 Rules:
 
@@ -63,6 +66,7 @@ Rules:
 6. A tariff used by parent accounts cannot be deleted.
 7. The selected tariff id is stored on the parent account.
 8. A paired device uses the tariff of its parent account.
+9. Payment checkout uses the tariff price stored on the backend, not a client-provided amount.
 
 ## 3. Subscription
 

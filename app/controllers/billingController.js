@@ -12,6 +12,18 @@ function firstString(body, ...fields) {
   return null;
 }
 
+function firstValue(body, ...fields) {
+  for (const field of fields) {
+    const value = body?.[field];
+
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function purchasePayload(body, requiredPurchaseField) {
   const normalized = {
     tariff_id: firstString(body, "tariff_id", "tariffId"),
@@ -42,8 +54,32 @@ function purchasePayload(body, requiredPurchaseField) {
 
 export function createBillingController({ subscriptionService }) {
   return {
+    clickCheckout(request, response) {
+      response.status(201).json(subscriptionService.createClickCheckout(request.parent, {
+        amount: firstValue(request.body || {}, "amount", "amount_uzs", "amountUzs"),
+        cardType: firstString(request.body || {}, "card_type", "cardType"),
+        expiresAt: firstString(request.body || {}, "expires_at", "expiresAt"),
+        returnUrl: firstString(request.body || {}, "return_url", "returnUrl"),
+        tariffId: requiredString({
+          tariff_id: firstString(request.body || {}, "tariff_id", "tariffId", "plan_id", "planId")
+        }, "tariff_id")
+      }));
+    },
+
     currentSubscription(request, response) {
       response.json(subscriptionService.currentForActor(request.actor));
+    },
+
+    clickTransaction(request, response) {
+      response.json(subscriptionService.getClickTransaction(request.parent, request.params.transactionId));
+    },
+
+    clickComplete(request, response) {
+      response.json(subscriptionService.handleClickComplete(request.body || {}));
+    },
+
+    clickPrepare(request, response) {
+      response.json(subscriptionService.handleClickPrepare(request.body || {}));
     },
 
     googleWebhook(request, response) {

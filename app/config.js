@@ -8,6 +8,16 @@ function parseBoolean(value, fallback) {
   return String(value).toLowerCase() === "true";
 }
 
+function optionalNumber(value, fallback) {
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : fallback;
+}
+
 export const config = {
   env: process.env.NODE_ENV || "development",
   host: process.env.HOST || "127.0.0.1",
@@ -35,5 +45,14 @@ export const config = {
     user: process.env.SMTP_USER || "",
     pass: process.env.SMTP_PASS || "",
     from: process.env.SMTP_FROM || ""
+  },
+  click: {
+    paymentUrl: process.env.CLICK_PAYMENT_URL || process.env.CLICK_BASE_URL || "https://my.click.uz/services/pay",
+    merchantId: process.env.CLICK_MERCHANT_ID || "",
+    merchantUserId: process.env.CLICK_MERCHANT_USER_ID || "",
+    serviceId: process.env.CLICK_SERVICE_ID || "",
+    secretKey: process.env.CLICK_SECRET_KEY || "",
+    returnUrl: process.env.CLICK_RETURN_URL || "",
+    defaultSubscriptionDays: optionalNumber(process.env.CLICK_DEFAULT_SUBSCRIPTION_DAYS, 30)
   }
 };

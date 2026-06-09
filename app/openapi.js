@@ -659,6 +659,9 @@ export const openApiDocument = {
           description: { $ref: "#/components/schemas/LocalizedText" },
           is_default: { type: "boolean", example: true },
           can_watch_premium: { type: "boolean", example: false },
+          price: { type: "string", example: "49000.00" },
+          price_cents: { type: "integer", example: 4900000 },
+          currency: { type: "string", example: "UZS" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" }
         }
@@ -686,7 +689,7 @@ export const openApiDocument = {
           id: { type: "string" },
           parentId: { type: "string" },
           tariffId: { type: "string", example: "premium" },
-          provider: { type: "string", enum: ["apple", "google"], example: "apple" },
+          provider: { type: "string", enum: ["apple", "google", "click"], example: "click" },
           providerSubscriptionId: { type: "string", example: "1000001234567890" },
           status: {
             type: "string",
@@ -747,21 +750,31 @@ export const openApiDocument = {
       Transaction: {
         type: "object",
         properties: {
+          amount: { type: "string", example: "49000.00" },
           amount_cents: { type: "integer", example: 10000 },
           card_id: { type: "string" },
+          checkout_url: { type: "string" },
+          click_paydoc_id: { type: "string" },
+          click_trans_id: { type: "string" },
           created_at: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
           currency: { type: "string", example: "UZS" },
           description: { type: "string" },
           fiscal_sent_at: { type: "string", format: "date-time" },
           id: { type: "string" },
           kind: { $ref: "#/components/schemas/TransactionKind" },
+          merchant_confirm_id: { type: "integer" },
+          merchant_prepare_id: { type: "integer" },
+          parentId: { type: "string" },
           plan_id: { type: "string" },
           processed_at: { type: "string", format: "date-time" },
           provider: { $ref: "#/components/schemas/PaymentProvider" },
           provider_ref: { type: "string" },
           status: { $ref: "#/components/schemas/TransactionStatus" },
           subscription_id: { type: "string" },
+          tariffId: { type: "string" },
           updated_at: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
           user_id: { type: "string" }
         }
       },
@@ -788,8 +801,55 @@ export const openApiDocument = {
         type: "object",
         properties: {
           checkout_url: { type: "string" },
-          subscription: { $ref: "#/components/schemas/Subscription" },
-          transaction: { $ref: "#/components/schemas/Transaction" }
+          payment_url: { type: "string" },
+          deeplink_url: { type: "string" },
+          subscription: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/Subscription" }]
+          },
+          transaction: { $ref: "#/components/schemas/Transaction" },
+          tariff: { $ref: "#/components/schemas/Tariff" }
+        }
+      },
+      ClickCheckoutRequest: {
+        type: "object",
+        required: ["tariff_id"],
+        properties: {
+          tariff_id: { type: "string", example: "premium" },
+          tariffId: { type: "string", description: "Alias for tariff_id.", example: "premium" },
+          plan_id: { type: "string", description: "Alias for tariff_id.", example: "premium" },
+          amount: {
+            type: "number",
+            example: 49000,
+            description: "Optional compatibility field. Backend uses the tariff price and rejects mismatched amounts."
+          },
+          amount_uzs: {
+            type: "number",
+            example: 49000,
+            description: "Alias for amount."
+          },
+          amountUzs: {
+            type: "number",
+            example: 49000,
+            description: "Alias for amount."
+          },
+          return_url: { type: "string", example: "https://astir.example/payments/return" },
+          returnUrl: { type: "string", description: "Alias for return_url." },
+          card_type: { type: "string", enum: ["uzcard", "humo"], example: "uzcard" },
+          cardType: { type: "string", description: "Alias for card_type." },
+          expires_at: { type: "string", format: "date-time" },
+          expiresAt: { type: "string", format: "date-time", description: "Alias for expires_at." }
+        }
+      },
+      ClickCallbackResponse: {
+        type: "object",
+        properties: {
+          click_trans_id: { type: "integer", example: 123456789 },
+          merchant_trans_id: { type: "string", example: "transaction-id" },
+          merchant_prepare_id: { type: "integer", example: 123456 },
+          merchant_confirm_id: { type: "integer", example: 123457 },
+          error: { type: "integer", example: 0 },
+          error_note: { type: "string", example: "Success" }
         }
       },
       ClickPaymentStatusResult: {
@@ -5105,6 +5165,156 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/billing/click/checkout": {
+      post: {
+        tags: ["Billing"],
+        summary: "Start Click checkout",
+        description: "Creates a pending local transaction and returns a Click hosted payment URL. The frontend opens payment_url.",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ClickCheckoutRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Click checkout created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/billing/click/checkout/deeplink": {
+      post: {
+        tags: ["Billing"],
+        summary: "Start Click deeplink / hosted-page checkout",
+        description: "Same as /v1/billing/click/checkout. The returned URL can open the Click app or fallback web payment page.",
+        security: [{ parentToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ClickCheckoutRequest" }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Click deeplink checkout created",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckoutResult" }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/billing/click/transactions/{transactionId}": {
+      get: {
+        tags: ["Billing"],
+        summary: "Get Click transaction status",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "transactionId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Click transaction status",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    transaction: { $ref: "#/components/schemas/Transaction" },
+                    subscription: {
+                      nullable: true,
+                      allOf: [{ $ref: "#/components/schemas/Subscription" }]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/billing/click/prepare": {
+      post: {
+        tags: ["Billing"],
+        summary: "Click Prepare callback",
+        description: "Callback URL for Click SHOP-API Prepare requests. Click sends action=0.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", additionalProperties: true }
+            },
+            "application/x-www-form-urlencoded": {
+              schema: { type: "object", additionalProperties: true }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Click Prepare response",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ClickCallbackResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/click/complete": {
+      post: {
+        tags: ["Billing"],
+        summary: "Click Complete callback",
+        description: "Callback URL for Click SHOP-API Complete requests. Click sends action=1. Successful Complete activates the subscription.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", additionalProperties: true }
+            },
+            "application/x-www-form-urlencoded": {
+              schema: { type: "object", additionalProperties: true }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Click Complete response",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ClickCallbackResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/billing/apple/verify": {
       post: {
         tags: ["Billing"],
@@ -5363,7 +5573,11 @@ export const openApiDocument = {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
                   is_default: { type: "boolean", example: false },
-                  can_watch_premium: { type: "boolean", example: true }
+                  can_watch_premium: { type: "boolean", example: true },
+                  price: { type: "number", example: 49000 },
+                  price_uzs: { type: "number", description: "Alias for price.", example: 49000 },
+                  price_cents: { type: "integer", description: "Minor units. 49000 UZS = 4900000.", example: 4900000 },
+                  currency: { type: "string", example: "UZS" }
                 }
               }
             }
@@ -5439,7 +5653,11 @@ export const openApiDocument = {
                   title: { $ref: "#/components/schemas/LocalizedText" },
                   description: { $ref: "#/components/schemas/LocalizedText" },
                   is_default: { type: "boolean", example: false },
-                  can_watch_premium: { type: "boolean", example: true }
+                  can_watch_premium: { type: "boolean", example: true },
+                  price: { type: "number", example: 49000 },
+                  price_uzs: { type: "number", description: "Alias for price.", example: 49000 },
+                  price_cents: { type: "integer", description: "Minor units. 49000 UZS = 4900000.", example: 4900000 },
+                  currency: { type: "string", example: "UZS" }
                 }
               }
             }

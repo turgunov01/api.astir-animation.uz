@@ -15,6 +15,7 @@ const emptyData = {
   contentMovies: [],
   pairingSessions: [],
   subscriptions: [],
+  transactions: [],
   tariffs: [],
   watchLimits: [],
   watchSessions: []

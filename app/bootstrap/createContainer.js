@@ -33,9 +33,11 @@ export function createContainer({ store = defaultStore } = {}) {
     watchLimits: repositories.watchLimits
   });
   services.subscriptions = createSubscriptionService({
+    config,
     parents: repositories.parents,
     subscriptions: repositories.subscriptions,
-    tariffs: repositories.tariffs
+    tariffs: repositories.tariffs,
+    transactions: repositories.transactions
   });
   services.tariffs = createTariffService({
     parents: repositories.parents,

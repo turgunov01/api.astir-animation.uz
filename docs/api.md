@@ -462,7 +462,9 @@ Body:
     "uz": "Family access plan"
   },
   "is_default": false,
-  "can_watch_premium": true
+  "can_watch_premium": true,
+  "price": 49000,
+  "currency": "UZS"
 }
 ```
 
@@ -471,6 +473,7 @@ What happens:
 1. The backend checks the parent token.
 2. The backend creates the tariff.
 3. If `id` is not sent, the backend generates one.
+4. `price` is the visible amount in UZS. The backend also accepts `price_uzs`, `amount`, `amount_uzs`, or `price_cents`.
 
 ## 18. Update A Tariff
 
@@ -497,7 +500,9 @@ Body can include:
     "uz": "Updated access plan"
   },
   "is_default": false,
-  "can_watch_premium": true
+  "can_watch_premium": true,
+  "price": 59000,
+  "currency": "UZS"
 }
 ```
 
@@ -574,7 +579,87 @@ What happens:
 2. The backend returns the latest active subscription.
 3. If there is no active subscription, `subscription` is `null`.
 
-## 23. Verify Apple Purchase
+## 23. Click Checkout
+
+Request:
+
+```text
+POST /v1/billing/click/checkout
+```
+
+This request needs a parent token.
+
+Body:
+
+```json
+{
+  "tariff_id": "premium",
+  "return_url": "https://app.example/payments/return",
+  "card_type": "uzcard"
+}
+```
+
+The backend also accepts `tariffId`, `plan_id`, `returnUrl`, `cardType`, `expires_at`, and `expiresAt`.
+`amount` is optional for old clients only. The backend uses the selected tariff `price`, and rejects checkout if a sent `amount` does not match the tariff price.
+
+What happens:
+
+1. The backend creates a local `pending` Click transaction.
+2. The backend returns `payment_url`, `deeplink_url`, and `checkout_url`.
+3. The frontend opens the returned URL.
+4. Click opens the app or hosted payment page.
+5. The subscription is not activated until Click calls Complete successfully.
+
+Response:
+
+```json
+{
+  "payment_url": "https://my.click.uz/services/pay?...",
+  "transaction": {
+    "id": "transaction-id",
+    "status": "pending",
+    "provider": "click"
+  },
+  "subscription": null
+}
+```
+
+Click callback URLs:
+
+```text
+POST /v1/billing/click/prepare
+POST /v1/billing/click/complete
+```
+
+What happens:
+
+1. Click calls Prepare with `action=0`.
+2. The backend validates `sign_string`, transaction id, and amount.
+3. The backend returns `merchant_prepare_id` when the payment can continue.
+4. Click calls Complete with `action=1`.
+5. If Click sends `error=0`, the backend marks the transaction as `succeeded` and activates the subscription.
+6. If Click sends an error, the backend marks the transaction as `canceled`.
+
+After return from Click, frontend can check status:
+
+```text
+GET /v1/billing/click/transactions/:transactionId
+GET /v1/billing/subscription/current
+```
+
+Required server env:
+
+```text
+CLICK_PAYMENT_URL=https://my.click.uz/services/pay
+CLICK_MERCHANT_ID=...
+CLICK_SERVICE_ID=...
+CLICK_SECRET_KEY=...
+CLICK_RETURN_URL=...
+```
+
+`CLICK_MERCHANT_USER_ID` is optional.
+
+## 24. Verify Apple Purchase
 
 The local version validates the required fields and stores the subscription.
 In production, this step should also call Apple before saving the subscription.
@@ -608,7 +693,7 @@ What happens:
 3. The backend creates or updates the parent subscription.
 4. The parent can watch premium content while the subscription is active.
 
-## 24. Verify Google Play Purchase
+## 25. Verify Google Play Purchase
 
 The local version validates the required fields and stores the subscription.
 In production, this step should also call Google Play before saving the subscription.
@@ -642,7 +727,7 @@ What happens:
 3. The backend creates or updates the parent subscription.
 4. The parent can watch premium content while the subscription is active.
 
-## 25. Apple Subscription Webhook
+## 26. Apple Subscription Webhook
 
 Request:
 
@@ -666,7 +751,7 @@ What happens:
 2. The backend updates the local subscription status.
 3. Expired or cancelled subscriptions stop unlocking premium content.
 
-## 26. Google Play Subscription Webhook
+## 27. Google Play Subscription Webhook
 
 Request:
 
@@ -690,7 +775,7 @@ What happens:
 2. The backend updates the local subscription status.
 3. Expired or cancelled subscriptions stop unlocking premium content.
 
-## 27. List Content Categories
+## 28. List Content Categories
 
 Request:
 
@@ -705,7 +790,7 @@ What happens:
 1. The backend checks the token.
 2. The backend returns all content categories.
 
-## 28. Get One Content Category
+## 29. Get One Content Category
 
 Request:
 
@@ -721,7 +806,7 @@ What happens:
 2. The backend finds the category by id.
 3. The backend returns the category.
 
-## 29. Create A Content Category
+## 30. Create A Content Category
 
 Request:
 
@@ -763,7 +848,7 @@ What happens:
 3. The backend creates the category with `type`, `slug`, and `active` metadata.
 4. If an icon file was sent, the backend stores it and returns `icon_url` plus `icon` metadata.
 
-## 30. Update A Content Category
+## 31. Update A Content Category
 
 Request:
 
@@ -805,7 +890,7 @@ What happens:
 3. The backend updates the fields that were sent, including `type`, `slug`, and `active`.
 4. If a new icon file was sent, the backend replaces the old icon file.
 
-## 31. Delete A Content Category
+## 32. Delete A Content Category
 
 Request:
 
@@ -821,7 +906,7 @@ What happens:
 2. The backend finds the category.
 3. The backend deletes the category.
 
-## 32. List Content Tags
+## 33. List Content Tags
 
 Request:
 
@@ -836,7 +921,7 @@ What happens:
 1. The backend checks the token.
 2. The backend returns all content tags.
 
-## 33. Get One Content Tag
+## 34. Get One Content Tag
 
 Request:
 
@@ -852,7 +937,7 @@ What happens:
 2. The backend finds the tag by id.
 3. The backend returns the tag.
 
-## 34. Create A Content Tag
+## 35. Create A Content Tag
 
 Request:
 
@@ -878,7 +963,7 @@ What happens:
 2. The backend checks that the tag name and slug are not already used.
 3. The backend creates the tag.
 
-## 35. Update A Content Tag
+## 36. Update A Content Tag
 
 Request:
 
@@ -904,7 +989,7 @@ What happens:
 2. The backend finds the tag.
 3. The backend updates the fields that were sent.
 
-## 36. Delete A Content Tag
+## 37. Delete A Content Tag
 
 Request:
 
@@ -920,7 +1005,7 @@ What happens:
 2. The backend finds the tag.
 3. The backend deletes the tag and removes it from linked movies.
 
-## 37. List Movies
+## 38. List Movies
 
 Request:
 
@@ -951,7 +1036,7 @@ What happens:
 8. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
 9. Each movie also includes `duration_sec`, duration aliases, and `play_count`.
 
-## 38. Get One Movie
+## 39. Get One Movie
 
 Request:
 
@@ -971,7 +1056,7 @@ What happens:
 6. Manual quality options are listed in `playback.renditions` for `360`, `480`, `720`, and `1080`.
 7. If HLS is not ready, the response includes the current playback status.
 
-## 39. List Movie Series
+## 40. List Movie Series
 
 Request:
 
@@ -987,7 +1072,7 @@ What happens:
 2. The backend reads the movie `series` array.
 3. The backend returns the linked series movies.
 
-## 40. Create Or Upload A Movie
+## 41. Create Or Upload A Movie
 
 Request:
 
@@ -1123,7 +1208,7 @@ contains the generated manual playlists:
 
 The response also includes `movie` with the same object for compatibility with older clients.
 
-## 41. Update A Movie
+## 42. Update A Movie
 
 Request:
 
@@ -1174,7 +1259,7 @@ Multipart body:
 
 1. `poster` - poster image, or `file` as a compatibility alias.
 
-## 42. Replace Movie Tags
+## 43. Replace Movie Tags
 
 Request:
 
@@ -1200,7 +1285,7 @@ What happens:
 3. The backend replaces all movie tags with `tag_ids` plus tags resolved from `tags`.
 4. Any free-form tag names in `tags` are created automatically if they do not exist.
 
-## 43. Add Movie To Series
+## 44. Add Movie To Series
 
 Request:
 
@@ -1214,7 +1299,7 @@ The body is the same as movie creation.
 The backend creates a new movie and links it to the parent movie series.
 The backend generates the new series movie `id` as a UUID.
 
-## 44. Delete A Movie
+## 45. Delete A Movie
 
 Request:
 
@@ -1229,7 +1314,7 @@ What happens:
 1. The backend deletes the movie record.
 2. The backend removes uploaded source and HLS files for that movie.
 
-## 45. Start A Watch Session
+## 46. Start A Watch Session
 
 Request:
 
@@ -1256,7 +1341,7 @@ What happens:
 5. The backend checks if the daily limit is already used.
 6. If all checks pass, the watch session starts.
 
-## 46. Update Watch Progress
+## 47. Update Watch Progress
 
 Request:
 
@@ -1283,7 +1368,7 @@ What happens:
 4. For movie content, the backend increments `views_count` once and adds watch time to `watch_time_sec`.
 5. If the movie is an episode inside another movie's `series` array, the backend also updates the parent movie's `series_views_count` and `series_watch_time_sec`.
 
-## 47. Stop A Watch Session
+## 48. Stop A Watch Session
 
 Request:
 
