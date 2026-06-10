@@ -12,7 +12,7 @@ export function serializeChild(child) {
     id: child.id,
     parentId: child.parentId || child.parent_id,
     name: child.name,
-    birthYear: child.birthYear || child.birth_year,
+    birthYear: child.birthYear ?? child.birth_year ?? child.age,
     createdAt: child.createdAt || child.created_at,
     updatedAt: child.updatedAt || child.updated_at
   };
@@ -30,19 +30,34 @@ function serializeBlacklistItem(item) {
   };
 }
 
+function childParentId(child) {
+  return child?.parentId || child?.parent_id || child?.parentid;
+}
+
+function assertChildBelongsToParent(child, parentId) {
+  if (childParentId(child) !== parentId) {
+    throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
+  }
+}
+
 export function createChildService({ childContentBlacklist, children, contentMovies, watchLimits }) {
   function listChildren(parentId) {
     const list = children.listByParentId(parentId);
     // Handle both sync arrays and async promises
     if (list && typeof list.then === 'function') {
       // This is async, shouldn't happen in sync context
-      throw new Error('listChildren must be called with await when using async repositories');
+      throw new Error("listChildren must be called with await when using async repositories");
     }
     return list.map(serializeChild);
   }
 
-  async function getChildForParentAsync(parentId, childId) {
+  async function listChildrenAsync(parentId) {
+    const list = await children.listByParentId(parentId);
 
+    return list.map(serializeChild);
+  }
+
+  async function getChildForParentAsync(parentId, childId) {
     let child = children.findById(childId);
     if (child && typeof child.then === 'function') {
       child = await child;
@@ -52,20 +67,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    console.log("CHILD OWNERSHIP DEBUG", {
-      expectedParentId: parentId,
-      childId,
-      child,
-      childParentId: child?.parentId,
-      childParent_id: child?.parent_id,
-      childParentid: child?.parentid
-    });
-
-    const childParentId = child.parentId || child.parent_id || child.parentid;
-
-    if (childParentId !== parentId) {
-      throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
-    }
+    assertChildBelongsToParent(child, parentId);
 
     return child;
   }
@@ -77,11 +79,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    const childParentId = child.parentId || child.parent_id || child.parentid;
-
-    if (childParentId !== parentId) {
-      throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
-    }
+    assertChildBelongsToParent(child, parentId);
 
     return child;
   }
@@ -94,6 +92,22 @@ export function createChildService({ childContentBlacklist, children, contentMov
     });
 
     watchLimits.create({
+      parentId,
+      childId: child.id,
+      ...defaultLimit
+    });
+
+    return serializeChild(child);
+  }
+
+  async function createChildAsync(parentId, { name, birthYear }) {
+    const child = await children.create({
+      parentId,
+      name,
+      birthYear
+    });
+
+    await watchLimits.create({
       parentId,
       childId: child.id,
       ...defaultLimit
@@ -118,8 +132,34 @@ export function createChildService({ childContentBlacklist, children, contentMov
     return limit;
   }
 
+  async function getLimitsAsync(parentId, childId) {
+    await getChildForParentAsync(parentId, childId);
+
+    const limit = await watchLimits.findByChildId(childId);
+
+    if (!limit) {
+      return watchLimits.create({
+        parentId,
+        childId,
+        ...defaultLimit
+      });
+    }
+
+    return limit;
+  }
+
   function updateLimits(parentId, childId, attributes) {
     getChildForParent(parentId, childId);
+
+    return watchLimits.upsertByChildId(childId, {
+      parentId,
+      childId,
+      ...attributes
+    });
+  }
+
+  async function updateLimitsAsync(parentId, childId, attributes) {
+    await getChildForParentAsync(parentId, childId);
 
     return watchLimits.upsertByChildId(childId, {
       parentId,
@@ -138,6 +178,22 @@ export function createChildService({ childContentBlacklist, children, contentMov
     getChildForParent(parentId, childId);
 
     return childContentBlacklist.listByChildId(childId).map(serializeBlacklistItem);
+  }
+
+  async function listBlacklistAsync(parentId, childId) {
+    await getChildForParentAsync(parentId, childId);
+
+    return childContentBlacklist.listByChildId(childId).map(serializeBlacklistItem);
+  }
+
+  function findBlacklistItem(parentId, childId, contentId) {
+    const item = childContentBlacklist.findByChildAndContent(childId, contentId);
+
+    if (!item || item.parentId !== parentId) {
+      return null;
+    }
+
+    return serializeBlacklistItem(item);
   }
 
   function addToBlacklist(parentId, childId, contentId) {
@@ -196,17 +252,23 @@ export function createChildService({ childContentBlacklist, children, contentMov
     addToBlacklist,
     addToBlacklistAsync,
     createChild,
+    createChildAsync,
+    findBlacklistItem,
     getChildForParent,
     getChildForParentAsync,
     getLimits,
+    getLimitsAsync,
     isAnyContentBlacklisted,
     isContentBlacklisted,
     listBlacklist,
+    listBlacklistAsync,
     listChildren,
+    listChildrenAsync,
     removeContentFromAllBlacklists,
     removeFromBlacklist,
     removeFromBlacklistAsync,
     serializeChild,
-    updateLimits
+    updateLimits,
+    updateLimitsAsync
   };
 }

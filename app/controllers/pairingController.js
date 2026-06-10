@@ -24,9 +24,9 @@ export function createPairingController({ pairingService }) {
       });
     },
 
-    approveSession(request, response) {
+    async approveSession(request, response) {
       response.json({
-        pairingSession: pairingService.approvePairingSession(
+        pairingSession: await pairingService.approvePairingSession(
           request.parent.id,
           request.params.sessionId,
           requiredString(request.body, "childId")

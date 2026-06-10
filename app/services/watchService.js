@@ -77,10 +77,10 @@ export function createWatchService({ childService, children, contentService, wat
     };
   }
 
-  function limitStatusForDevice(device, now = new Date()) {
+  async function limitStatusForDevice(device, now = new Date()) {
     device = normalizeDevice(device);
 
-    const limit = childService.getLimits(device.parentId, device.childId);
+    const limit = await childService.getLimitsAsync(device.parentId, device.childId);
     const sessions = watchSessions.listByChildId(device.childId);
     const usedSeconds = usedSecondsToday(sessions, now);
 
@@ -92,8 +92,8 @@ export function createWatchService({ childService, children, contentService, wat
     };
   }
 
-  function assertDeviceCanWatchNow(device, now = new Date()) {
-    const status = limitStatusForDevice(device, now);
+  async function assertDeviceCanWatchNow(device, now = new Date()) {
+    const status = await limitStatusForDevice(device, now);
 
     if (!status.limit.allowedDays.includes(status.day)) {
       throw forbidden("Watching is not allowed today", "WATCH_DAY_BLOCKED");
@@ -121,30 +121,30 @@ export function createWatchService({ childService, children, contentService, wat
     return childService.isAnyContentBlacklisted?.(device.parentId, device.childId, contentIds) || false;
   }
 
-  function assertSessionCanContinue(device, session, now = new Date()) {
+  async function assertSessionCanContinue(device, session, now = new Date()) {
     try {
       if (isSessionBlacklisted(device, session)) {
         throw forbidden("Content is blocked for this child", "CONTENT_BLACKLISTED");
       }
 
-      return assertDeviceCanWatchNow(device, now);
+      return await assertDeviceCanWatchNow(device, now);
     } catch (error) {
       finalizeWatchSession(session, now);
       throw error;
     }
   }
 
-  function getDeviceConfig(device) {
+  async function getDeviceConfig(device) {
     device = normalizeDevice(device);
 
-    const child = children.findById(device.childId);
+    const child = await children.findById(device.childId);
 
     if (!child) {
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    const limit = childService.getLimits(device.parentId, device.childId);
-    const blacklist = childService.listBlacklist(device.parentId, device.childId);
+    const limit = await childService.getLimitsAsync(device.parentId, device.childId);
+    const blacklist = await childService.listBlacklistAsync(device.parentId, device.childId);
 
     return {
       device: {
@@ -156,7 +156,7 @@ export function createWatchService({ childService, children, contentService, wat
       child: {
         id: child.id,
         name: child.name,
-        birthYear: child.birthYear
+        birthYear: child.birthYear ?? child.birth_year ?? child.age
       },
       limit,
       blacklist
@@ -183,7 +183,7 @@ export function createWatchService({ childService, children, contentService, wat
     let limitStatus;
 
     try {
-      limitStatus = assertDeviceCanWatchNow(device, now);
+      limitStatus = await assertDeviceCanWatchNow(device, now);
     } catch (error) {
       if (activeSession) {
         finalizeWatchSession(activeSession, now);
@@ -264,7 +264,7 @@ export function createWatchService({ childService, children, contentService, wat
     return watchSessions.update(session.id, updates);
   }
 
-  function progressWatchSession(device, watchSessionId, { positionSeconds = null, watchedSeconds }) {
+  async function progressWatchSession(device, watchSessionId, { positionSeconds = null, watchedSeconds }) {
     device = normalizeDevice(device);
 
     const session = assertDeviceSession(device, watchSessionId);
@@ -273,7 +273,7 @@ export function createWatchService({ childService, children, contentService, wat
       throw badRequest("Watch session already stopped", "WATCH_SESSION_STOPPED");
     }
 
-    assertSessionCanContinue(device, session);
+    await assertSessionCanContinue(device, session);
 
     return applyWatchProgress(session, { positionSeconds, watchedSeconds });
   }

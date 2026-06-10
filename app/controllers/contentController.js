@@ -155,14 +155,6 @@ function deviceChildId(device) {
 }
 
 function blacklistTarget(request) {
-  console.log("BLACKLIST DEBUG", {
-    actor: request.actor,
-    parent: request.parent,
-    device: request.device,
-    query: request.query,
-    body: request.body
-  });
-  
   if (request.actor?.type === "device") {
     const device = request.device || request.actor.device;
     const parentId = deviceParentId(device);

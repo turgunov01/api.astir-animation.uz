@@ -86,7 +86,7 @@ export function createPairingService({ childService, config, devices, pairingSes
     return response;
   }
 
-  function approvePairingSession(parentId, sessionId, childId) {
+  async function approvePairingSession(parentId, sessionId, childId) {
     const session = expireSessionIfNeeded(pairingSessions.findById(sessionId));
 
     if (!session) {
@@ -97,7 +97,7 @@ export function createPairingService({ childService, config, devices, pairingSes
       throw badRequest(`Pairing session is ${session.status}`, "PAIRING_SESSION_NOT_PENDING");
     }
 
-    const child = childService.getChildForParent(parentId, childId);
+    const child = await childService.getChildForParentAsync(parentId, childId);
     const device = devices.create({
       parentId,
       childId,

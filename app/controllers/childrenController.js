@@ -8,12 +8,12 @@ function requiredContentId(body) {
 
 export function createChildrenController({ childService }) {
   return {
-    list(request, response) {
-      response.json({ children: childService.listChildren(request.parent.id) });
+    async list(request, response) {
+      response.json({ children: await childService.listChildrenAsync(request.parent.id) });
     },
 
-    create(request, response) {
-      const child = childService.createChild(request.parent.id, {
+    async create(request, response) {
+      const child = await childService.createChildAsync(request.parent.id, {
         name: requiredString(request.body, "name"),
         birthYear: requiredInteger(request.body, "birthYear", { min: 1900, max: new Date().getFullYear() })
       });
@@ -21,18 +21,18 @@ export function createChildrenController({ childService }) {
       response.status(201).json({ child });
     },
 
-    get(request, response) {
-      const child = childService.getChildForParent(request.parent.id, request.params.childId);
+    async get(request, response) {
+      const child = await childService.getChildForParentAsync(request.parent.id, request.params.childId);
 
       response.json({ child: childService.serializeChild(child) });
     },
 
-    getLimits(request, response) {
-      response.json({ limit: childService.getLimits(request.parent.id, request.params.childId) });
+    async getLimits(request, response) {
+      response.json({ limit: await childService.getLimitsAsync(request.parent.id, request.params.childId) });
     },
 
-    updateLimits(request, response) {
-      const limit = childService.updateLimits(request.parent.id, request.params.childId, {
+    async updateLimits(request, response) {
+      const limit = await childService.updateLimitsAsync(request.parent.id, request.params.childId, {
         dailyMinutes: requiredInteger(request.body, "dailyMinutes", { min: 1, max: 1440 }),
         allowedFrom: timeOfDay(request.body, "allowedFrom"),
         allowedTo: timeOfDay(request.body, "allowedTo"),
@@ -42,14 +42,14 @@ export function createChildrenController({ childService }) {
       response.json({ limit });
     },
 
-    listBlacklist(request, response) {
+    async listBlacklist(request, response) {
       response.json({
-        blacklist: childService.listBlacklist(request.parent.id, request.params.childId)
+        blacklist: await childService.listBlacklistAsync(request.parent.id, request.params.childId)
       });
     },
 
-    addToBlacklist(request, response) {
-      const blacklistItem = childService.addToBlacklist(
+    async addToBlacklist(request, response) {
+      const blacklistItem = await childService.addToBlacklistAsync(
         request.parent.id,
         request.params.childId,
         requiredContentId(request.body)
@@ -61,8 +61,8 @@ export function createChildrenController({ childService }) {
       });
     },
 
-    removeFromBlacklist(request, response) {
-      response.json(childService.removeFromBlacklist(
+    async removeFromBlacklist(request, response) {
+      response.json(await childService.removeFromBlacklistAsync(
         request.parent.id,
         request.params.childId,
         request.params.contentId

@@ -36,7 +36,7 @@ export function createWatchSessionController({ watchService }) {
       response.status(201).json({ watchSession });
     },
 
-    progress(request, response) {
+    async progress(request, response) {
       const watchedSeconds = integerAlias(
         request.body,
         ["watchedSec", "watchedSeconds", "watched_sec"],
@@ -49,7 +49,7 @@ export function createWatchSessionController({ watchService }) {
       );
 
       response.json({
-        watchSession: watchService.progressWatchSession(request.device, request.params.watchSessionId, {
+        watchSession: await watchService.progressWatchSession(request.device, request.params.watchSessionId, {
           positionSeconds,
           watchedSeconds
         })

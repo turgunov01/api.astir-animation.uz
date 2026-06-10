@@ -1,7 +1,7 @@
 export function createDeviceController({ watchService }) {
   return {
-    getConfig(request, response) {
-      response.json(watchService.getDeviceConfig(request.device));
+    async getConfig(request, response) {
+      response.json(await watchService.getDeviceConfig(request.device));
     }
   };
 }

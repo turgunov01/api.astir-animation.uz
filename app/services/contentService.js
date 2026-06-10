@@ -744,6 +744,10 @@ export function createContentService({
   }
 
   function childBlacklistItem(parentId, childId, contentId) {
+    if (childService?.findBlacklistItem) {
+      return childService.findBlacklistItem(parentId, childId, contentId);
+    }
+
     if (!childService?.listBlacklist) {
       return null;
     }
@@ -753,8 +757,8 @@ export function createContentService({
       .find((item) => item.contentId === contentId || item.content_id === contentId) || null;
   }
 
-  function blacklistResponse(parentId, childId, contentId, blacklisted, item = null) {
-    const blacklistItem = item || childBlacklistItem(parentId, childId, contentId);
+  function blacklistResponse(parentId, childId, contentId, blacklisted, item = undefined) {
+    const blacklistItem = item === undefined ? childBlacklistItem(parentId, childId, contentId) : item;
 
     return {
       blacklisted,
@@ -894,7 +898,9 @@ export function createContentService({
 
       await childService.getChildForParentAsync(parentId, childId);
 
-      const item = childBlacklistItem(parentId, childId, target.id);
+      const item = childService.findBlacklistItem
+        ? childService.findBlacklistItem(parentId, childId, target.id)
+        : childBlacklistItem(parentId, childId, target.id);
 
       return blacklistResponse(parentId, childId, target.id, Boolean(item), item);
     },
@@ -975,7 +981,7 @@ export function createContentService({
       const result = childService.removeFromBlacklist(parentId, childId, target.id);
 
       return {
-        ...blacklistResponse(parentId, childId, target.id, false),
+        ...blacklistResponse(parentId, childId, target.id, false, null),
         deleted: result.deleted
       };
     },
@@ -985,7 +991,7 @@ export function createContentService({
       const result = await childService.removeFromBlacklistAsync(parentId, childId, target.id);
 
       return {
-        ...blacklistResponse(parentId, childId, target.id, false),
+        ...blacklistResponse(parentId, childId, target.id, false, null),
         deleted: result.deleted
       };
     },

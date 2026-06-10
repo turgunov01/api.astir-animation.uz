@@ -27,7 +27,7 @@ export function createPostgresChildRepository(db) {
     async create(attributes) {
       const result = await db.query(
         "INSERT INTO children (parent_id, name, age, avatar_path, avatar_url, active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, parent_id as parentId, name, age, avatar_path as avatarPath, avatar_url as avatarUrl, active, created_at as createdAt, updated_at as updatedAt",
-        [attributes.parentId || attributes.parent_id, attributes.name, attributes.age || 0, attributes.avatarPath || attributes.avatar_path || null, attributes.avatarUrl || attributes.avatar_url || null, attributes.active !== false]
+        [attributes.parentId || attributes.parent_id, attributes.name, attributes.age ?? attributes.birthYear ?? attributes.birth_year ?? 0, attributes.avatarPath || attributes.avatar_path || null, attributes.avatarUrl || attributes.avatar_url || null, attributes.active !== false]
       );
       return result.rows[0];
     }
