@@ -850,6 +850,59 @@ try {
   assert.equal(deviceTariff.tariff.code, "premium");
   assert.equal(deviceTariff.access.can_watch_premium, true);
 
+  const parentBlacklistedSeriesItem = await requestWithStatus(
+    baseUrl,
+    `/v1/content/${seriesItemId}/blacklist?childId=${encodeURIComponent(childId)}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(parentBlacklistedSeriesItem.status, 201);
+  assert.equal(parentBlacklistedSeriesItem.body.blacklisted, true);
+  assert.equal(parentBlacklistedSeriesItem.body.child_id, childId);
+
+  const parentSeriesWithoutChildFilter = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    parentSeriesWithoutChildFilter.series.some((movie) => movie.id === seriesItemId),
+    true
+  );
+
+  const parentSeriesWithChildFilter = await request(
+    baseUrl,
+    `/v1/content/movies/${movieId}/series?childId=${encodeURIComponent(childId)}`,
+    {
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(
+    parentSeriesWithChildFilter.series.some((movie) => movie.id === seriesItemId),
+    false
+  );
+
+  const deviceSeriesWithBlacklist = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(
+    deviceSeriesWithBlacklist.series.some((movie) => movie.id === seriesItemId),
+    false
+  );
+
+  await request(
+    baseUrl,
+    `/v1/content/${seriesItemId}/blacklist?childId=${encodeURIComponent(childId)}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
   const parentBlacklistedMovie = await requestWithStatus(
     baseUrl,
     `/v1/content/${movieId}/blacklist?childId=${encodeURIComponent(childId)}`,
@@ -862,6 +915,37 @@ try {
   assert.equal(parentBlacklistedMovie.status, 201);
   assert.equal(parentBlacklistedMovie.body.blacklisted, true);
   assert.equal(parentBlacklistedMovie.body.child_id, childId);
+
+  const parentMoviesWithoutChildFilter = await request(baseUrl, "/v1/content/movies?limit=100", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    parentMoviesWithoutChildFilter.movies.some((movie) => movie.id === movieId),
+    true
+  );
+
+  const parentMoviesWithChildFilter = await request(
+    baseUrl,
+    `/v1/content/movies?limit=100&childId=${encodeURIComponent(childId)}`,
+    {
+      headers: { authorization: `Bearer ${parentToken}` }
+    }
+  );
+
+  assert.equal(
+    parentMoviesWithChildFilter.movies.some((movie) => movie.id === movieId),
+    false
+  );
+
+  const deviceMoviesWithBlacklist = await request(baseUrl, "/v1/content/movies?limit=100", {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(
+    deviceMoviesWithBlacklist.movies.some((movie) => movie.id === movieId),
+    false
+  );
 
   const deviceBlacklistStatus = await request(baseUrl, `/v1/content/${movieId}/blacklist`, {
     headers: { authorization: `Bearer ${deviceToken}` }

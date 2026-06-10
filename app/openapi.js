@@ -6046,6 +6046,20 @@ export const openApiDocument = {
             schema: { type: "boolean" }
           },
           {
+            name: "childId",
+            in: "query",
+            required: false,
+            description: "With a parent token, return movies as this child sees them and hide blacklisted movies. Alias: child_id. Device tokens use their paired child automatically.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "query",
+            required: false,
+            description: "Alias for childId.",
+            schema: { type: "string" }
+          },
+          {
             name: "page",
             in: "query",
             required: false,
@@ -6103,6 +6117,20 @@ export const openApiDocument = {
             in: "path",
             required: true,
             schema: { type: "string" }
+          },
+          {
+            name: "childId",
+            in: "query",
+            required: false,
+            description: "With a parent token, apply this child's blacklist to the movie details and linked series. Alias: child_id. Device tokens use their paired child automatically.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "query",
+            required: false,
+            description: "Alias for childId.",
+            schema: { type: "string" }
           }
         ],
         responses: {
@@ -6133,6 +6161,20 @@ export const openApiDocument = {
             name: "movie_id",
             in: "path",
             required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "childId",
+            in: "query",
+            required: false,
+            description: "With a parent token, hide series items blacklisted for this child. Alias: child_id. Device tokens use their paired child automatically.",
+            schema: { type: "string" }
+          },
+          {
+            name: "child_id",
+            in: "query",
+            required: false,
+            description: "Alias for childId.",
             schema: { type: "string" }
           }
         ],

@@ -102,6 +102,15 @@ function blacklistChildIdParam(request) {
   return childId;
 }
 
+function optionalChildIdParam(request) {
+  return firstQueryValue(
+    request.body?.childId
+    || request.body?.child_id
+    || request.query.childId
+    || request.query.child_id
+  );
+}
+
 async function withUploadCleanup(request, work) {
   try {
     return await work();
@@ -425,7 +434,9 @@ export function createContentController({ contentService }) {
     },
 
     async getMovie(request, response) {
-      const result = await contentService.getMovie(request.actor, request.params.movie_id);
+      const result = await contentService.getMovie(request.actor, request.params.movie_id, {
+        childId: optionalChildIdParam(request)
+      });
 
       response.json({
         data: result.movie,
@@ -434,7 +445,9 @@ export function createContentController({ contentService }) {
     },
 
     async getMovieSeries(request, response) {
-      response.json(await contentService.getMovieSeries(request.actor, request.params.movie_id));
+      response.json(await contentService.getMovieSeries(request.actor, request.params.movie_id, {
+        childId: optionalChildIdParam(request)
+      }));
     },
 
     async getTag(request, response) {
@@ -463,6 +476,7 @@ export function createContentController({ contentService }) {
     async listMovies(request, response) {
       response.json(await contentService.listMovies(request.actor, {
         category: firstQueryValue(request.query.category || request.query.category_id),
+        childId: optionalChildIdParam(request),
         liked: request.query.liked === "true",
         q: firstQueryValue(request.query.q || request.query.search),
         tags: queryList(request.query.tags || request.query.tag_ids),

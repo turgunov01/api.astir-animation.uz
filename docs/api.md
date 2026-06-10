@@ -1014,6 +1014,7 @@ Request:
 
 ```text
 GET /v1/content/movies?category=category-id-or-slug&tags=tag-id-or-slug,another-tag&page=1&limit=20
+GET /v1/content/movies?childId=child-id
 ```
 
 This request needs a parent token or a device token.
@@ -1024,8 +1025,9 @@ Optional query filters:
 2. `tags` or `tag_ids` - comma-separated tag ids, slugs, or names. All listed tags must match.
 3. `q` or `search` - text search in movie title, description, or content type.
 4. `liked=true` - return only movies liked by the current actor.
-5. `page` - page number for paginated results. Default: `1`.
-6. `limit` - number of movies per page. Default: `20`.
+5. `childId` or `child_id` - with a parent token, return the list as that child sees it and hide blacklisted movies.
+6. `page` - page number for paginated results. Default: `1`.
+7. `limit` - number of movies per page. Default: `20`.
 
 What happens:
 
@@ -1035,9 +1037,11 @@ What happens:
 4. The `free` tariff returns only non-premium movies.
 5. The `premium` tariff returns all movies.
 6. Series items are returned from the series endpoints, not as top-level movies in this list.
-7. Each movie includes playback status.
-8. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
-9. Each movie also includes `duration_sec`, duration aliases, and `play_count`.
+7. With a device token, blacklisted movies for the paired child are hidden automatically.
+8. With a parent token and `childId`, blacklisted movies for that child are hidden.
+9. Each movie includes playback status.
+10. Each movie includes watch metrics: `views_count`, `watch_time_sec`, `series_views_count`, and `series_watch_time_sec`.
+11. Each movie also includes `duration_sec`, duration aliases, and `play_count`.
 
 ## 39. Get One Movie
 
@@ -1045,6 +1049,7 @@ Request:
 
 ```text
 GET /v1/content/movies/:movie_id
+GET /v1/content/movies/:movie_id?childId=child-id
 ```
 
 This request needs a parent token or a device token.
@@ -1053,11 +1058,13 @@ What happens:
 
 1. The backend finds the movie.
 2. If the movie is premium, the backend checks the current tariff.
-3. If the movie has an uploaded source file, the transcoder is checked.
-4. If HLS is ready, the response includes `playback.hls_url` and `playback.auto_url`.
-5. `playback.hls_url` points to the master playlist for automatic quality selection.
-6. Manual quality options are listed in `playback.renditions` for `360`, `480`, `720`, and `1080`.
-7. If HLS is not ready, the response includes the current playback status.
+3. With a device token, or with a parent token plus `childId`, blacklisted linked series items are hidden.
+4. If the requested movie itself is blacklisted for that child, the backend returns `CONTENT_BLACKLISTED`.
+5. If the movie has an uploaded source file, the transcoder is checked.
+6. If HLS is ready, the response includes `playback.hls_url` and `playback.auto_url`.
+7. `playback.hls_url` points to the master playlist for automatic quality selection.
+8. Manual quality options are listed in `playback.renditions` for `360`, `480`, `720`, and `1080`.
+9. If HLS is not ready, the response includes the current playback status.
 
 ## 40. List Movie Series
 
@@ -1065,6 +1072,7 @@ Request:
 
 ```text
 GET /v1/content/movies/:movie_id/series
+GET /v1/content/movies/:movie_id/series?childId=child-id
 ```
 
 This request needs a parent token or a device token.
@@ -1073,7 +1081,8 @@ What happens:
 
 1. The backend finds the movie.
 2. The backend reads the movie `series` array.
-3. The backend returns the linked series movies.
+3. With a device token, or with a parent token plus `childId`, blacklisted series items are hidden.
+4. The backend returns the linked series movies.
 
 ## 41. Create Or Upload A Movie
 

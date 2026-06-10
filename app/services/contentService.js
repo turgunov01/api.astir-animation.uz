@@ -553,6 +553,23 @@ function actorOwnerId(actor) {
   return null;
 }
 
+function actorBlacklistTarget(actor) {
+  const explicitTarget = actor?.blacklistTarget;
+
+  if (explicitTarget?.parentId && explicitTarget?.childId) {
+    return explicitTarget;
+  }
+
+  if (actor?.type === "device") {
+    return {
+      parentId: deviceParentId(actor.device),
+      childId: deviceChildId(actor.device)
+    };
+  }
+
+  return null;
+}
+
 export function createContentService({
   childService,
   contentCategories,
@@ -577,6 +594,26 @@ export function createContentService({
     return {
       contentLikes,
       ownerId: ownerIdForActor(actor)
+    };
+  }
+
+  async function actorWithChildBlacklist(actor, childId = "") {
+    const normalizedChildId = String(childId || "").trim();
+
+    if (!normalizedChildId || actor?.type === "device") {
+      return actor;
+    }
+
+    const parentId = ownerIdForActor(actor);
+
+    await childService.getChildForParentAsync(parentId, normalizedChildId);
+
+    return {
+      ...actor,
+      blacklistTarget: {
+        parentId,
+        childId: normalizedChildId
+      }
     };
   }
 
@@ -636,12 +673,13 @@ export function createContentService({
   }
 
   function isMovieBlacklistedForActor(actor, movie) {
-    if (actor?.type !== "device" || !childService?.isAnyContentBlacklisted) {
+    if (!childService?.isAnyContentBlacklisted) {
       return false;
     }
 
-    const parentId = deviceParentId(actor.device);
-    const childId = deviceChildId(actor.device);
+    const target = actorBlacklistTarget(actor);
+    const parentId = target?.parentId;
+    const childId = target?.childId;
 
     if (!parentId || !childId) {
       return false;
@@ -1061,7 +1099,9 @@ export function createContentService({
       return serializeCategory(getCategory(categoryId));
     },
 
-    async getMovie(actor, movieId) {
+    async getMovie(actor, movieId, { childId = "" } = {}) {
+      actor = await actorWithChildBlacklist(actor, childId);
+
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
@@ -1083,7 +1123,9 @@ export function createContentService({
       };
     },
 
-    async getMovieSeries(actor, movieId) {
+    async getMovieSeries(actor, movieId, { childId = "" } = {}) {
+      actor = await actorWithChildBlacklist(actor, childId);
+
       const movie = getMovieRecord(movieId);
 
       tariffService.assertCanWatchMovie(actor, movie);
@@ -1120,6 +1162,7 @@ export function createContentService({
       actor,
       {
         category = "",
+        childId = "",
         liked = false,
         q = "",
         tags = [],
@@ -1127,6 +1170,8 @@ export function createContentService({
         limit = 20
       } = {}
     ) {
+      actor = await actorWithChildBlacklist(actor, childId);
+
       const likeContext = likeContextForActor(actor);
       const categoryValues = categoryFilterValues(contentCategories, category);
       const filterTagIds = await tagFilterIds(contentTags, tags);
