@@ -18,7 +18,11 @@ const emptyData = {
   transactions: [],
   tariffs: [],
   watchLimits: [],
-  watchSessions: []
+  watchSessions: [],
+  faqs: [],
+  recommendations: [],
+  notificationTokens: [],
+  notifications: []
 };
 
 export class JsonStore {

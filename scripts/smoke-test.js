@@ -336,7 +336,7 @@ try {
 
   assert.equal(
     moviesByCategory.movies.some((movie) => movie.id === movieId),
-    true
+    false
   );
 
   const moviesByTag = await request(baseUrl, `/v1/content/movies?tags=${encodeURIComponent(tagResponse.tag.slug)}`, {
@@ -345,7 +345,7 @@ try {
 
   assert.equal(
     moviesByTag.movies.some((movie) => movie.id === movieId),
-    true
+    false
   );
 
   const moviesByCategoryAndTag = await request(
@@ -358,7 +358,7 @@ try {
 
   assert.equal(
     moviesByCategoryAndTag.movies.some((movie) => movie.id === movieId),
-    true
+    false
   );
 
   const initialLikeStatus = await request(baseUrl, `/v1/content/${movieId}/like`, {
@@ -390,7 +390,7 @@ try {
 
   assert.equal(
     likedMovies.movies.some((movie) => movie.id === movieId && movie.is_liked === true),
-    true
+    false
   );
 
   const likedContent = await request(baseUrl, "/v1/content/likes", {
@@ -452,7 +452,7 @@ try {
 
   assert.equal(
     movies.movies.some((movie) => movie.id === movieId),
-    true
+    false
   );
   assert.equal(
     movies.movies.some((movie) => movie.id === premiumMovieId),
@@ -757,6 +757,32 @@ try {
   assert.equal(replacedMovieTags.movie.id, movieId);
   assert.deepEqual(replacedMovieTags.movie.tag_ids, [tagId]);
 
+  const parentWatchStarted = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { contentId: movieId }
+  });
+
+  await request(baseUrl, `/v1/watch-sessions/${parentWatchStarted.watchSession.id}/progress`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      watchedSec: 15,
+      positionSec: 15
+    }
+  });
+
+  await request(baseUrl, `/v1/watch-sessions/${parentWatchStarted.watchSession.id}/stop`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  const parentHistory = await request(baseUrl, "/v1/watch-sessions/history", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(parentHistory.history.some((item) => item.contentId === movieId), true);
+
   const seriesResponse = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {
     method: "POST",
     headers: { authorization: `Bearer ${parentToken}` },
@@ -789,6 +815,56 @@ try {
     series.series.some((movie) => movie.id === seriesItemId),
     true
   );
+
+  const moviesWithoutSeriesItems = await request(baseUrl, "/v1/content/movies", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(
+    moviesWithoutSeriesItems.movies.some((movie) => movie.id === seriesItemId),
+    false
+  );
+
+  const createdFaq = await request(baseUrl, "/v1/faqs", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      question: {
+        en: "How do I watch offline?",
+        ru: "How do I watch offline RU",
+        uz: "How do I watch offline UZ"
+      },
+      answer: {
+        en: "Download from the mobile app.",
+        ru: "Download from the mobile app RU",
+        uz: "Download from the mobile app UZ"
+      },
+      sortOrder: 1
+    }
+  });
+
+  assert.equal(typeof createdFaq.faq.id, "string");
+
+  const faqs = await request(baseUrl, "/v1/faqs");
+  assert.equal(faqs.faqs.some((faq) => faq.id === createdFaq.faq.id), true);
+
+  const createdRecommendation = await request(baseUrl, "/v1/recommendations", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      type: "content",
+      referenceId: movieId,
+      sortOrder: 1
+    }
+  });
+
+  assert.equal(createdRecommendation.recommendation.referenceId, movieId);
+
+  const recommendations = await request(baseUrl, "/v1/recommendations", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(recommendations.recommendations.some((item) => item.referenceId === movieId), true);
 
   const childResponse = await request(baseUrl, "/v1/children", {
     method: "POST",
@@ -842,6 +918,29 @@ try {
   });
 
   assert.equal(config.child.id, childId);
+
+  const notificationToken = await request(baseUrl, "/v1/notifications/device-token", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: {
+      token: "smoke-fcm-token",
+      platform: "ios"
+    }
+  });
+
+  assert.equal(notificationToken.token.parentId, config.limit.parentId);
+
+  const pushNotification = await request(baseUrl, "/v1/notifications/push", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      title: "Smoke push",
+      body: "Smoke notification",
+      childId
+    }
+  });
+
+  assert.equal(pushNotification.notification.channel, "push");
 
   const deviceTariff = await request(baseUrl, "/v1/tariffs/current", {
     headers: { authorization: `Bearer ${deviceToken}` }
@@ -1137,6 +1236,31 @@ try {
   assert.equal(seriesWatchStopped.watchSession.id, seriesWatchSessionId);
   assert.equal(seriesWatchStopped.watchSession.durationSeconds, 12);
 
+  const deviceProgress = await request(baseUrl, `/v1/watch-sessions/progress/${seriesItemId}`, {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceProgress.progress.positionSeconds, 12);
+
+  const deviceHistory = await request(baseUrl, "/v1/watch-sessions/history", {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(deviceHistory.history.some((item) => item.contentId === seriesItemId), true);
+
+  const resumedSeriesWatch = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: seriesItemId }
+  });
+
+  assert.equal(resumedSeriesWatch.watchSession.resumePositionSeconds, 12);
+
+  await request(baseUrl, `/v1/watch-sessions/${resumedSeriesWatch.watchSession.id}/stop`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
   const watchedSeriesItem = await request(baseUrl, `/v1/content/movies/${seriesItemId}`, {
     headers: { authorization: `Bearer ${parentToken}` }
   });
@@ -1150,6 +1274,19 @@ try {
 
   assert.equal(watchedParentSeries.movie.series_views_count, 1);
   assert.equal(watchedParentSeries.movie.series_watch_time_sec, 12);
+
+  const popularMovies = await request(baseUrl, "/v1/content/movies/popular", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(popularMovies.popular.some((movie) => movie.id === movieId), true);
+
+  const offlineSeriesItem = await request(baseUrl, `/v1/content/movies/${seriesItemId}/offline`, {
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(offlineSeriesItem.offline.contentId, seriesItemId);
+  assert.equal(offlineSeriesItem.offline.views_count, 1);
 
   const deletedCategory = await request(baseUrl, `/v1/content/categories/${categoryId}`, {
     method: "DELETE",

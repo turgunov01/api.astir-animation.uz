@@ -444,6 +444,12 @@ export function createContentController({ contentService }) {
       });
     },
 
+    async getMovieOffline(request, response) {
+      response.json(await contentService.getOfflineMovie(request.actor, request.params.movie_id, {
+        childId: optionalChildIdParam(request)
+      }));
+    },
+
     async getMovieSeries(request, response) {
       response.json(await contentService.getMovieSeries(request.actor, request.params.movie_id, {
         childId: optionalChildIdParam(request)
@@ -481,6 +487,13 @@ export function createContentController({ contentService }) {
         q: firstQueryValue(request.query.q || request.query.search),
         tags: queryList(request.query.tags || request.query.tag_ids),
         page: firstQueryValue(request.query.page),
+        limit: firstQueryValue(request.query.limit)
+      }));
+    },
+
+    async listPopularMovies(request, response) {
+      response.json(await contentService.listPopularMovies(request.actor, {
+        childId: optionalChildIdParam(request),
         limit: firstQueryValue(request.query.limit)
       }));
     },

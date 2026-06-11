@@ -11,8 +11,26 @@ export function createWatchSessionRepository(store) {
       );
     },
 
+    findActiveByParentId(parentId) {
+      return store.findOne(
+        "watchSessions",
+        (session) => session.actorType === "parent" && session.parentId === parentId && !session.endedAt
+      );
+    },
+
     listByChildId(childId) {
       return store.filter("watchSessions", (session) => session.childId === childId);
+    },
+
+    listByParentId(parentId) {
+      return store.filter("watchSessions", (session) => session.parentId === parentId);
+    },
+
+    listByParentActorId(parentId) {
+      return store.filter(
+        "watchSessions",
+        (session) => session.actorType === "parent" && session.parentId === parentId
+      );
     },
 
     create(attributes) {

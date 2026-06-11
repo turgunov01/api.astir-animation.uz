@@ -4,7 +4,10 @@ import { createBillingRoutes } from "./billingRoutes.js";
 import { createChildrenRoutes } from "./childrenRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createDeviceRoutes } from "./deviceRoutes.js";
+import { createFaqRoutes } from "./faqRoutes.js";
+import { createNotificationRoutes } from "./notificationRoutes.js";
 import { createPairingRoutes } from "./pairingRoutes.js";
+import { createRecommendationRoutes } from "./recommendationRoutes.js";
 import { createTariffRoutes } from "./tariffRoutes.js";
 import { createWatchSessionRoutes } from "./watchSessionRoutes.js";
 
@@ -35,6 +38,18 @@ export function createRoutes({ controllers, middleware }) {
     authMiddleware: middleware.auth,
     contentController: controllers.content,
     uploadMiddleware: middleware.upload
+  }));
+  routes.use("/faqs", createFaqRoutes({
+    authMiddleware: middleware.auth,
+    faqController: controllers.faqs
+  }));
+  routes.use("/recommendations", createRecommendationRoutes({
+    authMiddleware: middleware.auth,
+    recommendationController: controllers.recommendations
+  }));
+  routes.use("/notifications", createNotificationRoutes({
+    authMiddleware: middleware.auth,
+    notificationController: controllers.notifications
   }));
   routes.use("/tariffs", createTariffRoutes({
     authMiddleware: middleware.auth,

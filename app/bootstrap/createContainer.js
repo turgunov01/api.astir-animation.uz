@@ -7,7 +7,10 @@ import { createRepositories } from "../repositories/index.js";
 import { createAuthService } from "../services/authService.js";
 import { createChildService } from "../services/childService.js";
 import { createContentService } from "../services/contentService.js";
+import { createFaqService } from "../services/faqService.js";
+import { createNotificationService } from "../services/notificationService.js";
 import { createPairingService } from "../services/pairingService.js";
+import { createRecommendationService } from "../services/recommendationService.js";
 import { createSubscriptionService } from "../services/subscriptionService.js";
 import { createTariffService } from "../services/tariffService.js";
 import { createTranscoderService } from "../services/transcoderService.js";
@@ -57,6 +60,17 @@ export function createContainer({ store = defaultStore } = {}) {
     childService: services.children,
     tariffService: services.tariffs,
     transcoder: services.transcoder
+  });
+  services.faqs = createFaqService({
+    faqs: repositories.faqs
+  });
+  services.recommendations = createRecommendationService({
+    contentService: services.content,
+    recommendations: repositories.recommendations
+  });
+  services.notifications = createNotificationService({
+    config,
+    notifications: repositories.notifications
   });
   services.pairing = createPairingService({
     childService: services.children,

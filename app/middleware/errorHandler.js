@@ -45,6 +45,9 @@ export function errorHandler(error, request, response, next) {
 
   if (error instanceof AppError) {
     response.status(error.statusCode).json({
+      code: error.code,
+      message: error.message,
+      statusCode: error.statusCode,
       error: {
         code: error.code,
         message: error.message,

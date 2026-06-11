@@ -254,6 +254,8 @@ export function legacyErrorMiddleware(error, request, response, next) {
   if (error instanceof LegacyError) {
     response.status(error.statusCode).json({
       error: error.error,
+      code: error.error,
+      statusCode: error.statusCode,
       message: i18n(error.message)
     });
     return;

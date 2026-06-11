@@ -15,7 +15,9 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
 
   router.get("/", authMiddleware.requireActor, asyncHandler(contentController.list));
   router.get("/movies", authMiddleware.requireActor, asyncHandler(contentController.listMovies));
+  router.get("/movies/popular", authMiddleware.requireActor, asyncHandler(contentController.listPopularMovies));
   router.get("/movies/:movie_id", authMiddleware.requireActor, asyncHandler(contentController.getMovie));
+  router.get("/movies/:movie_id/offline", authMiddleware.requireActor, asyncHandler(contentController.getMovieOffline));
   router.get("/movies/:movie_id/series", authMiddleware.requireActor, asyncHandler(contentController.getMovieSeries));
   router.post(
     "/movies/create",

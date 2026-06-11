@@ -455,9 +455,23 @@ async function resolveCommentTarget(db, contentId, contentMovies = null) {
 }
 
 function serializeComment(row) {
+  const firstName = row.user_name || row.name || "";
+  const lastName = row.user_last_name || row.last_name || "";
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
   return {
     ...row,
-    content_id: row.content_id || row.target_id || null
+    content_id: row.content_id || row.target_id || null,
+    user_full_name: fullName,
+    full_name: fullName,
+    avatar_url: row.user_avatar_url || row.avatar_url || "",
+    author: {
+      id: row.user_id,
+      name: firstName,
+      last_name: lastName,
+      full_name: fullName,
+      avatar_url: row.user_avatar_url || row.avatar_url || ""
+    }
   };
 }
 
@@ -570,6 +584,134 @@ async function assertCanAccessContent(db, actor, contentId) {
   }
 }
 
+function legacyActorChildId(actor) {
+  if (actor.kind === "child_device" || actor.kind === "tv_device") {
+    return actor.child_id || null;
+  }
+
+  return null;
+}
+
+function legacyPermissionApplies(permission, content) {
+  if (permission.content_id && permission.content_id !== content.id) {
+    return false;
+  }
+
+  if (permission.category_id && permission.category_id !== content.category_id) {
+    return false;
+  }
+
+  return true;
+}
+
+function legacyMinutesNow() {
+  const now = new Date();
+
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function legacyWithinWindow(from, to, current = legacyMinutesNow()) {
+  const start = from ?? 0;
+  const end = to ?? 1439;
+
+  if (start <= end) {
+    return current >= start && current <= end;
+  }
+
+  return current >= start || current <= end;
+}
+
+function legacyWeekdayAllowed(mask) {
+  if (mask === null || mask === undefined) {
+    return true;
+  }
+
+  const dayBit = 1 << new Date().getDay();
+
+  return (Number(mask) & dayBit) !== 0;
+}
+
+async function legacyUsedSecondsToday(db, childId) {
+  const row = await db.one(
+    `
+      SELECT COALESCE(SUM(max_position), 0)::integer AS used_sec
+      FROM (
+        SELECT h.viewer_id, h.viewer_kind, h.content_id, MAX(h.position_sec)::integer AS max_position
+        FROM watch_history h
+        LEFT JOIN child_devices d ON h.viewer_kind = 'child_device' AND d.id = h.viewer_id
+        LEFT JOIN tv_devices t ON h.viewer_kind = 'tv_device' AND t.id = h.viewer_id
+        WHERE (
+          (h.viewer_kind = 'child_device' AND d.child_id = $1)
+          OR (h.viewer_kind = 'tv_device' AND t.current_child_id = $1)
+        )
+          AND h.watched_at >= date_trunc('day', now())
+        GROUP BY h.viewer_id, h.viewer_kind, h.content_id
+      ) usage
+    `,
+    [childId]
+  );
+
+  return Number(row?.used_sec || 0);
+}
+
+async function assertLegacyChildCanStream(db, actor, content) {
+  const childId = legacyActorChildId(actor);
+
+  if (!childId) {
+    return;
+  }
+
+  const child = await db.one("SELECT * FROM children WHERE id = $1 AND active = true", [childId]);
+
+  if (!child) {
+    throw legacyError(403, "child_inactive", "child is inactive");
+  }
+
+  if (child.extended_until && new Date(child.extended_until).getTime() > Date.now()) {
+    return;
+  }
+
+  const permissions = await db.many(
+    "SELECT * FROM child_permissions WHERE child_id = $1 ORDER BY created_at",
+    [childId]
+  );
+  const applicable = permissions.filter((permission) => legacyPermissionApplies(permission, content));
+
+  if (applicable.some((permission) => permission.mode === "deny")) {
+    throw legacyError(403, "content_blocked_for_child", "content is blocked for this child");
+  }
+
+  for (const permission of applicable) {
+    if (!legacyWeekdayAllowed(permission.weekday_mask)) {
+      throw legacyError(403, "watch_day_blocked", "watching is not allowed today");
+    }
+
+    if (
+      (permission.watch_from_min !== null && permission.watch_from_min !== undefined)
+      || (permission.watch_until_min !== null && permission.watch_until_min !== undefined)
+    ) {
+      if (!legacyWithinWindow(permission.watch_from_min, permission.watch_until_min)) {
+        throw legacyError(403, "watch_time_blocked", "watching is outside the allowed time window");
+      }
+    }
+  }
+
+  const dailyLimits = applicable
+    .map((permission) => Number(permission.daily_limit_minutes))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (dailyLimits.length === 0) {
+    return;
+  }
+
+  const dailyLimitSeconds = Math.min(...dailyLimits) * 60;
+  const usedSeconds = await legacyUsedSecondsToday(db, childId);
+
+  if (usedSeconds >= dailyLimitSeconds) {
+    throw legacyError(403, "watch_limit_reached", "daily watch limit reached");
+  }
+}
+
 async function contentListItem(db, row, actor, lang) {
   const tags = await db.many(
     `
@@ -651,6 +793,10 @@ async function listLegacyContent(request, response) {
   if (request.query.kind && request.query.kind !== "series") {
     values.push(request.query.kind);
     filters.push(`cat.kind = $${values.length}`);
+  }
+
+  if (request.query.admin !== "true" && request.query.kind !== "series") {
+    filters.push("c.series_id IS NULL");
   }
 
   const tags = queryValues(request.query.tags || request.query.tag_ids);
@@ -2246,7 +2392,8 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
     const target = await resolveCommentTarget(request.legacyDb, request.params.id, contentMovies);
     const rows = await request.legacyDb.many(
       `
-        SELECT c.*, COALESCE(c.target_id, c.content_id::text) AS content_id, u.name AS user_name
+        SELECT c.*, COALESCE(c.target_id, c.content_id::text) AS content_id,
+          u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url
         FROM comments c
         JOIN users u ON u.id = c.user_id
         WHERE (c.target_type = $1 AND c.target_id = $2)
@@ -2269,7 +2416,12 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
       target_id: target.targetId,
       body: request.body.body
     });
-    response.status(201).json(serializeComment(row));
+    response.status(201).json(serializeComment({
+      ...row,
+      user_name: request.legacyUser.name,
+      user_last_name: request.legacyUser.last_name,
+      user_avatar_url: request.legacyUser.avatar_url
+    }));
   }));
 
   router.put("/comments/:id", requireUser, asyncHandler(async (request, response) => {
@@ -2280,7 +2432,12 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
     if (!row) {
       throw legacyError(404, "comment_not_found", "comment not found");
     }
-    response.json(serializeComment(row));
+    response.json(serializeComment({
+      ...row,
+      user_name: request.legacyUser.name,
+      user_last_name: request.legacyUser.last_name,
+      user_avatar_url: request.legacyUser.avatar_url
+    }));
   }));
 
   router.delete("/comments/:id", requireUser, asyncHandler(async (request, response) => {
@@ -2334,6 +2491,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
   router.get("/stream/:id/grant", requireActor, asyncHandler(async (request, response) => {
     await assertCanAccessContent(request.legacyDb, request.legacyActor, request.params.id);
     const content = await getById(request.legacyDb, "content", request.params.id);
+    await assertLegacyChildCanStream(request.legacyDb, request.legacyActor, content);
     const actor = request.legacyActor;
     const ownerId = await ownerUserIdForActor(request.legacyDb, actor);
     const subscription = ownerId ? await activeSubscription(request.legacyDb, ownerId) : null;

@@ -196,3 +196,5 @@ npm run test:auth-off
 2. Read `docs/data-model.md` for the backend objects.
 3. Read `docs/api.md` for the API flow.
 4. Read `docs/architecture.md` for the code structure.
+5. Read `docs/api-integration-ru.md` for the Russian mobile/admin API integration guide.
+6. Read `docs/tasks-api-map-ru.md` for the task-by-task endpoint mapping.

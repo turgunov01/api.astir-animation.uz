@@ -658,7 +658,7 @@ export function createContentService({
   }
 
   function isSeriesMovie(movie) {
-    return Boolean(findParentSeriesMovie(movie.id));
+    return Boolean(movie.series_id || findParentSeriesMovie(movie.id));
   }
 
   function blacklistIdsForMovie(movie) {
@@ -1211,6 +1211,68 @@ export function createContentService({
           hasNextPage: currentPage < totalPages,
           hasPrevPage: currentPage > 1
         }
+      };
+    },
+
+    async listPopularMovies(actor, { childId = "", limit = 20 } = {}) {
+      actor = await actorWithChildBlacklist(actor, childId);
+
+      const likeContext = likeContextForActor(actor);
+      const maxItems = Math.max(Number(limit) || 20, 1);
+      const movies = contentMovies.list()
+        .filter((movie) => !isSeriesMovie(movie))
+        .filter((movie) => tariffService.canWatchMovie(actor, movie))
+        .filter((movie) => !isMovieBlacklistedForActor(actor, movie))
+        .sort((left, right) => (
+          (metricValue(right.views_count) + metricValue(right.series_views_count))
+          - (metricValue(left.views_count) + metricValue(left.series_views_count))
+        ) || (
+          (metricValue(right.watch_time_sec) + metricValue(right.series_watch_time_sec))
+          - (metricValue(left.watch_time_sec) + metricValue(left.series_watch_time_sec))
+        ) || String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+        .slice(0, maxItems);
+      const popular = await Promise.all(
+        movies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
+      );
+
+      return {
+        popular,
+        movies: popular
+      };
+    },
+
+    async getOfflineMovie(actor, movieId, { childId = "" } = {}) {
+      actor = await actorWithChildBlacklist(actor, childId);
+
+      const movie = getMovieRecord(movieId);
+
+      tariffService.assertCanWatchMovie(actor, movie);
+      assertMovieNotBlacklisted(actor, movie);
+
+      const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
+      const likeContext = likeContextForActor(actor);
+      const serializedMovie = await serializeMovie(movieWithTranscode, [], contentTags, contentMovieTags, likeContext);
+      const offline = {
+        contentId: serializedMovie.id,
+        content_id: serializedMovie.id,
+        title: serializedMovie.title,
+        description: serializedMovie.description,
+        poster_url: serializedMovie.poster_url,
+        poster: serializedMovie.poster,
+        views_count: serializedMovie.views_count,
+        play_count: serializedMovie.play_count,
+        watch_time_sec: serializedMovie.watch_time_sec,
+        duration_sec: serializedMovie.duration_sec,
+        duration_seconds: serializedMovie.duration_seconds,
+        playback: serializedMovie.playback,
+        cache_key: `${serializedMovie.id}:${serializedMovie.updatedAt || serializedMovie.createdAt || ""}`,
+        updatedAt: serializedMovie.updatedAt
+      };
+
+      return {
+        movie: serializedMovie,
+        offline,
+        cache: offline
       };
     },
 

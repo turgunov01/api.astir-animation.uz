@@ -26,10 +26,26 @@ function integerAlias(body, fields, { fallback = null, required = false } = {}) 
   return value;
 }
 
+function optionalQueryString(query, ...fields) {
+  for (const field of fields) {
+    const value = query?.[field];
+
+    if (Array.isArray(value) && value[0]) {
+      return value[0];
+    }
+
+    if (value !== undefined && value !== null && value !== "") {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
 export function createWatchSessionController({ watchService }) {
   return {
     async start(request, response) {
-      const watchSession = await watchService.startWatchSession(request.device, {
+      const watchSession = await watchService.startWatchSessionForActor(request.actor, {
         contentId: requiredString(request.body, "contentId")
       });
 
@@ -49,7 +65,7 @@ export function createWatchSessionController({ watchService }) {
       );
 
       response.json({
-        watchSession: await watchService.progressWatchSession(request.device, request.params.watchSessionId, {
+        watchSession: await watchService.progressWatchSessionForActor(request.actor, request.params.watchSessionId, {
           positionSeconds,
           watchedSeconds
         })
@@ -58,7 +74,23 @@ export function createWatchSessionController({ watchService }) {
 
     stop(request, response) {
       response.json({
-        watchSession: watchService.stopWatchSession(request.device, request.params.watchSessionId)
+        watchSession: watchService.stopWatchSessionForActor(request.actor, request.params.watchSessionId)
+      });
+    },
+
+    async history(request, response) {
+      response.json(await watchService.listHistory(request.actor, {
+        childId: optionalQueryString(request.query, "childId", "child_id"),
+        limit: optionalQueryString(request.query, "limit"),
+        unique: request.query.unique !== "false"
+      }));
+    },
+
+    async progressForContent(request, response) {
+      response.json({
+        progress: await watchService.getProgress(request.actor, request.params.contentId, {
+          childId: optionalQueryString(request.query, "childId", "child_id")
+        })
       });
     }
   };
