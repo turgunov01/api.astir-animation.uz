@@ -1,4 +1,5 @@
 export function createPostgresParentRepository(db) {
+  const actorRoleFilter = "role IN ('parent', 'admin', 'super_admin')";
   const parentColumns = `
     id,
     email,
@@ -16,7 +17,7 @@ export function createPostgresParentRepository(db) {
   return {
     async findById(id) {
       const result = await db.query(
-        `SELECT ${parentColumns} FROM users WHERE id = $1 AND role = 'parent'`,
+        `SELECT ${parentColumns} FROM users WHERE id = $1 AND ${actorRoleFilter}`,
         [id]
       );
       return result.rows[0] || null;
@@ -24,7 +25,7 @@ export function createPostgresParentRepository(db) {
 
     async findByEmail(email) {
       const result = await db.query(
-        `SELECT ${parentColumns} FROM users WHERE email = $1 AND role = 'parent'`,
+        `SELECT ${parentColumns} FROM users WHERE email = $1 AND ${actorRoleFilter}`,
         [email]
       );
       return result.rows[0] || null;
@@ -32,7 +33,7 @@ export function createPostgresParentRepository(db) {
 
     async list() {
       const result = await db.query(
-        `SELECT ${parentColumns} FROM users WHERE role = 'parent' ORDER BY created_at DESC`
+        `SELECT ${parentColumns} FROM users WHERE ${actorRoleFilter} ORDER BY created_at DESC`
       );
       return result.rows;
     },
@@ -97,7 +98,7 @@ export function createPostgresParentRepository(db) {
         `
           UPDATE users
           SET ${assignments.join(", ")}, updated_at = now()
-          WHERE id = $${values.length} AND role = 'parent'
+          WHERE id = $${values.length} AND ${actorRoleFilter}
           RETURNING ${parentColumns}
         `,
         values

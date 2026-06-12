@@ -243,11 +243,13 @@ async function assertPostgresParentRepositoryPersistsTariff() {
     async query(sql, values = []) {
       if (sql.includes("SELECT")) {
         assert.match(sql, /\btariff\b/);
+        assert.match(sql, /'super_admin'/);
         return { rows: [resultRow()] };
       }
 
       if (sql.includes("UPDATE users")) {
         assert.match(sql, /\btariff = \$/);
+        assert.match(sql, /'super_admin'/);
         storedParent.tariff = values[0];
         return { rows: [resultRow()] };
       }
@@ -260,6 +262,9 @@ async function assertPostgresParentRepositoryPersistsTariff() {
 
   assert.equal(updated.tariff, "premium");
   assert.equal((await parents.findById(storedParent.id)).tariff, "premium");
+
+  storedParent.role = "super_admin";
+  assert.equal((await parents.findById(storedParent.id)).role, "super_admin");
 }
 
 try {
@@ -605,6 +610,15 @@ try {
   });
 
   assert.equal(superAdminPremiumMovie.movie.id, premiumMovieId);
+
+  const superAdminMovies = await request(baseUrl, "/v1/content/movies", {
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(
+    superAdminMovies.movies.some((movie) => movie.id === premiumMovieId),
+    true
+  );
 
   const movies = await request(baseUrl, "/v1/content/movies", {
     headers: { authorization: `Bearer ${parentToken}` }
