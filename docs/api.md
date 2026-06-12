@@ -515,6 +515,8 @@ Request:
 
 ```text
 DELETE /v1/tariffs/:tariff_id
+DELETE /v1/tariffs/:tariff_id?hard=false
+DELETE /v1/tariffs/:tariff_id?cascade=true
 ```
 
 This request needs a parent token.
@@ -523,8 +525,8 @@ What happens:
 
 1. The backend checks the parent token.
 2. The backend does not delete the default tariff.
-3. The backend does not delete a tariff used by parent accounts.
-4. The backend deletes the tariff if it is safe.
+3. By default, the backend hard-deletes only the tariff record and leaves existing references untouched.
+4. With `hard=false` or `cascade=true`, linked subscriptions and parent accounts are moved to the default tariff before deletion.
 
 ## 20. Get Current Tariff
 

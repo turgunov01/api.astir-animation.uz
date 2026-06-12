@@ -526,6 +526,24 @@ export const openApiDocument = {
           video_url: { type: "string", nullable: true, example: "/media/uploads/movie.mp4" },
           storage_path: { type: "string", nullable: true },
           transcode_status: { type: "string", example: "queued" },
+          transcode_error: {
+            type: "string",
+            nullable: true,
+            example: "ffmpeg exited with code 1",
+            description: "Latest transcoder error. Admin UI can show this as a tooltip when transcode_status/status is failed."
+          },
+          status_error: {
+            type: "string",
+            nullable: true,
+            example: "ffmpeg exited with code 1",
+            description: "Alias for transcode_error for status tooltips."
+          },
+          error_message: {
+            type: "string",
+            nullable: true,
+            example: "ffmpeg exited with code 1",
+            description: "Alias for transcode_error for table UIs."
+          },
           age_rating: { type: "integer", example: 6 },
           duration_sec: {
             type: "integer",
@@ -988,10 +1006,13 @@ export const openApiDocument = {
       },
       AssignPlanRequest: {
         type: "object",
-        required: ["plan_id"],
         properties: {
           duration_days: { type: "integer" },
-          plan_id: { type: "string" }
+          durationDays: { type: "integer", description: "Alias for duration_days." },
+          plan_id: { type: "string", description: "Legacy plan id, slug, or package_code." },
+          planId: { type: "string", description: "Alias for plan_id." },
+          tariff_id: { type: "string", description: "v1 tariff id accepted for admin compatibility." },
+          tariffId: { type: "string", description: "Alias for tariff_id." }
         }
       },
       CardRequest: {
@@ -5532,6 +5553,27 @@ export const openApiDocument = {
             in: "path",
             required: true,
             schema: { type: "string" }
+          },
+          {
+            name: "hard",
+            in: "query",
+            required: false,
+            description: "When true, delete the tariff record without moving linked parents/subscriptions to the default tariff. This is the default delete mode.",
+            schema: { type: "boolean", default: true }
+          },
+          {
+            name: "force",
+            in: "query",
+            required: false,
+            description: "Alias for hard.",
+            schema: { type: "boolean", default: true }
+          },
+          {
+            name: "cascade",
+            in: "query",
+            required: false,
+            description: "When true, move linked parents/subscriptions to the default tariff before deleting.",
+            schema: { type: "boolean", default: false }
           }
         ],
         responses: {
@@ -5623,7 +5665,18 @@ export const openApiDocument = {
                   type: "object",
                   properties: {
                     deleted: { type: "boolean", example: true },
-                    tariff: { $ref: "#/components/schemas/Tariff" }
+                    hard_deleted: { type: "boolean", example: true },
+                    mode: { type: "string", example: "hard" },
+                    tariff: { $ref: "#/components/schemas/Tariff" },
+                    affected: {
+                      type: "object",
+                      properties: {
+                        subscriptionsLinked: { type: "integer", example: 0 },
+                        parentsLinked: { type: "integer", example: 1 },
+                        subscriptionsUpdated: { type: "integer", example: 0 },
+                        parentsUpdated: { type: "integer", example: 0 }
+                      }
+                    }
                   }
                 }
               }

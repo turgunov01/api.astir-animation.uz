@@ -19,6 +19,7 @@ process.env.CLICK_SECRET_KEY = "click-smoke-secret";
 process.env.CLICK_RETURN_URL = "https://astir.example/payments/return";
 
 const { createServer } = await import("../app/server.js");
+const { createTariffService } = await import("../app/services/tariffService.js");
 
 const server = createServer();
 
@@ -105,7 +106,114 @@ function md5(value) {
   return createHash("md5").update(String(value)).digest("hex");
 }
 
+function createMemoryTariffRepository() {
+  const rows = [];
+
+  return {
+    list() {
+      return rows;
+    },
+
+    findById(id) {
+      return rows.find((row) => row.id === id) || null;
+    },
+
+    findDefault() {
+      return rows.find((row) => row.is_default === true) || null;
+    },
+
+    create(attributes) {
+      const now = new Date().toISOString();
+      const row = {
+        id: attributes.id || `tariff-${rows.length + 1}`,
+        ...attributes,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      rows.push(row);
+
+      return row;
+    },
+
+    update(id, attributes) {
+      const index = rows.findIndex((row) => row.id === id);
+
+      if (index === -1) {
+        return null;
+      }
+
+      rows[index] = { ...rows[index], ...attributes, updatedAt: new Date().toISOString() };
+
+      return rows[index];
+    },
+
+    delete(id) {
+      const index = rows.findIndex((row) => row.id === id);
+
+      if (index === -1) {
+        return null;
+      }
+
+      const [deleted] = rows.splice(index, 1);
+
+      return deleted;
+    }
+  };
+}
+
+async function assertAsyncParentTariffDelete() {
+  const parentUpdates = [];
+  const tariffService = createTariffService({
+    parents: {
+      async list() {
+        return [{ id: "async-parent-id", tariff: "async-custom" }];
+      },
+      async update(id, attributes) {
+        parentUpdates.push({ id, attributes });
+        return { id, ...attributes };
+      }
+    },
+    subscriptions: {
+      activeForParent() {
+        return null;
+      },
+      serializeSubscription(subscription) {
+        return subscription;
+      },
+      async listByTariffId() {
+        return [];
+      },
+      async update() {
+        throw new Error("subscription update should not be called");
+      }
+    },
+    tariffs: createMemoryTariffRepository()
+  });
+
+  tariffService.createTariff({
+    id: "async-custom",
+    title: { en: "Async Custom", ru: "Async Custom", uz: "Async Custom" },
+    description: { en: "Async Custom", ru: "Async Custom", uz: "Async Custom" },
+    is_default: false,
+    can_watch_premium: true,
+    price_cents: 100000,
+    currency: "UZS"
+  });
+
+  const deleted = await tariffService.deleteTariff("async-custom");
+
+  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.affected.parentsUpdated, 1);
+  assert.deepEqual(parentUpdates, [{
+    id: "async-parent-id",
+    attributes: { tariff: "free" }
+  }]);
+}
+
 try {
+  await assertAsyncParentTariffDelete();
+
   const parentEmail = `smoke-${Date.now()}@example.com`;
   const unverifiedRegistration = await requestWithStatus(baseUrl, "/v1/auth/register", {
     method: "POST",
@@ -519,7 +627,7 @@ try {
 
   assert.equal(customTariffPremiumMovie.movie.id, premiumMovieId);
 
-  const usedTariffDelete = await requestWithStatus(baseUrl, `/v1/tariffs/${customTariffId}`, {
+  const usedTariffDelete = await requestWithStatus(baseUrl, `/v1/tariffs/${customTariffId}?hard=false`, {
     method: "DELETE",
     headers: { authorization: `Bearer ${parentToken}` }
   });
@@ -535,6 +643,51 @@ try {
 
   assert.equal(freeTariff.tariff.code, "free");
   assert.equal(freeTariff.access.can_watch_premium, false);
+
+  const hardDeleteTariffId = `hard-delete-tariff-${Date.now()}`;
+  await request(baseUrl, "/v1/tariffs/create", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      id: hardDeleteTariffId,
+      title: {
+        en: "Hard Delete Tariff",
+        ru: "Hard Delete Tariff RU",
+        uz: "Hard Delete Tariff UZ"
+      },
+      description: {
+        en: "Hard delete tariff",
+        ru: "Hard delete tariff RU",
+        uz: "Hard delete tariff UZ"
+      },
+      can_watch_premium: true,
+      price: 1000
+    }
+  });
+
+  await request(baseUrl, "/v1/tariffs/current", {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { tariff: hardDeleteTariffId }
+  });
+
+  const hardDeletedTariff = await request(baseUrl, `/v1/tariffs/${hardDeleteTariffId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(hardDeletedTariff.deleted, true);
+  assert.equal(hardDeletedTariff.hard_deleted, true);
+  assert.equal(hardDeletedTariff.mode, "hard");
+  assert.equal(hardDeletedTariff.affected.parentsLinked, 1);
+  assert.equal(hardDeletedTariff.affected.parentsUpdated, 0);
+
+  const afterHardDeleteTariffs = await request(baseUrl, "/v1/tariffs");
+
+  assert.equal(
+    afterHardDeleteTariffs.tariffs.some((tariff) => tariff.id === hardDeleteTariffId),
+    false
+  );
 
   const clickAmount = "49000.00";
   const mismatchedClickCheckout = await requestWithStatus(baseUrl, "/v1/billing/click/checkout", {
@@ -982,6 +1135,19 @@ try {
   assert.equal(
     parentSeriesWithChildFilter.series.some((movie) => movie.id === seriesItemId),
     false
+  );
+
+  const superAdminSeriesWithChildFilter = await request(
+    baseUrl,
+    `/v1/content/movies/${movieId}/series?childId=${encodeURIComponent(childId)}`,
+    {
+      headers: { authorization: `Bearer ${superAdminToken}` }
+    }
+  );
+
+  assert.equal(
+    superAdminSeriesWithChildFilter.series.some((movie) => movie.id === seriesItemId),
+    true
   );
 
   const deviceSeriesWithBlacklist = await request(baseUrl, `/v1/content/movies/${movieId}/series`, {

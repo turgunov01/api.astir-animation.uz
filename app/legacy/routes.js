@@ -51,6 +51,23 @@ const clickEnv = [
 ];
 const legacyTranscodeJobs = new Map();
 const maxLogTailBytes = 1024 * 1024;
+const latestTranscodingJobSelect = `
+  tj.id AS transcode_job_id,
+  tj.status AS transcode_job_status,
+  tj.error AS transcode_error,
+  tj.created_at AS transcode_job_created_at,
+  tj.started_at AS transcode_job_started_at,
+  tj.finished_at AS transcode_job_finished_at
+`;
+const latestTranscodingJobJoin = `
+  LEFT JOIN LATERAL (
+    SELECT id, status, error, created_at, started_at, finished_at
+    FROM transcoding_jobs
+    WHERE content_id = c.id
+    ORDER BY created_at DESC
+    LIMIT 1
+  ) tj ON true
+`;
 
 function requireClickEnv() {
   const missing = clickEnv.filter((name) => !process.env[name]);
@@ -92,6 +109,9 @@ function createSlug(value, fallback) {
 }
 
 function serializeContent(row) {
+  const transcodeError = row.transcode_error || row.status_error || row.error_message || null;
+  const transcodeStatus = row.transcode_status || row.transcode_job_status || row.status || "";
+
   return {
     id: row.id,
     title: row.title || {},
@@ -102,6 +122,20 @@ function serializeContent(row) {
     poster_url: row.poster_url || "",
     source_path: row.source_path || "",
     status: row.status,
+    transcode_status: transcodeStatus,
+    transcode_error: transcodeError,
+    status_error: transcodeError,
+    error_message: transcodeError,
+    transcoding_job: row.transcode_job_id
+      ? {
+          id: row.transcode_job_id,
+          status: row.transcode_job_status || "",
+          error: transcodeError,
+          created_at: row.transcode_job_created_at || null,
+          started_at: row.transcode_job_started_at || null,
+          finished_at: row.transcode_job_finished_at || null
+        }
+      : null,
     age_rating: row.age_rating || 0,
     duration_sec: row.duration_sec || 0,
     season_number: row.season_number,
@@ -146,6 +180,9 @@ function legacyStatusForMovie(movie) {
 }
 
 function serializeMovieAsLegacyContent(movie, seriesId = null) {
+  const transcodeError = movie.transcode?.error || null;
+  const transcodeStatus = movie.transcode?.status || legacyStatusForMovie(movie);
+
   return {
     id: movie.id,
     title: movie.title || {},
@@ -156,6 +193,11 @@ function serializeMovieAsLegacyContent(movie, seriesId = null) {
     poster_url: movie.poster?.url || "",
     source_path: movie.source?.path || "",
     status: legacyStatusForMovie(movie),
+    transcode_status: transcodeStatus,
+    transcode_error: transcodeError,
+    status_error: transcodeError,
+    error_message: transcodeError,
+    transcoding_job: null,
     age_rating: movie.age_rating || 0,
     duration_sec: movie.duration_sec || movie.duration || 0,
     season_number: movie.season_number,
@@ -362,6 +404,18 @@ function queryValues(value) {
     .filter(Boolean);
 }
 
+function firstBodyString(body, ...fields) {
+  for (const field of fields) {
+    const value = body?.[field];
+
+    if (value !== undefined && value !== null && value !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
 async function insertRow(db, table, attributes) {
   const entries = Object.entries(attributes).filter(([, value]) => value !== undefined);
   const columns = entries.map(([key]) => key);
@@ -404,6 +458,82 @@ async function getById(db, table, id) {
   }
 
   return result.rows[0];
+}
+
+async function findLegacyPlan(db, planId) {
+  const normalizedPlanId = String(planId || "").trim();
+
+  if (!normalizedPlanId) {
+    return null;
+  }
+
+  if (isUuid(normalizedPlanId)) {
+    const planById = await db.one("SELECT * FROM plans WHERE id = $1", [normalizedPlanId]);
+
+    if (planById) {
+      return planById;
+    }
+  }
+
+  return await db.one(
+    "SELECT * FROM plans WHERE lower(slug) = lower($1) OR lower(package_code) = lower($1) ORDER BY created_at DESC LIMIT 1",
+    [normalizedPlanId]
+  );
+}
+
+async function findTariff(tariffs, tariffId) {
+  const normalizedTariffId = String(tariffId || "").trim();
+
+  if (!normalizedTariffId || !tariffs?.findById) {
+    return null;
+  }
+
+  return await tariffs.findById(normalizedTariffId);
+}
+
+async function ensureLegacyPlanForTariff(db, tariff) {
+  const packageCode = tariff?.id || tariff?.code;
+
+  if (!packageCode) {
+    return null;
+  }
+
+  const existingPlan = await findLegacyPlan(db, packageCode);
+
+  if (existingPlan) {
+    return existingPlan;
+  }
+
+  const name = i18n(tariff.title || tariff.name || packageCode, packageCode);
+  const description = i18n(tariff.description || tariff.title || packageCode, packageCode);
+
+  return await insertRow(db, "plans", {
+    name,
+    description,
+    slug: createSlug(name, "plan"),
+    package_code: packageCode,
+    price_cents: toInteger(tariff.price_cents, 0),
+    currency: tariff.currency || "UZS",
+    duration_days: 30,
+    max_children: 1,
+    active: true
+  });
+}
+
+async function resolveAssignablePlan(db, tariffs, planId) {
+  const existingPlan = await findLegacyPlan(db, planId);
+
+  if (existingPlan) {
+    return existingPlan;
+  }
+
+  const tariff = await findTariff(tariffs, planId);
+
+  if (tariff) {
+    return await ensureLegacyPlanForTariff(db, tariff);
+  }
+
+  throw legacyError(404, "plan_not_found", "plan not found");
 }
 
 async function resolveCommentTarget(db, contentId, contentMovies = null) {
@@ -835,10 +965,12 @@ async function listLegacyContent(request, response) {
     `
       SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind,
         (SELECT COUNT(DISTINCT season_number)::integer FROM content ce WHERE ce.series_id = c.series_id) AS season_count,
-        (SELECT COUNT(*)::integer FROM content ce WHERE ce.series_id = c.series_id) AS episode_count
+        (SELECT COUNT(*)::integer FROM content ce WHERE ce.series_id = c.series_id) AS episode_count,
+        ${latestTranscodingJobSelect}
       FROM content c
       LEFT JOIN categories cat ON cat.id = c.category_id
       LEFT JOIN series s ON s.id = c.series_id
+      ${latestTranscodingJobJoin}
       ${where}
       ORDER BY c.created_at DESC
       LIMIT $${values.length - 1} OFFSET $${values.length}
@@ -1188,7 +1320,7 @@ async function maybeStartTranscode(db, config, content) {
   return job;
 }
 
-export function createLegacyRoutes({ config, contentMovies = null, media }) {
+export function createLegacyRoutes({ config, contentMovies = null, media, tariffs = null }) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
@@ -1444,10 +1576,34 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
   }));
 
   router.post("/users/:id/plan", requireSuperAdmin, asyncHandler(async (request, response) => {
-    requireFields(request.body, ["plan_id"]);
-    const plan = await getById(request.legacyDb, "plans", request.body.plan_id);
+    const planId = firstBodyString(request.body, "plan_id", "planId", "tariff_id", "tariffId");
+
+    if (!planId) {
+      throw legacyError(400, "plan_id is required");
+    }
+
+    if (!isUuid(request.params.id)) {
+      throw legacyError(404, "user_not_found", "user not found");
+    }
+
+    const user = await request.legacyDb.one(
+      "SELECT * FROM users WHERE id = $1 AND role = 'parent'",
+      [request.params.id]
+    );
+
+    if (!user) {
+      throw legacyError(404, "user_not_found", "user not found");
+    }
+
+    const plan = await resolveAssignablePlan(request.legacyDb, tariffs, planId);
     const startsAt = new Date().toISOString();
-    const endsAt = new Date(Date.now() + plan.duration_days * 24 * 60 * 60 * 1000).toISOString();
+    const durationDays = toInteger(request.body.duration_days ?? request.body.durationDays, plan.duration_days || 30);
+    const endsAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+    await request.legacyDb.query(
+      "UPDATE subscriptions SET status = 'canceled', updated_at = now() WHERE user_id = $1 AND status IN ('active', 'pending')",
+      [request.params.id]
+    );
     const subscription = await insertRow(request.legacyDb, "subscriptions", {
       user_id: request.params.id,
       plan_id: plan.id,
@@ -2038,7 +2194,13 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
   router.get("/series/:id/episodes", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
     const rows = await request.legacyDb.many(
-      "SELECT * FROM content WHERE series_id = $1 AND published = true ORDER BY season_number NULLS FIRST, episode_number NULLS FIRST, created_at",
+      `
+        SELECT c.*, ${latestTranscodingJobSelect}
+        FROM content c
+        ${latestTranscodingJobJoin}
+        WHERE c.series_id = $1 AND c.published = true
+        ORDER BY c.season_number NULLS FIRST, c.episode_number NULLS FIRST, c.created_at
+      `,
       [request.params.id]
     );
     const movieRows = movieEpisodesForSeries(contentMovies, request.params.id);
@@ -2119,7 +2281,14 @@ export function createLegacyRoutes({ config, contentMovies = null, media }) {
 
     await assertCanAccessContent(request.legacyDb, request.legacyActor, request.params.id);
     const row = await request.legacyDb.one(
-      "SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind FROM content c LEFT JOIN categories cat ON cat.id = c.category_id LEFT JOIN series s ON s.id = c.series_id WHERE c.id = $1",
+      `
+        SELECT c.*, cat.kind AS category_kind, s.kind AS series_kind, ${latestTranscodingJobSelect}
+        FROM content c
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        LEFT JOIN series s ON s.id = c.series_id
+        ${latestTranscodingJobJoin}
+        WHERE c.id = $1
+      `,
       [request.params.id]
     );
     if (!row) {

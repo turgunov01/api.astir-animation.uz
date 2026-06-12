@@ -10,6 +10,7 @@ import { createLegacyRoutes } from "./legacy/routes.js";
 import { createLegacySwaggerForRequest } from "./legacy/swagger.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { requestContext } from "./middleware/requestContext.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import { openApiDocument } from "./openapi.js";
 import { createRoutes } from "./routes/index.js";
 import { createSwaggerIndexPage } from "./swagger/indexPage.js";
@@ -20,10 +21,11 @@ export function createApp({ container = createContainer() } = {}) {
   const app = express();
 
   app.disable("x-powered-by");
+  app.use(requestContext);
+  app.use(requestLogger);
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: false }));
-  app.use(requestContext);
 
   const legacyDb = createLegacyDb();
   const legacyMedia = createLegacyMedia({
@@ -111,7 +113,8 @@ export function createApp({ container = createContainer() } = {}) {
     createLegacyRoutes({
       config: container.config,
       contentMovies: container.repositories.contentMovies,
-      media: legacyMedia
+      media: legacyMedia,
+      tariffs: container.repositories.tariffs
     })
   );
   

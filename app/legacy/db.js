@@ -2,15 +2,70 @@ import pg from "pg";
 import { i18n } from "./utils.js";
 
 const { Pool } = pg;
+const localDatabaseHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function parseBoolean(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return ["1", "true", "yes", "require"].includes(String(value).toLowerCase());
+}
+
+function databaseUrlInfo(databaseUrl) {
+  try {
+    const url = new URL(databaseUrl);
+
+    return {
+      host: url.hostname,
+      sslMode: url.searchParams.get("sslmode")
+    };
+  } catch {
+    return {
+      host: "",
+      sslMode: null
+    };
+  }
+}
+
+export function createPgPoolOptions({
+  databaseUrl = process.env.DATABASE_URL,
+  databaseSsl = process.env.DATABASE_SSL,
+  databaseSslRejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED
+} = {}) {
+  const options = {
+    connectionString: databaseUrl
+  };
+  const { host, sslMode } = databaseUrlInfo(databaseUrl);
+  const explicitSsl = parseBoolean(databaseSsl);
+  const useSsl = explicitSsl ?? (
+    sslMode === "require"
+    || sslMode === "verify-ca"
+    || sslMode === "verify-full"
+    || Boolean(host && !localDatabaseHosts.has(host))
+  );
+
+  if (sslMode === "disable" && explicitSsl === null) {
+    return options;
+  }
+
+  if (useSsl) {
+    const explicitRejectUnauthorized = parseBoolean(databaseSslRejectUnauthorized);
+
+    options.ssl = {
+      rejectUnauthorized: explicitRejectUnauthorized ?? (sslMode === "verify-ca" || sslMode === "verify-full")
+    };
+  }
+
+  return options;
+}
 
 export function createLegacyDb({ databaseUrl = process.env.DATABASE_URL } = {}) {
   if (!databaseUrl) {
     return null;
   }
 
-  const pool = new Pool({
-    connectionString: databaseUrl
-  });
+  const pool = new Pool(createPgPoolOptions({ databaseUrl }));
 
   return {
     pool,

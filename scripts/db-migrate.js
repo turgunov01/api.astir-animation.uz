@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import pg from "pg";
+import { createPgPoolOptions } from "../app/legacy/db.js";
 
 const { Pool } = pg;
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,9 +14,7 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
-});
+const pool = new Pool(createPgPoolOptions());
 
 async function ensureMigrationsTable(client) {
   await client.query(`

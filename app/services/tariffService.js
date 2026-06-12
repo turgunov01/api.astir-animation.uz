@@ -85,6 +85,10 @@ function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== "") || null;
 }
 
+function parentTariffId(parent) {
+  return firstValue(parent?.tariff, parent?.tariffId, parent?.tariff_id);
+}
+
 export function createTariffService({ parents, subscriptions, tariffs }) {
   function seedDefaultTariffs() {
     for (const tariff of defaultTariffs) {
@@ -219,34 +223,50 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       );
     },
 
-    deleteTariff(tariffId) {
+    async deleteTariff(tariffId, { hard = false } = {}) {
       const tariff = getTariffRecord(tariffId);
 
       if (tariff.is_default) {
         throw badRequest("Default tariff cannot be deleted", "DEFAULT_TARIFF_DELETE_FORBIDDEN");
       }
 
-      // Get the free/default tariff
-      const freeTariff = defaultTariff();
+      const subscriptionsUsingTariff = await subscriptions.listByTariffId(tariff.id);
+      const parentRows = parents?.list ? await parents.list() : [];
+      const parentsUsingTariff = parentRows.filter((parent) => parentTariffId(parent) === tariff.id);
 
-      // Cascade: Update all subscriptions using this tariff to free tariff
-      const subscriptionsUsingTariff = subscriptions.listByTariffId(tariff.id);
-      for (const subscription of subscriptionsUsingTariff) {
-        subscriptions.update(subscription.id, { tariffId: freeTariff.id });
+      if (!hard) {
+        const freeTariff = defaultTariff();
+
+        if (!freeTariff) {
+          throw badRequest("Default tariff was not found", "DEFAULT_TARIFF_NOT_FOUND");
+        }
+
+        for (const subscription of subscriptionsUsingTariff) {
+          await subscriptions.update(subscription.id, { tariffId: freeTariff.id });
+        }
+
+        for (const parent of parentsUsingTariff) {
+          if (parents?.update) {
+            await parents.update(parent.id, { tariff: freeTariff.id });
+          }
+        }
       }
+      const deletedTariff = tariffs.delete(tariff.id);
 
-      // Cascade: Update all parent accounts using this tariff to free tariff
-      const parentsUsingTariff = parents.list().filter((parent) => parent.tariff === tariff.id);
-      for (const parent of parentsUsingTariff) {
-        parents.update(parent.id, { tariff: freeTariff.id });
+      if (!deletedTariff) {
+        throw notFound("Tariff not found", "TARIFF_NOT_FOUND");
       }
 
       return {
         deleted: true,
-        tariff: serializeTariff(tariffs.delete(tariff.id)),
+        hard_deleted: hard,
+        mode: hard ? "hard" : "cascade_to_default",
+        tariff: serializeTariff(deletedTariff),
         affected: {
-          subscriptionsUpdated: subscriptionsUsingTariff.length,
-          parentsUpdated: parentsUsingTariff.length
+          subscriptionsLinked: subscriptionsUsingTariff.length,
+          parentsLinked: parentsUsingTariff.length,
+          subscriptionsUpdated: hard ? 0 : subscriptionsUsingTariff.length,
+          parentsUpdated: hard ? 0 : parentsUsingTariff.length
         }
       };
     },
@@ -259,11 +279,11 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       return tariffs.list().map(serializeTariff);
     },
 
-    updateParentTariff(parent, tariffId) {
+    async updateParentTariff(parent, tariffId) {
       const tariff = getTariffRecord(tariffId);
-      const updatedParent = parents.update(parent.id, {
-        tariff: tariff.id
-      }) || { ...parent, tariff: tariff.id };
+      const updatedParent = parents?.update
+        ? await parents.update(parent.id, { tariff: tariff.id }) || { ...parent, tariff: tariff.id }
+        : { ...parent, tariff: tariff.id };
       const currentTariff = currentTariffForParent(updatedParent);
 
       return tariffResponse(

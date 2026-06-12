@@ -37,6 +37,7 @@ const catalog = [
     durationMinutes: 24
   }
 ];
+const adminRoles = new Set(["admin", "super_admin"]);
 
 function toLocalizedText(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -140,6 +141,7 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
   const videoUrl = sourceUrl(movie.source);
   const posterUrl = sourceUrl(movie.poster);
   const transcodeStatus = movie.transcode?.status || "missing_source";
+  const transcodeError = movie.transcode?.error || null;
   const hlsUrl = movie.transcode?.hlsUrl || null;
   const renditions = serializeRenditions(movie.transcode?.renditions);
   const qualities = hlsUrl || renditions.length > 0
@@ -188,6 +190,9 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     video_url: videoUrl,
     storage_path: movie.source?.path || null,
     transcode_status: transcodeStatus,
+    transcode_error: transcodeError,
+    status_error: transcodeError,
+    error_message: transcodeError,
     age_rating: movie.age_rating ?? 0,
     duration_sec: durationSeconds,
     duration_seconds: durationSeconds,
@@ -214,7 +219,7 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
       auto_url: hlsUrl,
       qualities,
       renditions,
-      error: movie.transcode?.error || null
+      error: transcodeError
     }
   };
 }
@@ -553,6 +558,14 @@ function actorOwnerId(actor) {
   return null;
 }
 
+function actorRole(actor) {
+  return firstValue(actor?.parent?.role, actor?.user?.role, actor?.role);
+}
+
+function isAdminActor(actor) {
+  return adminRoles.has(actorRole(actor));
+}
+
 function actorBlacklistTarget(actor) {
   const explicitTarget = actor?.blacklistTarget;
 
@@ -600,7 +613,7 @@ export function createContentService({
   async function actorWithChildBlacklist(actor, childId = "") {
     const normalizedChildId = String(childId || "").trim();
 
-    if (!normalizedChildId || actor?.type === "device") {
+    if (!normalizedChildId || actor?.type === "device" || isAdminActor(actor)) {
       return actor;
     }
 
@@ -1103,9 +1116,12 @@ export function createContentService({
       actor = await actorWithChildBlacklist(actor, childId);
 
       const movie = getMovieRecord(movieId);
+      const adminActor = isAdminActor(actor);
 
-      tariffService.assertCanWatchMovie(actor, movie);
-      assertMovieNotBlacklisted(actor, movie);
+      if (!adminActor) {
+        tariffService.assertCanWatchMovie(actor, movie);
+        assertMovieNotBlacklisted(actor, movie);
+      }
 
       const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
       const likeContext = likeContextForActor(actor);
@@ -1114,8 +1130,8 @@ export function createContentService({
         movie: await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode)
-            .filter((item) => tariffService.canWatchMovie(actor, item))
-            .filter((item) => !isMovieBlacklistedForActor(actor, item)),
+            .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
+            .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item)),
           contentTags,
           contentMovieTags,
           likeContext
@@ -1127,17 +1143,20 @@ export function createContentService({
       actor = await actorWithChildBlacklist(actor, childId);
 
       const movie = getMovieRecord(movieId);
+      const adminActor = isAdminActor(actor);
 
-      tariffService.assertCanWatchMovie(actor, movie);
-      assertMovieNotBlacklisted(actor, movie);
+      if (!adminActor) {
+        tariffService.assertCanWatchMovie(actor, movie);
+        assertMovieNotBlacklisted(actor, movie);
+      }
       const likeContext = likeContextForActor(actor);
 
       return {
         movie_id: movie.id,
         series: await Promise.all(
           listSeriesRecords(movie)
-            .filter((item) => tariffService.canWatchMovie(actor, item))
-            .filter((item) => !isMovieBlacklistedForActor(actor, item))
+            .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
+            .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item))
             .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
         )
       };
@@ -1173,6 +1192,7 @@ export function createContentService({
       actor = await actorWithChildBlacklist(actor, childId);
 
       const likeContext = likeContextForActor(actor);
+      const adminActor = isAdminActor(actor);
       const categoryValues = categoryFilterValues(contentCategories, category);
       const filterTagIds = await tagFilterIds(contentTags, tags);
       const currentPage = Math.max(Number(page) || 1, 1);
@@ -1181,8 +1201,8 @@ export function createContentService({
       const movieRows = await Promise.all(
         contentMovies.list()
           .filter((movie) => !isSeriesMovie(movie))
-          .filter((movie) => tariffService.canWatchMovie(actor, movie))
-          .filter((movie) => !isMovieBlacklistedForActor(actor, movie))
+          .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
+          .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
           .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
           .filter((movie) => movieMatchesSearch(movie, q))
           .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
@@ -1218,11 +1238,12 @@ export function createContentService({
       actor = await actorWithChildBlacklist(actor, childId);
 
       const likeContext = likeContextForActor(actor);
+      const adminActor = isAdminActor(actor);
       const maxItems = Math.max(Number(limit) || 20, 1);
       const movies = contentMovies.list()
         .filter((movie) => !isSeriesMovie(movie))
-        .filter((movie) => tariffService.canWatchMovie(actor, movie))
-        .filter((movie) => !isMovieBlacklistedForActor(actor, movie))
+        .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
+        .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
         .sort((left, right) => (
           (metricValue(right.views_count) + metricValue(right.series_views_count))
           - (metricValue(left.views_count) + metricValue(left.series_views_count))

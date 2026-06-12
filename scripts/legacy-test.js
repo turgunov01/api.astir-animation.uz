@@ -171,6 +171,123 @@ try {
   assert.equal(gatedBody.error, "database_unavailable");
   assert.equal(typeof gatedBody.message.en, "string");
 
+  const assignParentId = "ee4c9500-4d82-4800-b6c0-580a420d9d6d";
+  const assignPlanId = "c15bbdb4-1c51-4dbb-a439-cf849619547d";
+  const assignQueries = [];
+  const assignDb = {
+    one(sql, values) {
+      assignQueries.push({ method: "one", sql, values });
+
+      if (/FROM users WHERE id = \$1 AND active = true/.test(sql)) {
+        return values[0] === superAdmin.id ? superAdmin : null;
+      }
+
+      if (/FROM users WHERE id = \$1 AND role = 'parent'/.test(sql)) {
+        return values[0] === assignParentId
+          ? { id: assignParentId, role: "parent", active: true }
+          : null;
+      }
+
+      if (/FROM plans WHERE lower\(slug\)/.test(sql)) {
+        return null;
+      }
+
+      throw new Error(`unexpected assign one query: ${sql}`);
+    },
+    many() {
+      throw new Error("unexpected assign many query");
+    },
+    query(sql, values) {
+      assignQueries.push({ method: "query", sql, values });
+
+      if (/INSERT INTO plans/.test(sql)) {
+        return {
+          rows: [{
+            id: assignPlanId,
+            name: values[0],
+            description: values[1],
+            slug: values[2],
+            package_code: values[3],
+            price_cents: values[4],
+            currency: values[5],
+            duration_days: values[6],
+            max_children: values[7],
+            active: values[8]
+          }]
+        };
+      }
+
+      if (/UPDATE subscriptions SET status = 'canceled'/.test(sql)) {
+        return { rows: [] };
+      }
+
+      if (/INSERT INTO subscriptions/.test(sql)) {
+        return {
+          rows: [{
+            id: "4892b175-5216-4f37-a03e-4063be04fddf",
+            user_id: values[0],
+            plan_id: values[1],
+            status: values[2],
+            starts_at: values[3],
+            ends_at: values[4],
+            auto_renew: values[5]
+          }]
+        };
+      }
+
+      throw new Error(`unexpected assign write: ${sql}`);
+    }
+  };
+  const assignApp = express();
+  assignApp.use(express.json());
+  assignApp.use((request, response, next) => {
+    request.legacyDb = assignDb;
+    next();
+  });
+  assignApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    contentMovies: null,
+    media: {
+      upload() {
+        return { single: () => (request, response, next) => next() };
+      }
+    },
+    tariffs: {
+      findById(id) {
+        return id === "premium"
+          ? {
+              id: "premium",
+              title: { en: "Premium", ru: "Premium", uz: "Premium" },
+              description: { en: "Premium access", ru: "Premium access", uz: "Premium access" },
+              price_cents: 4900000,
+              currency: "UZS"
+            }
+          : null;
+      }
+    }
+  }));
+  const assignServer = await listenApp(assignApp);
+
+  try {
+    const assignResponse = await fetch(`http://127.0.0.1:${assignServer.address().port}/api/v1/users/${assignParentId}/plan`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${legacyUserToken(superAdmin)}`
+      },
+      body: JSON.stringify({ tariff_id: "premium" })
+    });
+    const assignBody = await assignResponse.json();
+
+    assert.equal(assignResponse.status, 201);
+    assert.equal(assignBody.user_id, assignParentId);
+    assert.equal(assignBody.plan_id, assignPlanId);
+    assert.equal(assignQueries.some((query) => query.method === "query" && /INSERT INTO plans/.test(query.sql) && query.values[3] === "premium"), true);
+    assert.equal(assignQueries.some((query) => query.method === "query" && /UPDATE subscriptions SET status = 'canceled'/.test(query.sql)), true);
+  } finally {
+    await closeServer(assignServer);
+  }
+
   const missingContentId = "165f1d6e-2fb6-4785-812f-5fd18c020cfd";
   const movieContentId = "791bfc32-2ce1-44f3-a1b0-91da4c70aa1b";
   const movieSeriesId = "87d4f2af-ee4d-4783-b905-971a392ba483";
@@ -204,7 +321,7 @@ try {
     many(sql, values) {
       fakeQueries.push({ method: "many", sql, values });
 
-      if (/FROM content WHERE series_id = \$1/.test(sql)) {
+      if (/FROM content c[\s\S]*WHERE c\.series_id = \$1/.test(sql)) {
         return [];
       }
 

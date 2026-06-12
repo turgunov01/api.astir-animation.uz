@@ -1,6 +1,7 @@
 import "dotenv/config";
 import pg from "pg";
 import { hashSecret } from "../app/lib/security.js";
+import { createPgPoolOptions } from "../app/legacy/db.js";
 
 const { Pool } = pg;
 
@@ -12,9 +13,7 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
-});
+const pool = new Pool(createPgPoolOptions());
 
 async function run() {
   const email = process.env.SUPER_ADMIN_EMAIL.toLowerCase();

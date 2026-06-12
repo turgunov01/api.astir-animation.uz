@@ -77,6 +77,30 @@ function pricingAttributes(body, { defaults = false } = {}) {
   return attributes;
 }
 
+function optionalDeleteBoolean(request, defaultValue, ...fields) {
+  for (const source of [request.query, request.body]) {
+    for (const field of fields) {
+      const value = source?.[field];
+
+      if (value !== undefined && value !== null && value !== "") {
+        return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+      }
+    }
+  }
+
+  return defaultValue;
+}
+
+function hardDeleteRequested(request) {
+  const cascade = optionalDeleteBoolean(request, false, "cascade", "cascade_to_default", "cascadeToDefault");
+
+  if (cascade) {
+    return false;
+  }
+
+  return optionalDeleteBoolean(request, true, "hard", "force");
+}
+
 export function createTariffController({ tariffService }) {
   return {
     create(request, response) {
@@ -102,8 +126,10 @@ export function createTariffController({ tariffService }) {
       response.json(tariffService.currentForActor(request.actor));
     },
 
-    delete(request, response) {
-      response.json(tariffService.deleteTariff(request.params.tariff_id));
+    async delete(request, response) {
+      response.json(await tariffService.deleteTariff(request.params.tariff_id, {
+        hard: hardDeleteRequested(request)
+      }));
     },
 
     get(request, response) {
@@ -148,8 +174,8 @@ export function createTariffController({ tariffService }) {
       });
     },
 
-    updateCurrent(request, response) {
-      response.json(tariffService.updateParentTariff(
+    async updateCurrent(request, response) {
+      response.json(await tariffService.updateParentTariff(
         request.parent,
         requiredString(request.body, "tariff")
       ));

@@ -339,6 +339,9 @@ try {
   assert.equal(createResponse.body.data.media.has_source, true);
   assert.equal(createResponse.body.data.media.original_name, "upload-test.mp4");
   assert.equal(createResponse.body.data.transcode_status, "queued");
+  assert.equal(createResponse.body.data.transcode_error, null);
+  assert.equal(createResponse.body.data.status_error, null);
+  assert.equal(createResponse.body.data.error_message, null);
   assert.equal(typeof createResponse.body.data.transcode_job_id, "string");
   assert.match(createResponse.body.data.video_url, /^\/media\/uploads\//);
   assert.equal(createResponse.body.data.tag_ids.includes(updatedTag.body.tag.id), true);

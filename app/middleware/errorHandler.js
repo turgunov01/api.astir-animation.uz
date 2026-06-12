@@ -1,5 +1,30 @@
 import { AppError } from "../lib/errors.js";
 
+function logRequestError(error, request, statusCode) {
+  const payload = {
+    event: "http_error",
+    requestId: request.id || null,
+    method: request.method,
+    url: request.originalUrl || request.url,
+    statusCode,
+    errorName: error.name || "Error",
+    errorMessage: error.message || "Internal server error"
+  };
+
+  if (process.env.NODE_ENV !== "production" && error.stack) {
+    payload.stack = error.stack;
+  }
+
+  const line = JSON.stringify(payload);
+
+  if (statusCode >= 500) {
+    console.error(line);
+    return;
+  }
+
+  console.warn(line);
+}
+
 export function notFoundHandler(request, response) {
   response.status(404).json({
     error: {
@@ -44,6 +69,7 @@ export function errorHandler(error, request, response, next) {
   }
 
   if (error instanceof AppError) {
+    logRequestError(error, request, error.statusCode);
     response.status(error.statusCode).json({
       code: error.code,
       message: error.message,
@@ -57,6 +83,7 @@ export function errorHandler(error, request, response, next) {
     return;
   }
 
+  logRequestError(error, request, 500);
   response.status(500).json({
     error: {
       code: "INTERNAL_SERVER_ERROR",
