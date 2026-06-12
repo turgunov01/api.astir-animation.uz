@@ -13,16 +13,16 @@ export function requestLogger(request, response, next) {
     const contentLength = response.getHeader("content-length");
 
     console.info(JSON.stringify({
-      event: "http_request",
-      requestId: request.id || null,
+      // event: "http_request",
+      // requestId: request.id || null,
       method: request.method,
       url: request.originalUrl || request.url,
       statusCode: response.statusCode,
-      durationMs: Number(elapsedMs(startedAt).toFixed(2)),
+      // durationMs: Number(elapsedMs(startedAt).toFixed(2)),
       ip: firstHeaderValue(request.get("x-forwarded-for")) || request.ip || request.socket?.remoteAddress || "",
       userAgent: request.get("user-agent") || "",
-      referer: request.get("referer") || request.get("referrer") || "",
-      contentLength: contentLength === undefined ? null : Number(contentLength)
+      // referer: request.get("referer") || request.get("referrer") || "",
+      // contentLength: contentLength === undefined ? null : Number(contentLength)
     }));
   });
 
