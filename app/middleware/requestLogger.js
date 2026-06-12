@@ -12,7 +12,7 @@ export function requestLogger(request, response, next) {
   response.on("finish", () => {
     const contentLength = response.getHeader("content-length");
 
-    if (request.statusCode >= 400) {
+    if (response.statusCode >= 400) {
       console.info(JSON.stringify({
         // event: "http_request",
         // requestId: request.id || null,
