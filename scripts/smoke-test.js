@@ -20,6 +20,7 @@ process.env.CLICK_RETURN_URL = "https://astir.example/payments/return";
 
 const { createServer } = await import("../app/server.js");
 const { createTariffService } = await import("../app/services/tariffService.js");
+const { createPostgresParentRepository } = await import("../app/repositories/postgresParentRepository.js");
 
 const server = createServer();
 
@@ -211,8 +212,59 @@ async function assertAsyncParentTariffDelete() {
   }]);
 }
 
+async function assertPostgresParentRepositoryPersistsTariff() {
+  const storedParent = {
+    id: "pg-parent-id",
+    email: "pg-parent@example.com",
+    password_hash: "password-hash",
+    pin_hash: "pin-hash",
+    name: "Postgres Parent",
+    role: "parent",
+    active: true,
+    avatar_url: null,
+    tariff: "free",
+    created_at: "2026-06-12T00:00:00.000Z",
+    updated_at: "2026-06-12T00:00:00.000Z"
+  };
+  const resultRow = () => ({
+    id: storedParent.id,
+    email: storedParent.email,
+    passwordHash: storedParent.password_hash,
+    pinHash: storedParent.pin_hash,
+    name: storedParent.name,
+    role: storedParent.role,
+    active: storedParent.active,
+    avatarUrl: storedParent.avatar_url,
+    tariff: storedParent.tariff,
+    createdAt: storedParent.created_at,
+    updatedAt: storedParent.updated_at
+  });
+  const parents = createPostgresParentRepository({
+    async query(sql, values = []) {
+      if (sql.includes("SELECT")) {
+        assert.match(sql, /\btariff\b/);
+        return { rows: [resultRow()] };
+      }
+
+      if (sql.includes("UPDATE users")) {
+        assert.match(sql, /\btariff = \$/);
+        storedParent.tariff = values[0];
+        return { rows: [resultRow()] };
+      }
+
+      throw new Error(`Unexpected SQL in fake Postgres parent repository: ${sql}`);
+    }
+  });
+
+  const updated = await parents.update(storedParent.id, { tariff: "premium" });
+
+  assert.equal(updated.tariff, "premium");
+  assert.equal((await parents.findById(storedParent.id)).tariff, "premium");
+}
+
 try {
   await assertAsyncParentTariffDelete();
+  await assertPostgresParentRepositoryPersistsTariff();
 
   const parentEmail = `smoke-${Date.now()}@example.com`;
   const unverifiedRegistration = await requestWithStatus(baseUrl, "/v1/auth/register", {

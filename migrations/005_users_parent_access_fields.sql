@@ -1,0 +1,3 @@
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS tariff text NOT NULL DEFAULT 'free',
+  ADD COLUMN IF NOT EXISTS pin_hash text;
