@@ -1587,7 +1587,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
     }
 
     const user = await request.legacyDb.one(
-      "SELECT * FROM users WHERE id = $1 AND role = 'parent'",
+      "SELECT * FROM users WHERE id = $1",
       [request.params.id]
     );
 
