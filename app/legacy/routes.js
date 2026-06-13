@@ -685,6 +685,16 @@ async function ownerUserIdForActor(db, actor) {
   return null;
 }
 
+async function requireOwnerUserIdForActor(db, actor) {
+  const userId = await ownerUserIdForActor(db, actor);
+
+  if (!userId) {
+    throw legacyError(403, "forbidden", "user token is required");
+  }
+
+  return userId;
+}
+
 async function activeSubscription(db, userId) {
   return db.one(
     `
@@ -2401,11 +2411,12 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
     response.json(messageResponse("updated"));
   }));
 
-  router.get("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
+  router.get("/content/:id/like", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
     const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
     const row = await request.legacyDb.one(
       "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
-      [request.legacyUser.id, target.type, target.id]
+      [userId, target.type, target.id]
     );
 
     response.json({
@@ -2415,7 +2426,8 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
     });
   }));
 
-  router.post("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
+  router.post("/content/:id/like", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
     const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
     await request.legacyDb.query(
       `
@@ -2423,7 +2435,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
         VALUES ($1, $2, $3, $4)
         ON CONFLICT DO NOTHING
       `,
-      [request.legacyUser.id, target.contentId, target.type, target.id]
+      [userId, target.contentId, target.type, target.id]
     );
 
     response.status(201).json({
@@ -2433,11 +2445,12 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
     });
   }));
 
-  router.delete("/content/:id/like", requireUser, asyncHandler(async (request, response) => {
+  router.delete("/content/:id/like", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
     const target = await resolveLikeTarget(request.legacyDb, request.params.id, requestedLikeTargetType(request));
     await request.legacyDb.query(
       "DELETE FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
-      [request.legacyUser.id, target.type, target.id]
+      [userId, target.type, target.id]
     );
 
     response.json({
@@ -2462,7 +2475,8 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
     });
   }));
 
-  router.get("/me/likes", requireUser, asyncHandler(async (request, response) => {
+  router.get("/me/likes", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
     const rows = await request.legacyDb.many(
       `
         SELECT
@@ -2478,7 +2492,7 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
           AND (c.id IS NOT NULL OR s.id IS NOT NULL)
         ORDER BY l.created_at DESC
       `,
-      [request.legacyUser.id]
+      [userId]
     );
     response.json({
       data: rows.map((row) => {

@@ -86,6 +86,19 @@ function legacyUserToken(user) {
   );
 }
 
+function legacyChildDeviceToken(device) {
+  return jwt.sign(
+    {
+      sub: device.id,
+      kind: "child_device",
+      device_id: device.id,
+      child_id: device.child_id
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+}
+
 function runLegacyGuard(guard, user) {
   const token = legacyUserToken(user);
   const request = {
@@ -183,6 +196,12 @@ try {
       }
 
       if (/FROM users WHERE id = \$1 AND role = 'parent'/.test(sql)) {
+        return values[0] === assignParentId
+          ? { id: assignParentId, role: "parent", active: true }
+          : null;
+      }
+
+      if (/FROM users WHERE id = \$1$/.test(sql)) {
         return values[0] === assignParentId
           ? { id: assignParentId, role: "parent", active: true }
           : null;
@@ -465,6 +484,161 @@ try {
     assert.equal(seriesEpisodesBody[0].series_id, movieSeriesId);
   } finally {
     await closeServer(commentsServer);
+  }
+
+  const likeParentId = "9df0170b-f0c7-4f47-b2af-c99787704633";
+  const likeChildId = "1e4c8fa8-9465-4a58-840b-284a2f91b7a8";
+  const likeDevice = {
+    id: "d4d42403-e64b-41a5-bff7-6c7645e452b5",
+    child_id: likeChildId
+  };
+  const likedSeriesId = "650135c9-21ec-40f2-bf6e-84e72d6c9ad2";
+  const likedSeriesRow = {
+    id: likedSeriesId,
+    title: { en: "Liked Series", ru: "Liked Series RU", uz: "Liked Series UZ" },
+    description: { en: "Series description" },
+    kind: "seasons",
+    slug: "liked-series",
+    active: true,
+    created_at: "2026-06-01T00:00:00.000Z",
+    updated_at: "2026-06-01T00:00:00.000Z"
+  };
+  const likeRows = [];
+  const likesDb = {
+    one(sql, values) {
+      if (/FROM child_devices WHERE id = \$1 AND revoked_at IS NULL/.test(sql)) {
+        return values[0] === likeDevice.id ? likeDevice : null;
+      }
+
+      if (/SELECT parent_id FROM children WHERE id = \$1/.test(sql)) {
+        return values[0] === likeChildId ? { parent_id: likeParentId } : null;
+      }
+
+      if (/SELECT id FROM content WHERE id = \$1/.test(sql)) {
+        return null;
+      }
+
+      if (/SELECT id FROM series WHERE id = \$1/.test(sql)) {
+        return values[0] === likedSeriesId ? { id: likedSeriesId } : null;
+      }
+
+      if (/SELECT 1 FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
+        return likeRows.some((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+        ))
+          ? { "?column?": 1 }
+          : null;
+      }
+
+      throw new Error(`unexpected likes one query: ${sql}`);
+    },
+    many(sql, values) {
+      if (/FROM likes l[\s\S]*LEFT JOIN series s/.test(sql)) {
+        return likeRows
+          .filter((row) => row.user_id === values[0] && row.target_type === "series" && row.target_id === likedSeriesId)
+          .map((row) => ({
+            target_type: row.target_type,
+            target_id: row.target_id,
+            liked_at: row.created_at,
+            content_row: null,
+            series_row: likedSeriesRow
+          }));
+      }
+
+      throw new Error(`unexpected likes many query: ${sql}`);
+    },
+    query(sql, values) {
+      if (/INSERT INTO likes/.test(sql)) {
+        const [userId, contentId, targetType, targetId] = values;
+        if (!likeRows.some((row) => row.user_id === userId && row.target_type === targetType && row.target_id === targetId)) {
+          likeRows.push({
+            user_id: userId,
+            content_id: contentId,
+            target_type: targetType,
+            target_id: targetId,
+            created_at: "2026-06-13T00:00:00.000Z"
+          });
+        }
+        return { rows: [] };
+      }
+
+      if (/DELETE FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
+        const index = likeRows.findIndex((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+        ));
+        if (index !== -1) {
+          likeRows.splice(index, 1);
+        }
+        return { rows: [] };
+      }
+
+      throw new Error(`unexpected likes write: ${sql}`);
+    }
+  };
+  const likesApp = express();
+  likesApp.use(express.json());
+  likesApp.use((request, response, next) => {
+    request.legacyDb = likesDb;
+    next();
+  });
+  likesApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    media: fakeMedia
+  }));
+  const likesServer = await listenApp(likesApp);
+
+  try {
+    const likesBaseUrl = `http://127.0.0.1:${likesServer.address().port}`;
+    const childDeviceHeaders = {
+      authorization: `Bearer ${legacyChildDeviceToken(likeDevice)}`
+    };
+    const initialLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
+      headers: childDeviceHeaders
+    });
+    const initialLikeBody = await initialLikeResponse.json();
+
+    assert.equal(initialLikeResponse.status, 200);
+    assert.equal(initialLikeBody.liked, false);
+    assert.equal(initialLikeBody.target_type, "series");
+    assert.equal(initialLikeBody.target_id, likedSeriesId);
+
+    const createLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const createLikeBody = await createLikeResponse.json();
+
+    assert.equal(createLikeResponse.status, 201);
+    assert.equal(createLikeBody.liked, true);
+    assert.equal(createLikeBody.target_type, "series");
+    assert.equal(likeRows[0].user_id, likeParentId);
+    assert.equal(likeRows[0].content_id, null);
+
+    const likedListResponse = await fetch(`${likesBaseUrl}/api/v1/me/likes`, {
+      headers: childDeviceHeaders
+    });
+    const likedListBody = await likedListResponse.json();
+
+    assert.equal(likedListResponse.status, 200);
+    assert.equal(likedListBody.data.length, 1);
+    assert.equal(likedListBody.data[0].item_type, "series");
+    assert.equal(likedListBody.data[0].target_id, likedSeriesId);
+
+    const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
+      method: "DELETE",
+      headers: childDeviceHeaders
+    });
+    const deleteLikeBody = await deleteLikeResponse.json();
+
+    assert.equal(deleteLikeResponse.status, 200);
+    assert.equal(deleteLikeBody.liked, false);
+    assert.equal(likeRows.length, 0);
+  } finally {
+    await closeServer(likesServer);
   }
 
   const seriesPosterId = "069f50f5-e0c8-48d3-adc2-d2647ba16d36";
