@@ -4,7 +4,8 @@ const defaultLimit = {
   dailyMinutes: 60,
   allowedFrom: "08:00",
   allowedTo: "20:00",
-  allowedDays: [1, 2, 3, 4, 5, 6, 7]
+  allowedDays: [1, 2, 3, 4, 5, 6, 7],
+  allowedDates: []
 };
 
 export function serializeChild(child) {

@@ -1,4 +1,4 @@
-import { allowedDays, requiredInteger, requiredString, timeOfDay } from "../lib/validation.js";
+import { allowedDates, allowedDays, requiredInteger, requiredString, timeOfDay } from "../lib/validation.js";
 
 function requiredContentId(body) {
   return requiredString({
@@ -36,7 +36,8 @@ export function createChildrenController({ childService }) {
         dailyMinutes: requiredInteger(request.body, "dailyMinutes", { min: 1, max: 1440 }),
         allowedFrom: timeOfDay(request.body, "allowedFrom"),
         allowedTo: timeOfDay(request.body, "allowedTo"),
-        allowedDays: allowedDays(request.body)
+        allowedDays: allowedDays(request.body),
+        allowedDates: allowedDates(request.body)
       });
 
       response.json({ limit });

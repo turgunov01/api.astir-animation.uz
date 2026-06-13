@@ -145,7 +145,7 @@ try {
 
   assert.equal(doc.swagger, legacyRaw.swagger);
   assert.equal(doc.info.title, "Astir Streaming API");
-  assert.equal(doc.basePath, "/api/v1");
+  assert.equal(doc.basePath, "/v1");
   assert.equal(doc.host, `127.0.0.1:${port}`);
   assert.deepEqual(doc.schemes, ["http"]);
   assert.equal(Object.keys(doc.paths).length, Object.keys(legacyRaw.paths).length);
@@ -153,10 +153,11 @@ try {
   assert.equal(Object.keys(doc.definitions).length, Object.keys(legacyRaw.definitions).length);
   assert.deepEqual(doc.definitions["handler.RegisterRequest"].required, ["email", "name", "password", "pin"]);
   assert.deepEqual(
-    openApiDocument.paths["/api/v1/auth/register"].post.requestBody.content["application/json"].schema.required,
+    openApiDocument.paths["/v1/auth/register"].post.requestBody.content["application/json"].schema.required,
     ["email", "name", "password", "pin"]
   );
-  assert.equal(Boolean(openApiDocument.paths["/api/v1/admin/logs"].get), true);
+  assert.equal(Boolean(openApiDocument.paths["/v1/admin/logs"].get), true);
+  assert.equal(Object.keys(openApiDocument.paths).some((path) => path.startsWith("/api/v1")), false);
 
   const uiResponse = await fetch(`${baseUrl}/legacy-api-docs/`);
   assert.equal(uiResponse.status, 200);

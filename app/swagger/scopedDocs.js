@@ -63,6 +63,8 @@ const scopes = [
       "POST /v1/billing/apple/verify",
       "POST /v1/billing/google/verify",
       "POST /v1/pairing/sessions/{sessionId}/approve",
+      "GET /v1/children/{childId}/limits",
+      "PUT /v1/children/{childId}/limits",
       "GET /v1/children/{childId}/blacklist",
       "POST /v1/children/{childId}/blacklist",
       "DELETE /v1/children/{childId}/blacklist/{contentId}",
@@ -282,6 +284,10 @@ function operationKey(method, path) {
   return `${method.toUpperCase()} ${path}`;
 }
 
+function normalizeOperationPrefix(operation) {
+  return operation.replace(/ \/api\/v1(?=\/|$)/, " /v1");
+}
+
 function filterPathsByOperations(paths, operations) {
   const filteredPaths = {};
 
@@ -317,7 +323,8 @@ function collectTags(paths) {
 }
 
 function createScopedDocument(scope) {
-  const paths = filterPathsByOperations(openApiDocument.paths, new Set(scope.operations));
+  const operations = new Set(scope.operations.map(normalizeOperationPrefix));
+  const paths = filterPathsByOperations(openApiDocument.paths, operations);
   const tags = collectTags(paths);
 
   return {
@@ -334,5 +341,6 @@ function createScopedDocument(scope) {
 
 export const swaggerScopes = scopes.map((scope) => ({
   ...scope,
+  operations: scope.operations.map(normalizeOperationPrefix),
   document: createScopedDocument(scope)
 }));

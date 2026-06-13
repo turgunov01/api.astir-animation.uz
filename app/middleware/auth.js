@@ -126,7 +126,8 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
         dailyMinutes: 1440,
         allowedFrom: "00:00",
         allowedTo: "23:59",
-        allowedDays: [1, 2, 3, 4, 5, 6, 7]
+        allowedDays: [1, 2, 3, 4, 5, 6, 7],
+        allowedDates: []
       });
     }
 

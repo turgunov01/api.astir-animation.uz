@@ -107,6 +107,18 @@ function md5(value) {
   return createHash("md5").update(String(value)).digest("hex");
 }
 
+function localDateString(offsetDays = 0) {
+  const date = new Date();
+
+  date.setDate(date.getDate() + offsetDays);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function createMemoryTariffRepository() {
   const rows = [];
 
@@ -1137,6 +1149,43 @@ try {
   });
 
   assert.equal(config.child.id, childId);
+  assert.deepEqual(config.limit.allowedDates, []);
+
+  const tomorrowOnlyLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      dailyMinutes: 60,
+      allowedFrom: "00:00",
+      allowedTo: "23:59",
+      allowedDays: [1, 2, 3, 4, 5, 6, 7],
+      allowedDates: [localDateString(1)]
+    }
+  });
+
+  assert.deepEqual(tomorrowOnlyLimit.limit.allowedDates, [localDateString(1)]);
+
+  const dateBlockedWatch = await requestWithStatus(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: movieId }
+  });
+
+  assert.equal(dateBlockedWatch.status, 403);
+  assert.equal(dateBlockedWatch.body.code, "WATCH_DATE_BLOCKED");
+
+  const restoredWeeklyLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      dailyMinutes: 60,
+      allowedFrom: "00:00",
+      allowedTo: "23:59",
+      allowedDays: [1, 2, 3, 4, 5, 6, 7]
+    }
+  });
+
+  assert.deepEqual(restoredWeeklyLimit.limit.allowedDates, []);
 
   const notificationToken = await request(baseUrl, "/v1/notifications/device-token", {
     method: "POST",

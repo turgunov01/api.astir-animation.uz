@@ -51,6 +51,14 @@ export function createApp({ container = createContainer() } = {}) {
 
   app.use("/media", express.static(path.resolve(container.config.mediaRoot)));
 
+  const legacyRoutes = createLegacyRoutes({
+    config: container.config,
+    contentLikes: container.repositories.contentLikes,
+    contentMovies: container.repositories.contentMovies,
+    media: legacyMedia,
+    tariffs: container.repositories.tariffs
+  });
+
   const fullSwaggerOptions = createSwaggerUiOptions({
     document: openApiDocument,
     title: openApiDocument.info.title,
@@ -108,15 +116,15 @@ export function createApp({ container = createContainer() } = {}) {
   }));
 
   app.use(
+    "/v1",
+    requireLegacyDb(legacyDb),
+    legacyRoutes
+  );
+
+  app.use(
     "/api/v1",
     requireLegacyDb(legacyDb),
-    createLegacyRoutes({
-      config: container.config,
-      contentLikes: container.repositories.contentLikes,
-      contentMovies: container.repositories.contentMovies,
-      media: legacyMedia,
-      tariffs: container.repositories.tariffs
-    })
+    legacyRoutes
   );
   
   app.use(notFoundHandler);

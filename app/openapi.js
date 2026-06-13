@@ -364,6 +364,12 @@ export const openApiDocument = {
             items: { type: "integer" },
             example: [1, 2, 3, 4, 5, 6, 7]
           },
+          allowedDates: {
+            type: "array",
+            items: { type: "string", format: "date" },
+            example: ["2026-06-17"],
+            description: "Optional exact local dates. When present, date matching is used instead of recurring allowedDays."
+          },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" }
         }
@@ -5216,6 +5222,99 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/children/{childId}/limits": {
+      get: {
+        tags: ["Children"],
+        summary: "Get child watch limits",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Child watch limits",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    limit: { $ref: "#/components/schemas/WatchLimit" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      },
+      put: {
+        tags: ["Children"],
+        summary: "Update child watch limits",
+        description: "Set recurring weekly limits with allowedDays, or add allowedDates for exact one-off local dates.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["dailyMinutes", "allowedFrom", "allowedTo", "allowedDays"],
+                properties: {
+                  dailyMinutes: { type: "integer", minimum: 1, maximum: 1440, example: 60 },
+                  allowedFrom: { type: "string", example: "08:00" },
+                  allowedTo: { type: "string", example: "20:00" },
+                  allowedDays: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1, maximum: 7 },
+                    example: [1, 2, 3, 4, 5, 6, 7]
+                  },
+                  allowedDates: {
+                    type: "array",
+                    items: { type: "string", format: "date" },
+                    example: ["2026-06-17"],
+                    description: "Optional exact local dates. Send a single YYYY-MM-DD to make a one-day limit that does not repeat next week."
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Child watch limits updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    limit: { $ref: "#/components/schemas/WatchLimit" }
+                  }
+                }
+              }
+            }
+          },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/v1/billing/subscription/current": {
       get: {
         tags: ["Billing"],
@@ -7289,3 +7388,52 @@ openApiDocument.components.responses = {
     }
   }
 };
+
+function normalizeApiPrefix(value) {
+  return value.replaceAll("/api/v1", "/v1");
+}
+
+function normalizePathPrefix(path) {
+  return path.replace(/^\/api\/v1(?=\/|$)/, "/v1");
+}
+
+function normalizePaths(paths) {
+  const normalizedPaths = {};
+
+  for (const [path, pathItem] of Object.entries(paths)) {
+    const normalizedPath = normalizePathPrefix(path);
+    const existingPathItem = normalizedPaths[normalizedPath] || {};
+
+    normalizedPaths[normalizedPath] = {
+      ...pathItem,
+      ...existingPathItem
+    };
+  }
+
+  return normalizedPaths;
+}
+
+function normalizeSwaggerStrings(value) {
+  if (typeof value === "string") {
+    return normalizeApiPrefix(value);
+  }
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      value[index] = normalizeSwaggerStrings(value[index]);
+    }
+
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    for (const [key, childValue] of Object.entries(value)) {
+      value[key] = normalizeSwaggerStrings(childValue);
+    }
+  }
+
+  return value;
+}
+
+openApiDocument.paths = normalizePaths(openApiDocument.paths);
+normalizeSwaggerStrings(openApiDocument);

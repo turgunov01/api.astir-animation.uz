@@ -67,7 +67,7 @@ export function createSwaggerIndexPage(scopes) {
   const legacyOpenApiLink = {
     href: "/legacy-doc.json",
     title: "Astir Streaming API JSON",
-    description: "Legacy Swagger 2.0 document with local host and /api/v1 base path."
+    description: "Legacy Swagger 2.0 document with local host and /v1 base path."
   };
   const swaggerLinks = [
     {

@@ -16,6 +16,14 @@ function isoDay(date) {
   return day === 0 ? 7 : day;
 }
 
+function localDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function sameLocalDay(left, right) {
   return (
     left.getFullYear() === right.getFullYear() &&
@@ -34,6 +42,14 @@ function isWithinWindow(limit, now) {
   }
 
   return current >= from || current <= to;
+}
+
+function allowedDates(limit) {
+  return Array.isArray(limit.allowedDates) ? limit.allowedDates : [];
+}
+
+function allowedWeekdays(limit) {
+  return Array.isArray(limit.allowedDays) ? limit.allowedDays : [];
 }
 
 function usedSecondsToday(sessions, now) {
@@ -132,6 +148,7 @@ export function createWatchService({ childService, children, contentService, wat
 
     return {
       day: isoDay(now),
+      date: localDateKey(now),
       limit,
       limitSeconds: limit.dailyMinutes * 60,
       usedSeconds
@@ -140,8 +157,13 @@ export function createWatchService({ childService, children, contentService, wat
 
   async function assertDeviceCanWatchNow(device, now = new Date()) {
     const status = await limitStatusForDevice(device, now);
+    const exactAllowedDates = allowedDates(status.limit);
 
-    if (!status.limit.allowedDays.includes(status.day)) {
+    if (exactAllowedDates.length > 0 && !exactAllowedDates.includes(status.date)) {
+      throw forbidden("Watching is not allowed on this date", "WATCH_DATE_BLOCKED");
+    }
+
+    if (exactAllowedDates.length === 0 && !allowedWeekdays(status.limit).includes(status.day)) {
       throw forbidden("Watching is not allowed today", "WATCH_DAY_BLOCKED");
     }
 
