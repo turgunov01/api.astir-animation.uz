@@ -532,9 +532,19 @@ try {
           : null;
       }
 
+      if (/SELECT COUNT\(\*\)::integer AS count FROM likes WHERE target_type = \$1 AND target_id = \$2/.test(sql)) {
+        return {
+          count: likeRows.filter((row) => row.target_type === values[0] && row.target_id === values[1]).length
+        };
+      }
+
       throw new Error(`unexpected likes one query: ${sql}`);
     },
     many(sql, values) {
+      if (/SELECT \* FROM series WHERE active = true ORDER BY created_at DESC/.test(sql)) {
+        return [{ ...likedSeriesRow }];
+      }
+
       if (/FROM likes l[\s\S]*LEFT JOIN series s/.test(sql)) {
         return likeRows
           .filter((row) => row.user_id === values[0] && row.target_type === "series" && row.target_id === likedSeriesId)
@@ -562,6 +572,10 @@ try {
           });
         }
         return { rows: [] };
+      }
+
+      if (/SELECT \* FROM series WHERE id = \$1/.test(sql)) {
+        return { rows: values[0] === likedSeriesId ? [{ ...likedSeriesRow }] : [] };
       }
 
       if (/DELETE FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
@@ -618,6 +632,30 @@ try {
     assert.equal(likeRows[0].user_id, likeParentId);
     assert.equal(likeRows[0].content_id, null);
 
+    const likedSeriesDetailResponse = await fetch(`${likesBaseUrl}/api/v1/series/${likedSeriesId}`, {
+      headers: childDeviceHeaders
+    });
+    const likedSeriesDetailBody = await likedSeriesDetailResponse.json();
+
+    assert.equal(likedSeriesDetailResponse.status, 200);
+    assert.equal(likedSeriesDetailBody.id, likedSeriesId);
+    assert.equal(likedSeriesDetailBody.item_type, "series");
+    assert.equal(likedSeriesDetailBody.target_type, "series");
+    assert.equal(likedSeriesDetailBody.target_id, likedSeriesId);
+    assert.equal(likedSeriesDetailBody.is_liked, true);
+    assert.equal(likedSeriesDetailBody.likes_count, 1);
+
+    const likedSeriesListResponse = await fetch(`${likesBaseUrl}/api/v1/series`, {
+      headers: childDeviceHeaders
+    });
+    const likedSeriesListBody = await likedSeriesListResponse.json();
+
+    assert.equal(likedSeriesListResponse.status, 200);
+    assert.equal(likedSeriesListBody.length, 1);
+    assert.equal(likedSeriesListBody[0].id, likedSeriesId);
+    assert.equal(likedSeriesListBody[0].is_liked, true);
+    assert.equal(likedSeriesListBody[0].likes_count, 1);
+
     const likedListResponse = await fetch(`${likesBaseUrl}/api/v1/me/likes`, {
       headers: childDeviceHeaders
     });
@@ -627,6 +665,8 @@ try {
     assert.equal(likedListBody.data.length, 1);
     assert.equal(likedListBody.data[0].item_type, "series");
     assert.equal(likedListBody.data[0].target_id, likedSeriesId);
+    assert.equal(likedListBody.data[0].is_liked, true);
+    assert.equal(likedListBody.data[0].likes_count, 1);
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",
@@ -676,6 +716,7 @@ try {
     one(sql, values) {
       if (/FROM users/.test(sql)) return seriesPosterAdmin;
       if (/SELECT \* FROM series WHERE id = \$1/.test(sql)) return values[0] === seriesPosterId ? { ...seriesPosterState } : null;
+      if (/SELECT COUNT\(\*\)::integer AS count FROM likes WHERE target_type = \$1 AND target_id = \$2/.test(sql)) return { count: 0 };
       throw new Error(`unexpected poster one query: ${sql}`);
     },
     many(sql, values) {

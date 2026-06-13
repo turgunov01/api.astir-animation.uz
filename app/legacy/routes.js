@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { hashSecret, verifySecret } from "../lib/security.js";
 import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles.js";
 import {
+  authenticateRequest,
   createOtp,
   findOrCreateOAuthUser,
   issueDeviceToken,
@@ -153,15 +154,59 @@ function serializeContent(row) {
 function serializeSeries(row) {
   return {
     id: row.id,
+    item_type: "series",
+    target_type: "series",
+    target_id: row.id,
     title: row.title || {},
     description: row.description || {},
     slug: row.slug,
     kind: row.kind || "seasons",
     poster_path: row.poster_path || "",
     poster_url: row.poster_path ? legacyPosterUrl("series", row.id) : row.poster_url || "",
+    likes_count: 0,
+    is_liked: false,
     active: row.active !== false,
     created_at: row.created_at,
     updated_at: row.updated_at
+  };
+}
+
+async function optionalLegacyActor(request) {
+  if (!request.get("authorization")) {
+    return null;
+  }
+
+  return authenticateRequest(request);
+}
+
+async function optionalLegacyUserId(request) {
+  const actor = await optionalLegacyActor(request);
+
+  return actor ? await ownerUserIdForActor(request.legacyDb, actor) : null;
+}
+
+async function targetLikeState(db, targetType, targetId, userId = null) {
+  const likes = await db.one(
+    "SELECT COUNT(*)::integer AS count FROM likes WHERE target_type = $1 AND target_id = $2",
+    [targetType, targetId]
+  );
+  const liked = userId
+    ? await db.one(
+      "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [userId, targetType, targetId]
+    )
+    : null;
+
+  return {
+    likes_count: likes?.count || 0,
+    is_liked: Boolean(liked)
+  };
+}
+
+async function serializeSeriesWithLikes(db, row, userId = null) {
+  return {
+    ...serializeSeries(row),
+    ...await targetLikeState(db, "series", row.id, userId)
   };
 }
 
@@ -2159,8 +2204,16 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
 
   router.get("/series", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
+    const userId = await optionalLegacyUserId(request);
     const rows = await request.legacyDb.many("SELECT * FROM series WHERE active = true ORDER BY created_at DESC");
-    response.json(rows.map((row) => localizeRecord(serializeSeries(row), lang)));
+    const data = await Promise.all(
+      rows.map(async (row) => localizeRecord(
+        await serializeSeriesWithLikes(request.legacyDb, row, userId),
+        lang
+      ))
+    );
+
+    response.json(data);
   }));
 
   router.post("/series", requireAdmin, asyncHandler(async (request, response) => {
@@ -2178,8 +2231,12 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
   }));
 
   router.get("/series/:id", asyncHandler(async (request, response) => {
+    const userId = await optionalLegacyUserId(request);
     const row = await getById(request.legacyDb, "series", request.params.id);
-    response.json(localizeRecord(serializeSeries(row), requestedLang(request)));
+    response.json(localizeRecord(
+      await serializeSeriesWithLikes(request.legacyDb, row, userId),
+      requestedLang(request)
+    ));
   }));
 
   router.put("/series/:id", requireAdmin, asyncHandler(async (request, response) => {
@@ -2494,26 +2551,32 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
       `,
       [userId]
     );
-    response.json({
-      data: rows.map((row) => {
-        if (row.target_type === "series") {
-          return {
-            ...serializeSeries(row.series_row),
-            item_type: "series",
-            target_type: row.target_type,
-            target_id: row.target_id,
-            liked_at: row.liked_at
-          };
-        }
+    const data = await Promise.all(rows.map(async (row) => {
+      const likeState = await targetLikeState(request.legacyDb, row.target_type, row.target_id, userId);
 
+      if (row.target_type === "series") {
         return {
-          ...serializeContent(row.content_row),
-          item_type: "content",
+          ...serializeSeries(row.series_row),
+          ...likeState,
+          item_type: "series",
           target_type: row.target_type,
           target_id: row.target_id,
           liked_at: row.liked_at
         };
-      })
+      }
+
+      return {
+        ...serializeContent(row.content_row),
+        ...likeState,
+        item_type: "content",
+        target_type: row.target_type,
+        target_id: row.target_id,
+        liked_at: row.liked_at
+      };
+    }));
+
+    response.json({
+      data
     });
   }));
 
