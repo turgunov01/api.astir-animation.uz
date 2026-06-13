@@ -737,6 +737,10 @@ async function ownerUserIdForActor(db, actor) {
   }
 
   if (actor.kind === "child_device") {
+    if (actor.parent_id) {
+      return actor.parent_id;
+    }
+
     const child = await db.one("SELECT parent_id FROM children WHERE id = $1", [actor.child_id]);
     return child?.parent_id || null;
   }

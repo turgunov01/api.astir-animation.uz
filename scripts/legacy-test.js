@@ -99,6 +99,20 @@ function legacyChildDeviceToken(device) {
   );
 }
 
+function v1DeviceToken(device) {
+  return jwt.sign(
+    {
+      sub: device.id,
+      type: "device",
+      deviceId: device.id,
+      parentId: device.parent_id,
+      childId: device.child_id
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+}
+
 function runLegacyGuard(guard, user) {
   const token = legacyUserToken(user);
   const request = {
@@ -720,6 +734,31 @@ try {
     assert.equal(favouritesBody.data[1].item_type, "series");
     assert.equal(favouritesBody.data[1].target_id, likedSeriesId);
     assert.equal(favouritesBody.data[1].is_liked, true);
+
+    const v1DeviceHeaders = {
+      authorization: `Bearer ${v1DeviceToken({
+        id: "d74d7623-7c3e-47d2-92dc-376e8b3a0eca",
+        parent_id: likeParentId,
+        child_id: likeChildId
+      })}`
+    };
+    const v1TokenSeriesDetailResponse = await fetch(`${likesBaseUrl}/api/v1/series/${likedSeriesId}`, {
+      headers: v1DeviceHeaders
+    });
+    const v1TokenSeriesDetailBody = await v1TokenSeriesDetailResponse.json();
+
+    assert.equal(v1TokenSeriesDetailResponse.status, 200);
+    assert.equal(v1TokenSeriesDetailBody.id, likedSeriesId);
+    assert.equal(v1TokenSeriesDetailBody.is_liked, true);
+
+    const v1TokenLikeStatusResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
+      headers: v1DeviceHeaders
+    });
+    const v1TokenLikeStatusBody = await v1TokenLikeStatusResponse.json();
+
+    assert.equal(v1TokenLikeStatusResponse.status, 200);
+    assert.equal(v1TokenLikeStatusBody.liked, true);
+    assert.equal(v1TokenLikeStatusBody.target_type, "series");
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",

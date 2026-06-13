@@ -269,6 +269,71 @@ export async function authenticateRequest(request) {
     return request.legacyActor;
   }
 
+  if (payload.type === "parent") {
+    const userId = firstString(payload.parentId, payload.parent_id, payload.sub);
+    const user = userId
+      ? await request.legacyDb.one("SELECT * FROM users WHERE id = $1 AND active = true", [userId])
+      : null;
+
+    if (!user) {
+      throw legacyError(401, "unauthorized", "user not found");
+    }
+
+    request.legacyUser = user;
+    request.legacyActor = {
+      kind: "user",
+      user,
+      id: user.id,
+      role: user.role
+    };
+    return request.legacyActor;
+  }
+
+  if (payload.type === "device") {
+    const deviceId = firstString(payload.deviceId, payload.device_id, payload.sub);
+    const childId = firstString(payload.childId, payload.child_id);
+    const parentId = firstString(payload.parentId, payload.parent_id);
+
+    if (!deviceId || !childId || !parentId) {
+      throw legacyError(401, "unauthorized", "unsupported token");
+    }
+
+    const storedDevice = await request.legacyDb.one(
+      "SELECT * FROM child_devices WHERE id = $1 AND revoked_at IS NULL",
+      [deviceId]
+    );
+
+    if (storedDevice) {
+      request.legacyActor = {
+        kind: "child_device",
+        device: storedDevice,
+        id: storedDevice.id,
+        child_id: storedDevice.child_id,
+        parent_id: parentId
+      };
+      return request.legacyActor;
+    }
+
+    const child = await request.legacyDb.one("SELECT parent_id FROM children WHERE id = $1", [childId]);
+
+    if (!child || child.parent_id !== parentId) {
+      throw legacyError(401, "unauthorized", "device not found");
+    }
+
+    request.legacyActor = {
+      kind: "child_device",
+      device: {
+        id: deviceId,
+        child_id: childId,
+        parent_id: parentId
+      },
+      id: deviceId,
+      child_id: childId,
+      parent_id: parentId
+    };
+    return request.legacyActor;
+  }
+
   if (payload.kind === "child_device") {
     const device = await request.legacyDb.one(
       "SELECT * FROM child_devices WHERE id = $1 AND revoked_at IS NULL",

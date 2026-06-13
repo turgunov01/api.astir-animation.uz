@@ -20,7 +20,7 @@ export function signDeviceToken(device) {
   return jwt.sign(
     {
       sub: device.id,
-      type: "device",
+      type: "child_device",
       deviceId: device.id,
       parentId,
       childId
