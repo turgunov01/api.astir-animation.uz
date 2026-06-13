@@ -257,6 +257,24 @@ function serializeMovieAsLegacyContent(movie, seriesId = null) {
   };
 }
 
+function serializeMovieFavourite(movie, like, contentLikes) {
+  const targetType = like.targetType || "content";
+  const likesCount = contentLikes?.countByTarget
+    ? contentLikes.countByTarget(movie.id, targetType)
+    : 0;
+
+  return {
+    ...serializeMovieAsLegacyContent(movie),
+    item_type: "movie",
+    target_type: targetType,
+    target_id: movie.id,
+    content_id: movie.id,
+    likes_count: likesCount,
+    is_liked: true,
+    liked_at: like.createdAt || like.created_at || null
+  };
+}
+
 function compareEpisodeRows(left, right) {
   return (left.season_number ?? 0) - (right.season_number ?? 0)
     || (left.episode_number ?? 0) - (right.episode_number ?? 0)
@@ -738,6 +756,98 @@ async function requireOwnerUserIdForActor(db, actor) {
   }
 
   return userId;
+}
+
+async function legacyLikedItems(db, userId) {
+  const rows = await db.many(
+    `
+      SELECT
+        l.target_type,
+        l.target_id,
+        l.created_at AS liked_at,
+        to_jsonb(c) AS content_row,
+        to_jsonb(s) AS series_row
+      FROM likes l
+      LEFT JOIN content c ON l.target_type = 'content' AND l.target_id = c.id
+      LEFT JOIN series s ON l.target_type = 'series' AND l.target_id = s.id
+      WHERE l.user_id = $1
+        AND (c.id IS NOT NULL OR s.id IS NOT NULL)
+      ORDER BY l.created_at DESC
+    `,
+    [userId]
+  );
+
+  return Promise.all(rows.map(async (row) => {
+    const likeState = await targetLikeState(db, row.target_type, row.target_id, userId);
+
+    if (row.target_type === "series") {
+      return {
+        ...serializeSeries(row.series_row),
+        ...likeState,
+        item_type: "series",
+        target_type: row.target_type,
+        target_id: row.target_id,
+        liked_at: row.liked_at
+      };
+    }
+
+    return {
+      ...serializeContent(row.content_row),
+      ...likeState,
+      item_type: "content",
+      target_type: row.target_type,
+      target_id: row.target_id,
+      liked_at: row.liked_at
+    };
+  }));
+}
+
+function storeMovieLikedItems({ contentLikes, contentMovies, seenTargets, userId }) {
+  if (!contentLikes?.listByOwnerId || !contentMovies?.findById) {
+    return [];
+  }
+
+  const items = [];
+
+  for (const like of contentLikes.listByOwnerId(userId)) {
+    const targetType = like.targetType || "content";
+    const targetId = like.targetId || like.target_id;
+    const key = `${targetType}:${targetId}`;
+
+    if (seenTargets.has(key)) {
+      continue;
+    }
+
+    const movie = targetType === "content" && targetId
+      ? contentMovies.findById(targetId)
+      : null;
+
+    if (!movie) {
+      continue;
+    }
+
+    seenTargets.add(key);
+    items.push(serializeMovieFavourite(movie, like, contentLikes));
+  }
+
+  return items;
+}
+
+async function favouriteItems({ contentLikes, contentMovies, db, userId }) {
+  const legacyItems = await legacyLikedItems(db, userId);
+  const seenTargets = new Set(
+    legacyItems.map((item) => `${item.target_type}:${item.target_id}`)
+  );
+  const movieItems = storeMovieLikedItems({
+    contentLikes,
+    contentMovies,
+    seenTargets,
+    userId
+  });
+
+  return [...legacyItems, ...movieItems].sort((left, right) => (
+    String(right.liked_at || "").localeCompare(String(left.liked_at || ""))
+  ));
 }
 
 async function activeSubscription(db, userId) {
@@ -1375,7 +1485,7 @@ async function maybeStartTranscode(db, config, content) {
   return job;
 }
 
-export function createLegacyRoutes({ config, contentMovies = null, media, tariffs = null }) {
+export function createLegacyRoutes({ config, contentLikes = null, contentMovies = null, media, tariffs = null }) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
@@ -2534,49 +2644,27 @@ export function createLegacyRoutes({ config, contentMovies = null, media, tariff
 
   router.get("/me/likes", requireActor, asyncHandler(async (request, response) => {
     const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
-    const rows = await request.legacyDb.many(
-      `
-        SELECT
-          l.target_type,
-          l.target_id,
-          l.created_at AS liked_at,
-          to_jsonb(c) AS content_row,
-          to_jsonb(s) AS series_row
-        FROM likes l
-        LEFT JOIN content c ON l.target_type = 'content' AND l.target_id = c.id
-        LEFT JOIN series s ON l.target_type = 'series' AND l.target_id = s.id
-        WHERE l.user_id = $1
-          AND (c.id IS NOT NULL OR s.id IS NOT NULL)
-        ORDER BY l.created_at DESC
-      `,
-      [userId]
-    );
-    const data = await Promise.all(rows.map(async (row) => {
-      const likeState = await targetLikeState(request.legacyDb, row.target_type, row.target_id, userId);
-
-      if (row.target_type === "series") {
-        return {
-          ...serializeSeries(row.series_row),
-          ...likeState,
-          item_type: "series",
-          target_type: row.target_type,
-          target_id: row.target_id,
-          liked_at: row.liked_at
-        };
-      }
-
-      return {
-        ...serializeContent(row.content_row),
-        ...likeState,
-        item_type: "content",
-        target_type: row.target_type,
-        target_id: row.target_id,
-        liked_at: row.liked_at
-      };
-    }));
+    const data = await legacyLikedItems(request.legacyDb, userId);
 
     response.json({
       data
+    });
+  }));
+
+  router.get("/me/favourites", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
+    const data = await favouriteItems({
+      contentLikes,
+      contentMovies,
+      db: request.legacyDb,
+      userId
+    });
+
+    response.json({
+      data,
+      favourites: data,
+      favorites: data,
+      total: data.length
     });
   }));
 

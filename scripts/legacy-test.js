@@ -503,7 +503,40 @@ try {
     created_at: "2026-06-01T00:00:00.000Z",
     updated_at: "2026-06-01T00:00:00.000Z"
   };
+  const likedMovieId = "1f2e1a5b-91d9-4a3b-82fa-6a2d48b4d5fa";
+  const likedMovieRow = {
+    id: likedMovieId,
+    title: { en: "Liked Movie", ru: "Liked Movie RU", uz: "Liked Movie UZ" },
+    description: { en: "Movie description" },
+    poster: { url: "/media/uploads/liked-movie.png" },
+    source: { path: "uploads/liked-movie.mp4" },
+    content_type: "movie",
+    published: true,
+    createdAt: "2026-06-02T00:00:00.000Z",
+    updatedAt: "2026-06-02T00:00:00.000Z"
+  };
+  const storeLikeRows = [
+    {
+      ownerId: likeParentId,
+      targetType: "content",
+      targetId: likedMovieId,
+      createdAt: "2026-06-14T00:00:00.000Z"
+    }
+  ];
   const likeRows = [];
+  const likesContentMovies = {
+    findById(id) {
+      return id === likedMovieId ? likedMovieRow : null;
+    }
+  };
+  const likesContentLikes = {
+    countByTarget(targetId, targetType = "content") {
+      return storeLikeRows.filter((row) => row.targetId === targetId && row.targetType === targetType).length;
+    },
+    listByOwnerId(ownerId) {
+      return storeLikeRows.filter((row) => row.ownerId === ownerId);
+    }
+  };
   const likesDb = {
     one(sql, values) {
       if (/FROM child_devices WHERE id = \$1 AND revoked_at IS NULL/.test(sql)) {
@@ -601,6 +634,8 @@ try {
   });
   likesApp.use("/api/v1", createLegacyRoutes({
     config: { maxVideoUploadMb: 1 },
+    contentLikes: likesContentLikes,
+    contentMovies: likesContentMovies,
     media: fakeMedia
   }));
   const likesServer = await listenApp(likesApp);
@@ -667,6 +702,24 @@ try {
     assert.equal(likedListBody.data[0].target_id, likedSeriesId);
     assert.equal(likedListBody.data[0].is_liked, true);
     assert.equal(likedListBody.data[0].likes_count, 1);
+
+    const favouritesResponse = await fetch(`${likesBaseUrl}/api/v1/me/favourites`, {
+      headers: childDeviceHeaders
+    });
+    const favouritesBody = await favouritesResponse.json();
+
+    assert.equal(favouritesResponse.status, 200);
+    assert.equal(favouritesBody.total, 2);
+    assert.equal(favouritesBody.data.length, 2);
+    assert.equal(favouritesBody.favourites.length, 2);
+    assert.equal(favouritesBody.favorites.length, 2);
+    assert.equal(favouritesBody.data[0].item_type, "movie");
+    assert.equal(favouritesBody.data[0].target_id, likedMovieId);
+    assert.equal(favouritesBody.data[0].is_liked, true);
+    assert.equal(favouritesBody.data[0].likes_count, 1);
+    assert.equal(favouritesBody.data[1].item_type, "series");
+    assert.equal(favouritesBody.data[1].target_id, likedSeriesId);
+    assert.equal(favouritesBody.data[1].is_liked, true);
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",

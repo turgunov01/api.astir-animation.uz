@@ -1908,6 +1908,58 @@ export const openApiDocument = {
         }
       }
     },
+    "/api/v1/me/favourites": {
+      get: {
+        tags: ["Likes"],
+        summary: "List current actor favourites",
+        description: "Returns a mixed favourites list for the authenticated legacy actor. Includes legacy content, legacy series, and new /v1 movies liked by the same parent owner.",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "Favourites list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        oneOf: [
+                          { $ref: "#/components/schemas/ContentMovie" },
+                          { $ref: "#/components/schemas/Series" }
+                        ]
+                      }
+                    },
+                    favourites: {
+                      type: "array",
+                      items: {
+                        oneOf: [
+                          { $ref: "#/components/schemas/ContentMovie" },
+                          { $ref: "#/components/schemas/Series" }
+                        ]
+                      }
+                    },
+                    favorites: {
+                      type: "array",
+                      items: {
+                        oneOf: [
+                          { $ref: "#/components/schemas/ContentMovie" },
+                          { $ref: "#/components/schemas/Series" }
+                        ]
+                      }
+                    },
+                    total: { type: "integer", example: 2 }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/api/v1/auth/child/init": {
       post: {
         tags: ["Auth"],
