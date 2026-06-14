@@ -169,6 +169,21 @@ try {
   assert.match(indexHtml, /\/legacy-api-docs/);
   assert.match(indexHtml, /\/legacy-doc\.json/);
 
+  const extendChildId = "0bfa0ff4-06a8-42cb-8f26-32b2f7f22941";
+  const extendDeviceToken = v1DeviceToken({
+    id: "c4592e94-483d-462c-836e-b9c8c8f0ac89",
+    parent_id: "8d865658-99a0-4265-90ce-fd2060b78c9b",
+    child_id: extendChildId
+  });
+  const extendInitResponse = await fetch(`${baseUrl}/v1/children/${extendChildId}/extend/init`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${extendDeviceToken}` }
+  });
+  const extendInitBody = await extendInitResponse.json();
+
+  assert.equal(extendInitResponse.status, 503);
+  assert.equal(extendInitBody.error, "database_unavailable");
+
   const superAdmin = {
     id: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",
     email: "super-admin@example.com",

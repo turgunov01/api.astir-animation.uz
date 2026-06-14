@@ -4564,7 +4564,7 @@ export const openApiDocument = {
         tags: ["Children"],
         summary: "Initialize child watch extension",
         description: "Legacy PostgreSQL API endpoint. Creates a QR ticket for extending a child's watch time.",
-        security: [{ legacyBearer: [] }],
+        security: [{ parentToken: [] }, { deviceToken: [] }, { legacyBearer: [] }],
         parameters: [
           {
             name: "id",
@@ -4623,7 +4623,7 @@ export const openApiDocument = {
         tags: ["Children"],
         summary: "Extend child watch time by PIN",
         description: "Legacy PostgreSQL API endpoint. Extends a child's watch time when a valid child PIN is provided.",
-        security: [{ legacyBearer: [] }],
+        security: [{ parentToken: [] }, { deviceToken: [] }, { legacyBearer: [] }],
         parameters: [
           {
             name: "id",
@@ -4691,7 +4691,7 @@ export const openApiDocument = {
         tags: ["Children"],
         summary: "Get child watch extension status",
         description: "Legacy PostgreSQL API endpoint. Returns the status for a child watch-extension ticket.",
-        security: [{ legacyBearer: [] }],
+        security: [{ parentToken: [] }, { deviceToken: [] }, { legacyBearer: [] }],
         parameters: [
           {
             name: "id",
