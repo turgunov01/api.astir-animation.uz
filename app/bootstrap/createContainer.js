@@ -33,6 +33,7 @@ export function createContainer({ store = defaultStore } = {}) {
     childContentBlacklist: repositories.childContentBlacklist,
     children: repositories.children,
     contentMovies: repositories.contentMovies,
+    devices: repositories.devices,
     watchLimits: repositories.watchLimits
   });
   services.subscriptions = createSubscriptionService({

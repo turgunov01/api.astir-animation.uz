@@ -31,6 +31,10 @@ export function createChildrenController({ childService }) {
       response.json({ limit: await childService.getLimitsAsync(request.parent.id, request.params.childId) });
     },
 
+    async listDevices(request, response) {
+      response.json({ devices: await childService.listDevicesAsync(request.parent.id, request.params.childId) });
+    },
+
     async updateLimits(request, response) {
       const limit = await childService.updateLimitsAsync(request.parent.id, request.params.childId, {
         dailyMinutes: requiredInteger(request.body, "dailyMinutes", { min: 1, max: 1440 }),

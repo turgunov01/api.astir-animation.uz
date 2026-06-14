@@ -1149,6 +1149,11 @@ try {
   });
 
   assert.equal(config.child.id, childId);
+  const childDevices = await request(baseUrl, `/v1/children/${childId}/devices`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(childDevices.devices.some((device) => device.id === config.device.id), true);
   assert.deepEqual(config.limit.allowedDates, []);
 
   const tomorrowOnlyLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {

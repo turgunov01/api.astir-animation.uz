@@ -374,6 +374,19 @@ export const openApiDocument = {
           updatedAt: { type: "string", format: "date-time" }
         }
       },
+      PairedDevice: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          parentId: { type: "string" },
+          childId: { type: "string" },
+          name: { type: "string", example: "Astir Child Device" },
+          platform: { type: "string", example: "ios" },
+          pairedAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" }
+        }
+      },
       ChildContentBlacklistItem: {
         type: "object",
         properties: {
@@ -4289,8 +4302,8 @@ export const openApiDocument = {
       get: {
         tags: ["Children"],
         summary: "List paired child devices",
-        description: "Legacy PostgreSQL API endpoint. Lists paired devices for a child profile owned by the authenticated parent.",
-        security: [{ legacyBearer: [] }],
+        description: "Lists devices paired through the /v1 pairing flow for a child profile owned by the authenticated parent.",
+        security: [{ parentToken: [] }],
         parameters: [
           {
             name: "id",
@@ -4306,8 +4319,13 @@ export const openApiDocument = {
             content: {
               "application/json": {
                 schema: {
-                  type: "array",
-                  items: { $ref: "#/components/schemas/LegacyChildDevice" }
+                  type: "object",
+                  properties: {
+                    devices: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/PairedDevice" }
+                    }
+                  }
                 }
               }
             }

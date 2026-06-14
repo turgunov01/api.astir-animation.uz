@@ -31,6 +31,19 @@ function serializeBlacklistItem(item) {
   };
 }
 
+function serializeDevice(device) {
+  return {
+    id: device.id,
+    parentId: device.parentId || device.parent_id,
+    childId: device.childId || device.child_id,
+    name: device.name || device.device_name,
+    platform: device.platform,
+    pairedAt: device.pairedAt || device.paired_at,
+    createdAt: device.createdAt || device.created_at,
+    updatedAt: device.updatedAt || device.updated_at
+  };
+}
+
 function childParentId(child) {
   return child?.parentId || child?.parent_id || child?.parentid;
 }
@@ -41,7 +54,7 @@ function assertChildBelongsToParent(child, parentId) {
   }
 }
 
-export function createChildService({ childContentBlacklist, children, contentMovies, watchLimits }) {
+export function createChildService({ childContentBlacklist, children, contentMovies, devices, watchLimits }) {
   function listChildren(parentId) {
     const list = children.listByParentId(parentId);
     // Handle both sync arrays and async promises
@@ -147,6 +160,14 @@ export function createChildService({ childContentBlacklist, children, contentMov
     }
 
     return limit;
+  }
+
+  async function listDevicesAsync(parentId, childId) {
+    await getChildForParentAsync(parentId, childId);
+
+    return (devices?.listByChildId(childId) || [])
+      .filter((device) => (device.parentId || device.parent_id) === parentId)
+      .map(serializeDevice);
   }
 
   function updateLimits(parentId, childId, attributes) {
@@ -265,6 +286,7 @@ export function createChildService({ childContentBlacklist, children, contentMov
     listBlacklistAsync,
     listChildren,
     listChildrenAsync,
+    listDevicesAsync,
     removeContentFromAllBlacklists,
     removeFromBlacklist,
     removeFromBlacklistAsync,

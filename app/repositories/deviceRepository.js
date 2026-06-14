@@ -11,6 +11,12 @@ export function createDeviceRepository(store) {
       );
     },
 
+    listByChildId(childId) {
+      return store
+        .filter("devices", (device) => device.childId === childId)
+        .sort((left, right) => new Date(right.pairedAt || right.createdAt || 0) - new Date(left.pairedAt || left.createdAt || 0));
+    },
+
     create(attributes) {
       return store.insert("devices", attributes);
     },
