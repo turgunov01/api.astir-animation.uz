@@ -69,7 +69,7 @@ function usedSecondsToday(sessions, now) {
 }
 
 function activeExtensionUntil(child, now) {
-  const value = firstValue(child?.extendedUntil, child?.extended_until);
+  const value = firstValue(child?.extendedUntil, child?.extended_until, child?.extendeduntil);
 
   if (!value) {
     return null;

@@ -1220,8 +1220,7 @@ try {
 
   const extendedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   store.update("children", childId, {
-    extendedUntil,
-    extended_until: extendedUntil
+    extendeduntil: extendedUntil
   });
 
   const extendedDeviceWatch = await request(baseUrl, "/v1/watch-sessions/start", {
