@@ -54,6 +54,25 @@ async function request(baseUrl, pathName, options = {}) {
   return body;
 }
 
+async function requestWithStatus(baseUrl, pathName, options = {}) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      ...(options.headers || {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const body = await response.json();
+
+  assert.notEqual(response.status, 401);
+
+  return {
+    body,
+    status: response.status
+  };
+}
+
 const port = await listen();
 const baseUrl = `http://127.0.0.1:${port}`;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -219,14 +238,69 @@ try {
         ru: "Created without auth headers RU",
         uz: "Created without auth headers UZ"
       },
+      category_id: category.category.id,
       tag_ids: [tag.tag.id],
       is_premium: false
     }
   });
 
   assert.equal(typeof movie.movie.id, "string");
+  assert.equal(movie.movie.category_id, category.category.id);
   assert.deepEqual(movie.movie.tag_ids, [tag.tag.id]);
   assert.match(movie.movie.id, uuidPattern);
+
+  const missingFilterQuery = await requestWithStatus(baseUrl, "/v1/filter");
+  assert.equal(missingFilterQuery.status, 400);
+  assert.equal(missingFilterQuery.body.error, "request requires category or tag id/ids for endpoint");
+
+  const filteredByTag = await request(baseUrl, `/v1/filter?tag=${encodeURIComponent(tag.tag.id)}`);
+  assert.equal(
+    filteredByTag.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
+  const filteredByCategoryAndTag = await request(
+    baseUrl,
+    `/v1/filter?tag=${encodeURIComponent(tag.tag.id)}&category=${encodeURIComponent(category.category.id)}`
+  );
+  assert.equal(
+    filteredByCategoryAndTag.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
+  const filteredByWrongCategory = await request(
+    baseUrl,
+    `/v1/filter?tag=${encodeURIComponent(tag.tag.id)}&category=missing-category-id`
+  );
+  assert.equal(
+    filteredByWrongCategory.data.some((item) => item.id === movie.movie.id),
+    false
+  );
+
+  const seriesItem = await request(baseUrl, `/v1/content/movies/${movie.movie.id}/series`, {
+    method: "POST",
+    body: {
+      title: {
+        en: "Auth Toggle Series Item",
+        ru: "Auth Toggle Series Item RU",
+        uz: "Auth Toggle Series Item UZ"
+      },
+      description: {
+        en: "Series item created without auth headers",
+        ru: "Series item created without auth headers RU",
+        uz: "Series item created without auth headers UZ"
+      },
+      category_id: category.category.id,
+      tag_ids: [tag.tag.id],
+      is_premium: false
+    }
+  });
+
+  const filteredSeriesItem = await request(baseUrl, `/v1/filter?tag=${encodeURIComponent(tag.tag.id)}`);
+  assert.equal(
+    filteredSeriesItem.data.some((item) => item.id === seriesItem.series_item.id && item.type === "series"),
+    true
+  );
 
   const categories = await request(baseUrl, "/v1/content/categories");
 

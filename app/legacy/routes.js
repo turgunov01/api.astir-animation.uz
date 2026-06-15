@@ -136,13 +136,13 @@ function serializeContent(row) {
     error_message: transcodeError,
     transcoding_job: row.transcode_job_id
       ? {
-          id: row.transcode_job_id,
-          status: row.transcode_job_status || "",
-          error: transcodeError,
-          created_at: row.transcode_job_created_at || null,
-          started_at: row.transcode_job_started_at || null,
-          finished_at: row.transcode_job_finished_at || null
-        }
+        id: row.transcode_job_id,
+        status: row.transcode_job_status || "",
+        error: transcodeError,
+        created_at: row.transcode_job_created_at || null,
+        started_at: row.transcode_job_started_at || null,
+        finished_at: row.transcode_job_finished_at || null
+      }
       : null,
     age_rating: row.age_rating || 0,
     duration_sec: row.duration_sec || 0,
@@ -1717,7 +1717,7 @@ async function maybeStartTranscode(db, config, content) {
 
   await updateById(db, "content", content.id, { status: "transcoding" });
   await updateById(db, "transcoding_jobs", job.id, { status: "running", started_at: new Date().toISOString() });
-  await db.query("DELETE FROM renditions WHERE content_id = $1", [content.id]).catch(() => {});
+  await db.query("DELETE FROM renditions WHERE content_id = $1", [content.id]).catch(() => { });
 
   const runtimeJob = {
     cancelled: false,
@@ -1741,7 +1741,7 @@ async function maybeStartTranscode(db, config, content) {
       }
 
       fs.writeFileSync(playlistPath, buildHlsMasterPlaylist(renditions));
-      await updateById(db, "content", content.id, { status: "ready" }).catch(() => {});
+      await updateById(db, "content", content.id, { status: "ready" }).catch(() => { });
 
       for (const rendition of renditions) {
         await insertRow(db, "renditions", {
@@ -1752,25 +1752,25 @@ async function maybeStartTranscode(db, config, content) {
           bitrate: rendition.videoBitrate,
           playlist_path: rendition.playlistPathRel,
           playlist_url: rendition.playlistUrl
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       await updateById(db, "transcoding_jobs", job.id, {
         status: "ready",
         finished_at: new Date().toISOString()
-      }).catch(() => {});
+      }).catch(() => { });
       return;
     } catch (error) {
       if (runtimeJob.cancelled) {
         return;
       }
 
-      await updateById(db, "content", content.id, { status: "failed" }).catch(() => {});
+      await updateById(db, "content", content.id, { status: "failed" }).catch(() => { });
       await updateById(db, "transcoding_jobs", job.id, {
         status: "failed",
         error: error.message,
         finished_at: new Date().toISOString()
-      }).catch(() => {});
+      }).catch(() => { });
     } finally {
       if (legacyTranscodeJobs.get(content.id) === runtimeJob) {
         legacyTranscodeJobs.delete(content.id);
@@ -1969,6 +1969,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
     response.json({ changed: true });
   });
+
 
   router.patch("/auth/pin", requireUser, changeLegacyPinHandler);
   router.put("/auth/pin", requireUser, changeLegacyPinHandler);
@@ -3237,7 +3238,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       await deleteOwnerMediaAssets(request.legacyDb, "content", request.params.id, replacedPaths);
     }
     removeStoredMedia(media, [...replacedPaths, `hls/${request.params.id}`]);
-    await request.legacyDb.query("DELETE FROM renditions WHERE content_id = $1", [request.params.id]).catch(() => {});
+    await request.legacyDb.query("DELETE FROM renditions WHERE content_id = $1", [request.params.id]).catch(() => { });
     await maybeStartTranscode(request.legacyDb, config, row);
     response.json(row);
   }));

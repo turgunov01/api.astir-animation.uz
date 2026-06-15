@@ -191,6 +191,10 @@ function queryList(value) {
     .filter(Boolean);
 }
 
+function hasQueryField(request, field) {
+  return Object.hasOwn(request.query, field);
+}
+
 function optionalIntegerValue(body, field, fallback = null, options = {}) {
   const value = body?.[field];
 
@@ -460,6 +464,25 @@ export function createContentController({ contentService }) {
       response.json({
         tag: await contentService.getTag(request.params.tag_id)
       });
+    },
+
+    async filter(request, response) {
+      const tagIds = queryList(request.query.tag);
+      const categoryIds = queryList(request.query.category);
+      const hasTag = hasQueryField(request, "tag");
+      const hasCategory = hasQueryField(request, "category");
+
+      if ((!hasTag && !hasCategory) || (tagIds.length === 0 && categoryIds.length === 0)) {
+        response.status(400).json({
+          error: "request requires category or tag id/ids for endpoint"
+        });
+        return;
+      }
+
+      response.json(await contentService.filterContent(request.actor, {
+        categoryIds,
+        tagIds
+      }));
     },
 
     async list(request, response) {

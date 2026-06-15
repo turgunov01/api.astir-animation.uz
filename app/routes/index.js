@@ -10,6 +10,7 @@ import { createPairingRoutes } from "./pairingRoutes.js";
 import { createRecommendationRoutes } from "./recommendationRoutes.js";
 import { createTariffRoutes } from "./tariffRoutes.js";
 import { createWatchSessionRoutes } from "./watchSessionRoutes.js";
+import { asyncHandler } from "../lib/errors.js";
 
 export function createRoutes({ controllers, middleware }) {
   const routes = Router();
@@ -39,6 +40,7 @@ export function createRoutes({ controllers, middleware }) {
     contentController: controllers.content,
     uploadMiddleware: middleware.upload
   }));
+  routes.get("/filter", middleware.auth.requireActor, asyncHandler(controllers.content.filter));
   routes.use("/faqs", createFaqRoutes({
     authMiddleware: middleware.auth,
     faqController: controllers.faqs

@@ -5960,6 +5960,78 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/filter": {
+      get: {
+        tags: ["Movies"],
+        summary: "Filter movies and series by tag or category ids",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "tag",
+            in: "query",
+            required: false,
+            description: "Comma-separated content tag ids. Matches when a movie or series has at least one requested tag.",
+            schema: { type: "string", example: "tag-id-1,tag-id-2" }
+          },
+          {
+            name: "category",
+            in: "query",
+            required: false,
+            description: "Comma-separated category ids. Matches when a movie or series belongs to at least one requested category.",
+            schema: { type: "string", example: "cat-id-1,cat-id-2" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Filtered movies and series",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        allOf: [
+                          { $ref: "#/components/schemas/ContentMovie" },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: ["movies", "series"],
+                                example: "movies"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Tag or category query is required",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: {
+                      type: "string",
+                      example: "request requires category or tag id/ids for endpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/v1/content/likes": {
       get: {
         tags: ["Likes"],

@@ -785,6 +785,14 @@ export function createContentService({
     return Boolean(movie.series_id || findParentSeriesMovie(movie.id));
   }
 
+  function isSeriesContainer(movie) {
+    return normalized(movie.content_type) === "series" || listSeriesRecords(movie).length > 0;
+  }
+
+  function filterResultType(movie) {
+    return isSeriesContainer(movie) || isSeriesMovie(movie) ? "series" : "movies";
+  }
+
   function blacklistIdsForMovie(movie) {
     const ids = [movie.id];
     const parentSeries = findParentSeriesMovie(movie.id);
@@ -1296,6 +1304,40 @@ export function createContentService({
         .map((item) => serializeCatalogItem(item, likeContext));
 
       return liked ? items.filter((item) => item.is_liked) : items;
+    },
+
+    async filterContent(actor, { categoryIds = [], tagIds = [] } = {}) {
+      const normalizedCategoryIds = uniqueStrings(categoryIds);
+      const normalizedTagIds = uniqueStrings(tagIds);
+      const likeContext = likeContextForActor(actor);
+      const adminActor = isAdminActor(actor);
+      const movieRows = await Promise.all(
+        contentMovies.list()
+          .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
+          .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
+          .filter((movie) => (
+            normalizedCategoryIds.length === 0
+            || normalizedCategoryIds.includes(movie.category_id)
+          ))
+          .map(async (movie) => ({
+            movie,
+            tagIds: await contentMovieTags.listByMovieId(movie.id)
+          }))
+      );
+      const filteredMovies = movieRows
+        .filter(({ tagIds: movieTagIds }) => (
+          normalizedTagIds.length === 0
+          || movieTagIds.some((tagId) => normalizedTagIds.includes(tagId))
+        ))
+        .map(({ movie }) => movie);
+      const data = await Promise.all(
+        filteredMovies.map(async (movie) => ({
+          ...await serializeMovie(movie, [], contentTags, contentMovieTags, likeContext),
+          type: filterResultType(movie)
+        }))
+      );
+
+      return { data };
     },
 
     async listMovies(
