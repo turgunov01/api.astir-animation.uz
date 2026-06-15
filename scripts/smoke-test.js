@@ -21,6 +21,7 @@ process.env.CLICK_RETURN_URL = "https://astir.example/payments/return";
 const { createServer } = await import("../app/server.js");
 const { createTariffService } = await import("../app/services/tariffService.js");
 const { createPostgresParentRepository } = await import("../app/repositories/postgresParentRepository.js");
+const { store } = await import("../app/store/jsonStore.js");
 
 const server = createServer();
 
@@ -1191,6 +1192,51 @@ try {
   });
 
   assert.deepEqual(restoredWeeklyLimit.limit.allowedDates, []);
+
+  await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      dailyMinutes: 1,
+      allowedFrom: "00:00",
+      allowedTo: "23:59",
+      allowedDays: [1, 2, 3, 4, 5, 6, 7]
+    }
+  });
+
+  store.insert("watchSessions", {
+    actorType: "device",
+    parentId,
+    childId,
+    deviceId: config.device.id,
+    contentId: movieId,
+    contentType: "movie",
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    durationSeconds: 61,
+    positionSeconds: 61,
+    watchedSeconds: 61
+  });
+
+  const extendedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  store.update("children", childId, {
+    extendedUntil,
+    extended_until: extendedUntil
+  });
+
+  const extendedDeviceWatch = await request(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: movieId }
+  });
+
+  assert.equal(extendedDeviceWatch.watchSession.childId, childId);
+  assert.equal(extendedDeviceWatch.watchSession.remainingSecondsToday > 0, true);
+
+  await request(baseUrl, `/v1/watch-sessions/${extendedDeviceWatch.watchSession.id}/stop`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
 
   const notificationToken = await request(baseUrl, "/v1/notifications/device-token", {
     method: "POST",

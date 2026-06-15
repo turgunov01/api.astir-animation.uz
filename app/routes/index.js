@@ -41,6 +41,7 @@ export function createRoutes({ controllers, middleware }) {
     uploadMiddleware: middleware.upload
   }));
   routes.get("/filter", middleware.auth.requireActor, asyncHandler(controllers.content.filter));
+  routes.get("/search", middleware.auth.requireActor, asyncHandler(controllers.content.search));
   routes.use("/faqs", createFaqRoutes({
     authMiddleware: middleware.auth,
     faqController: controllers.faqs

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import dotenv from "dotenv";
 import QRCode from "qrcode";
 import { hashSecret, verifySecret } from "../lib/security.js";
 import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles.js";
@@ -87,6 +88,31 @@ function legacyClickPaymentBaseUrl() {
 
 function nowPlus(minutes) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+const childExtendMinutesEnv = "CHILD_EXTEND_MINUTES";
+const defaultChildExtendMinutes = 5;
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+
+  return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function runtimeEnvValue(name) {
+  const envPath = process.env.DOTENV_CONFIG_PATH || path.resolve(process.cwd(), ".env");
+
+  try {
+    const values = dotenv.parse(fs.readFileSync(envPath));
+
+    return values[name];
+  } catch {
+    return process.env[name];
+  }
+}
+
+function childExtendMinutes() {
+  return positiveInteger(runtimeEnvValue(childExtendMinutesEnv), defaultChildExtendMinutes);
 }
 
 function requestPublicOrigin(request) {
@@ -2638,7 +2664,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     );
 
     if (extension) {
-      const extendedUntil = nowPlus(120);
+      const extendedUntil = nowPlus(childExtendMinutes());
       await request.legacyDb.query("UPDATE children SET extended_until = $1 WHERE id = $2", [extendedUntil, extension.child_id]);
       await request.legacyDb.query(
         "UPDATE child_extension_tickets SET status = 'confirmed', extended_until = $1 WHERE id = $2",
@@ -2714,7 +2740,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     if (!child.pin_hash || !verifySecret(request.body.pin, child.pin_hash)) {
       throw legacyError(401, "invalid_pin", "invalid PIN");
     }
-    const extendedUntil = nowPlus(120);
+    const extendedUntil = nowPlus(childExtendMinutes());
     await updateById(request.legacyDb, "children", child.id, { extended_until: extendedUntil });
     response.json({
       message: "ok",

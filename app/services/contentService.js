@@ -781,6 +781,10 @@ export function createContentService({
     return contentMovies.list().find((movie) => (movie.series || []).includes(movieId)) || null;
   }
 
+  function parentSeriesForMovie(movie) {
+    return findParentSeriesMovie(movie.id) || (movie.series_id ? contentMovies.findById(movie.series_id) : null);
+  }
+
   function isSeriesMovie(movie) {
     return Boolean(movie.series_id || findParentSeriesMovie(movie.id));
   }
@@ -791,6 +795,13 @@ export function createContentService({
 
   function filterResultType(movie) {
     return isSeriesContainer(movie) || isSeriesMovie(movie) ? "series" : "movies";
+  }
+
+  function canExposeMovieToActor(actor, movie, adminActor) {
+    return adminActor || (
+      tariffService.canWatchMovie(actor, movie)
+      && !isMovieBlacklistedForActor(actor, movie)
+    );
   }
 
   function blacklistIdsForMovie(movie) {
@@ -1313,8 +1324,7 @@ export function createContentService({
       const adminActor = isAdminActor(actor);
       const movieRows = await Promise.all(
         contentMovies.list()
-          .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
-          .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
+          .filter((movie) => canExposeMovieToActor(actor, movie, adminActor))
           .filter((movie) => (
             normalizedCategoryIds.length === 0
             || normalizedCategoryIds.includes(movie.category_id)
@@ -1332,6 +1342,52 @@ export function createContentService({
         .map(({ movie }) => movie);
       const data = await Promise.all(
         filteredMovies.map(async (movie) => ({
+          ...await serializeMovie(movie, [], contentTags, contentMovieTags, likeContext),
+          type: filterResultType(movie)
+        }))
+      );
+
+      return { data };
+    },
+
+    async searchContent(actor, { q = "" } = {}) {
+      const likeContext = likeContextForActor(actor);
+      const adminActor = isAdminActor(actor);
+      const resultsById = new Map();
+
+      function addResult(movie) {
+        const resultMovie = parentSeriesForMovie(movie) || movie;
+
+        if (!canExposeMovieToActor(actor, resultMovie, adminActor) || resultsById.has(resultMovie.id)) {
+          return;
+        }
+
+        resultsById.set(resultMovie.id, resultMovie);
+      }
+
+      for (const movie of contentMovies.list()) {
+        if (!canExposeMovieToActor(actor, movie, adminActor)) {
+          continue;
+        }
+
+        if (movieMatchesSearch(movie, q)) {
+          addResult(movie);
+          continue;
+        }
+
+        if (isSeriesContainer(movie)) {
+          const hasMatchingSeriesItem = listSeriesRecords(movie)
+            .filter((item) => canExposeMovieToActor(actor, item, adminActor))
+            .some((item) => movieMatchesSearch(item, q));
+
+          if (hasMatchingSeriesItem) {
+            addResult(movie);
+          }
+        }
+      }
+
+      const data = await Promise.all(
+        [...resultsById.values()].map(async (movie) => ({
           ...await serializeMovie(movie, [], contentTags, contentMovieTags, likeContext),
           type: filterResultType(movie)
         }))

@@ -12,6 +12,7 @@ const { createServer } = await import("../app/server.js");
 const { openApiDocument } = await import("../app/openapi.js");
 const { requireAdmin, requireParent, requireSuperAdmin } = await import("../app/legacy/auth.js");
 const { createLegacyRoutes } = await import("../app/legacy/routes.js");
+const { hashSecret } = await import("../app/lib/security.js");
 
 const legacyRaw = JSON.parse(fs.readFileSync(path.resolve("app/legacy/legacy-doc.raw.json"), "utf8"));
 const server = createServer();
@@ -183,6 +184,106 @@ try {
 
   assert.equal(extendInitResponse.status, 503);
   assert.equal(extendInitBody.error, "database_unavailable");
+
+  const previousDotenvPath = process.env.DOTENV_CONFIG_PATH;
+  const extendEnvPath = path.join(path.dirname(path.resolve("package.json")), `astir-extend-${Date.now()}.env`);
+  const dynamicExtendChildId = "10a5e7cb-5801-4cf8-bfe4-1c02f94bb75e";
+  const dynamicExtendDeviceId = "33d0b7c1-7cfe-4fb5-af0c-9dd0821cf844";
+  const dynamicExtendParentId = "c74dc41c-8338-4f9c-9af8-e07c5a1db3fd";
+  const dynamicExtendChild = {
+    id: dynamicExtendChildId,
+    parent_id: dynamicExtendParentId,
+    pin_hash: hashSecret("1234")
+  };
+  const dynamicExtendDb = {
+    one(sql, values) {
+      if (/FROM child_devices WHERE id = \$1/.test(sql)) {
+        return values[0] === dynamicExtendDeviceId
+          ? { id: dynamicExtendDeviceId, parent_id: dynamicExtendParentId, child_id: dynamicExtendChildId }
+          : null;
+      }
+
+      throw new Error(`unexpected dynamic extend one query: ${sql}`);
+    },
+    query(sql, values) {
+      if (/SELECT \* FROM children WHERE id = \$1/.test(sql)) {
+        return { rows: values[0] === dynamicExtendChildId ? [dynamicExtendChild] : [] };
+      }
+
+      if (/UPDATE children SET/.test(sql)) {
+        dynamicExtendChild.extended_until = values[0];
+
+        return { rows: [{ ...dynamicExtendChild }] };
+      }
+
+      throw new Error(`unexpected dynamic extend query: ${sql}`);
+    }
+  };
+  const dynamicExtendApp = express();
+  dynamicExtendApp.use(express.json());
+  dynamicExtendApp.use((request, response, next) => {
+    request.legacyDb = dynamicExtendDb;
+    next();
+  });
+  dynamicExtendApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    contentMovies: null,
+    media: {
+      upload() {
+        return { single: () => (request, response, next) => next() };
+      }
+    }
+  }));
+  const dynamicExtendServer = await listenApp(dynamicExtendApp);
+
+  try {
+    process.env.DOTENV_CONFIG_PATH = extendEnvPath;
+    fs.writeFileSync(extendEnvPath, "CHILD_EXTEND_MINUTES=7\n");
+
+    const extendByPin = async () => {
+      const response = await fetch(
+        `http://127.0.0.1:${dynamicExtendServer.address().port}/api/v1/children/${dynamicExtendChildId}/extend/pin`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${v1DeviceToken({
+              id: dynamicExtendDeviceId,
+              parent_id: dynamicExtendParentId,
+              child_id: dynamicExtendChildId
+            })}`
+          },
+          body: JSON.stringify({ pin: "1234" })
+        }
+      );
+      const body = await response.json();
+
+      assert.equal(response.status, 200);
+
+      return body;
+    };
+
+    const sevenMinuteExtend = await extendByPin();
+    const sevenMinuteDelta = Math.round((new Date(sevenMinuteExtend.extended_until).getTime() - Date.now()) / 60000);
+
+    assert.equal(sevenMinuteDelta, 7);
+
+    fs.writeFileSync(extendEnvPath, "CHILD_EXTEND_MINUTES=9\n");
+
+    const nineMinuteExtend = await extendByPin();
+    const nineMinuteDelta = Math.round((new Date(nineMinuteExtend.extended_until).getTime() - Date.now()) / 60000);
+
+    assert.equal(nineMinuteDelta, 9);
+  } finally {
+    if (previousDotenvPath === undefined) {
+      delete process.env.DOTENV_CONFIG_PATH;
+    } else {
+      process.env.DOTENV_CONFIG_PATH = previousDotenvPath;
+    }
+
+    fs.rmSync(extendEnvPath, { force: true });
+    await closeServer(dynamicExtendServer);
+  }
 
   const superAdmin = {
     id: "cc799db4-ebef-46b1-ac4e-c5b22c04daf5",

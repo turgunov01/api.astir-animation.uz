@@ -68,6 +68,26 @@ function usedSecondsToday(sessions, now) {
     }, 0);
 }
 
+function activeExtensionUntil(child, now) {
+  const value = firstValue(child?.extendedUntil, child?.extended_until);
+
+  if (!value) {
+    return null;
+  }
+
+  const extendedUntil = new Date(value);
+
+  return extendedUntil.getTime() > now.getTime() ? extendedUntil : null;
+}
+
+function remainingSeconds(status) {
+  if (status.extensionActive && status.extendedUntil) {
+    return Math.max(0, Math.floor((new Date(status.extendedUntil).getTime() - Date.now()) / 1000));
+  }
+
+  return Math.max(0, status.limitSeconds - status.usedSeconds);
+}
+
 function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== "") || null;
 }
@@ -142,6 +162,8 @@ export function createWatchService({ childService, children, contentService, wat
   async function limitStatusForDevice(device, now = new Date()) {
     device = normalizeDevice(device);
 
+    const child = await children.findById(device.childId);
+    const extendedUntil = activeExtensionUntil(child, now);
     const limit = await childService.getLimitsAsync(device.parentId, device.childId);
     const sessions = watchSessions.listByChildId(device.childId);
     const usedSeconds = usedSecondsToday(sessions, now);
@@ -149,6 +171,10 @@ export function createWatchService({ childService, children, contentService, wat
     return {
       day: isoDay(now),
       date: localDateKey(now),
+      extendedUntil: extendedUntil ? extendedUntil.toISOString() : null,
+      extended_until: extendedUntil ? extendedUntil.toISOString() : null,
+      extensionActive: Boolean(extendedUntil),
+      extension_active: Boolean(extendedUntil),
       limit,
       limitSeconds: limit.dailyMinutes * 60,
       usedSeconds
@@ -158,6 +184,10 @@ export function createWatchService({ childService, children, contentService, wat
   async function assertDeviceCanWatchNow(device, now = new Date()) {
     const status = await limitStatusForDevice(device, now);
     const exactAllowedDates = allowedDates(status.limit);
+
+    if (status.extensionActive) {
+      return status;
+    }
 
     if (exactAllowedDates.length > 0 && !exactAllowedDates.includes(status.date)) {
       throw forbidden("Watching is not allowed on this date", "WATCH_DATE_BLOCKED");
@@ -211,7 +241,14 @@ export function createWatchService({ childService, children, contentService, wat
       throw notFound("Child not found", "CHILD_NOT_FOUND");
     }
 
-    const limit = await childService.getLimitsAsync(device.parentId, device.childId);
+    const limitStatus = await limitStatusForDevice(device);
+    const limit = {
+      ...limitStatus.limit,
+      extendedUntil: limitStatus.extendedUntil,
+      extended_until: limitStatus.extended_until,
+      extensionActive: limitStatus.extensionActive,
+      extension_active: limitStatus.extension_active
+    };
     const blacklist = await childService.listBlacklistAsync(device.parentId, device.childId);
 
     return {
@@ -410,7 +447,7 @@ export function createWatchService({ childService, children, contentService, wat
         last_position_sec: activeSession.positionSeconds || 0,
         resumePositionSeconds: activeSession.positionSeconds || 0,
         resume_position_sec: activeSession.positionSeconds || 0,
-        remainingSecondsToday: Math.max(0, limitStatus.limitSeconds - limitStatus.usedSeconds)
+        remainingSecondsToday: remainingSeconds(limitStatus)
       };
     }
 
@@ -444,7 +481,7 @@ export function createWatchService({ childService, children, contentService, wat
       last_position_sec: resumePositionSeconds,
       resumePositionSeconds,
       resume_position_sec: resumePositionSeconds,
-      remainingSecondsToday: limitStatus.limitSeconds - limitStatus.usedSeconds
+      remainingSecondsToday: remainingSeconds(limitStatus)
     };
   }
 

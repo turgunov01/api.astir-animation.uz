@@ -277,6 +277,16 @@ try {
     false
   );
 
+  const missingSearchQuery = await requestWithStatus(baseUrl, "/v1/search");
+  assert.equal(missingSearchQuery.status, 400);
+  assert.equal(missingSearchQuery.body.error, "request requires search query for endpoint");
+
+  const searchedMovie = await request(baseUrl, `/v1/search?q=${encodeURIComponent("Auth Toggle Movie")}`);
+  assert.equal(
+    searchedMovie.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
   const seriesItem = await request(baseUrl, `/v1/content/movies/${movie.movie.id}/series`, {
     method: "POST",
     body: {
@@ -302,13 +312,23 @@ try {
     true
   );
 
+  const searchedSeriesItem = await request(baseUrl, `/v1/search?q=${encodeURIComponent("Series Item")}`);
+  assert.equal(
+    searchedSeriesItem.data.some((item) => item.id === movie.movie.id && item.type === "series"),
+    true
+  );
+  assert.equal(
+    searchedSeriesItem.data.some((item) => item.id === seriesItem.series_item.id),
+    false
+  );
+
   const categories = await request(baseUrl, "/v1/content/categories");
 
   assert.equal(categories.categories.length > 0, true);
 
-  const deviceConfig = await request(baseUrl, "/v1/device/config");
+  const refreshedDeviceConfig = await request(baseUrl, "/v1/device/config");
 
-  assert.equal(deviceConfig.child.name, "Local Child");
+  assert.equal(refreshedDeviceConfig.child.name, "Local Child");
   console.log("Auth toggle test passed");
 } finally {
   await close();

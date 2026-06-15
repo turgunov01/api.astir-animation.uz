@@ -494,6 +494,19 @@ export function createContentController({ contentService }) {
       });
     },
 
+    async search(request, response) {
+      const q = firstQueryValue(request.query.q || request.query.search).trim();
+
+      if (!q) {
+        response.status(400).json({
+          error: "request requires search query for endpoint"
+        });
+        return;
+      }
+
+      response.json(await contentService.searchContent(request.actor, { q }));
+    },
+
     async listCategories(request, response) {
       response.json(await contentService.listCategories());
     },

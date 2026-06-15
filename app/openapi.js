@@ -30,6 +30,7 @@ export const openApiDocument = {
     { name: "Categories" },
     { name: "Tags" },
     { name: "Likes" },
+    { name: "Search" },
     { name: "Watch Sessions" }
   ],
   components: {
@@ -5956,6 +5957,71 @@ export const openApiDocument = {
             }
           },
           400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/search": {
+      get: {
+        tags: ["Search"],
+        summary: "Search movies and series",
+        security: [{ parentToken: [] }, { deviceToken: [] }],
+        parameters: [
+          {
+            name: "q",
+            in: "query",
+            required: true,
+            description: "Search query. Matches movies, parent series, and series episode metadata; episode matches return the parent series.",
+            schema: { type: "string", example: "tom" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Search results",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        allOf: [
+                          { $ref: "#/components/schemas/ContentMovie" },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: ["movies", "series"],
+                                example: "movies"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: {
+            description: "Search query is required",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: {
+                      type: "string",
+                      example: "request requires search query for endpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
           401: { $ref: "#/components/responses/Unauthorized" }
         }
       }
