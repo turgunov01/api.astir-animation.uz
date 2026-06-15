@@ -23,11 +23,15 @@ function serializeBlacklistItem(item) {
   return {
     id: item.id,
     parentId: item.parentId,
+    parent_id: item.parentId,
     childId: item.childId,
+    child_id: item.childId,
     contentId: item.contentId,
     content_id: item.contentId,
     createdAt: item.createdAt,
-    updatedAt: item.updatedAt
+    created_at: item.createdAt,
+    updatedAt: item.updatedAt,
+    updated_at: item.updatedAt
   };
 }
 

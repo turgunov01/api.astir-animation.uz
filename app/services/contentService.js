@@ -148,6 +148,9 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     ? ["auto", ...renditions.map((rendition) => rendition.quality)]
     : [];
   const tagIds = [...new Set(await contentMovieTags.listByMovieId(movie.id))];
+  const canWatch = !movie.is_premium || Boolean(likeContext?.canWatchPremium);
+  const subscriptionRequired = Boolean(movie.is_premium && !canWatch);
+  const previewDurationSec = subscriptionRequired ? 15 : 0;
 
   return {
     id: movie.id,
@@ -165,6 +168,14 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     tag_ids: tagIds,
     tags: await serializeMovieTags(tagIds, contentTags),
     is_premium: Boolean(movie.is_premium),
+    subscription_required: subscriptionRequired,
+    preview_duration_sec: previewDurationSec,
+    can_watch: canWatch,
+    access: {
+      can_watch: canWatch,
+      subscription_required: subscriptionRequired,
+      preview_duration_sec: previewDurationSec
+    },
     likes_count: likeContext?.contentLikes?.countByTarget(movie.id) || 0,
     is_liked: likeContext?.ownerId
       ? Boolean(likeContext.contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id))
@@ -219,7 +230,9 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
       auto_url: hlsUrl,
       qualities,
       renditions,
-      error: transcodeError
+      error: transcodeError,
+      preview_only: subscriptionRequired,
+      preview_until_sec: subscriptionRequired ? 15 : durationSeconds
     }
   };
 }
@@ -369,6 +382,101 @@ function localizedIncludes(value, query) {
   return localizedValues(value).some((entry) => normalized(entry).includes(needle));
 }
 
+function normalizeSearchValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9\u0400-\u04ff]+/gi, " ")
+    .trim();
+}
+
+function searchTokens(value) {
+  return normalizeSearchValue(value)
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function boundedEditDistance(left, right, maxDistance) {
+  if (Math.abs(left.length - right.length) > maxDistance) {
+    return maxDistance + 1;
+  }
+
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMin = current[0];
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      const value = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        previous[rightIndex - 1] + cost
+      );
+
+      current[rightIndex] = value;
+      rowMin = Math.min(rowMin, value);
+    }
+
+    if (rowMin > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    previous = current;
+  }
+
+  return previous[right.length];
+}
+
+function fuzzyDistanceLimit(token) {
+  if (token.length <= 3) {
+    return 0;
+  }
+
+  if (token.length <= 6) {
+    return 1;
+  }
+
+  if (token.length <= 11) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function tokenMatchesSearchValue(searchToken, valueToken) {
+  if (valueToken.includes(searchToken) || searchToken.includes(valueToken)) {
+    return true;
+  }
+
+  const maxDistance = fuzzyDistanceLimit(searchToken);
+
+  return maxDistance > 0 && boundedEditDistance(searchToken, valueToken, maxDistance) <= maxDistance;
+}
+
+function searchValueMatches(value, query) {
+  const queryTokens = searchTokens(query);
+
+  if (queryTokens.length === 0) {
+    return true;
+  }
+
+  const normalizedValue = normalizeSearchValue(value);
+
+  if (normalizedValue.includes(normalizeSearchValue(query))) {
+    return true;
+  }
+
+  const valueTokens = searchTokens(value);
+
+  return queryTokens.every((queryToken) => (
+    valueTokens.some((valueToken) => tokenMatchesSearchValue(queryToken, valueToken))
+  ));
+}
+
 async function findOrCreateTagByName(contentTags, name) {
   const normalizedName = String(name || "").trim();
 
@@ -455,9 +563,11 @@ function movieMatchesSearch(movie, query) {
     return true;
   }
 
-  return localizedIncludes(movie.title, query)
-    || localizedIncludes(movie.description, query)
-    || normalized(movie.content_type).includes(normalized(query));
+  return [
+    ...localizedValues(movie.title),
+    ...localizedValues(movie.description),
+    movie.content_type
+  ].some((value) => searchValueMatches(value, query));
 }
 
 function metricValue(value) {
@@ -606,6 +716,7 @@ export function createContentService({
   function likeContextForActor(actor) {
     return {
       contentLikes,
+      canWatchPremium: tariffService.canWatchMovie(actor, { is_premium: true }),
       ownerId: ownerIdForActor(actor)
     };
   }
@@ -1168,10 +1279,20 @@ export function createContentService({
       };
     },
 
+    async listFilters() {
+      return {
+        categories: contentCategories.list().map(serializeCategory),
+        tags: (await contentTags.list()).map(serializeTag)
+      };
+    },
+
     listContent(actor, { liked = false, q = "" } = {}) {
       const likeContext = likeContextForActor(actor);
       const items = catalog
-        .filter((item) => localizedIncludes(item.title, q) || normalized(item.type).includes(normalized(q)))
+        .filter((item) => [
+          ...localizedValues(item.title),
+          item.type
+        ].some((value) => searchValueMatches(value, q)))
         .map((item) => serializeCatalogItem(item, likeContext));
 
       return liked ? items.filter((item) => item.is_liked) : items;
@@ -1183,6 +1304,7 @@ export function createContentService({
         category = "",
         childId = "",
         liked = false,
+        kind = "",
         q = "",
         tags = [],
         page = 1,
@@ -1197,14 +1319,16 @@ export function createContentService({
       const filterTagIds = await tagFilterIds(contentTags, tags);
       const currentPage = Math.max(Number(page) || 1, 1);
       const perPage = Math.max(Number(limit) || 20, 1);
+      const seriesOnly = normalized(kind) === "series";
 
       const movieRows = await Promise.all(
         contentMovies.list()
           .filter((movie) => !isSeriesMovie(movie))
+          .filter((movie) => !seriesOnly || listSeriesRecords(movie).length > 0 || normalized(movie.content_type) === "series")
           .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
           .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
           .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
-          .filter((movie) => movieMatchesSearch(movie, q))
+          .filter((movie) => movieMatchesSearch(movie, q) || listSeriesRecords(movie).some((item) => movieMatchesSearch(item, q)))
           .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
           .map(async (movie) => ({
             movie,
@@ -1223,6 +1347,9 @@ export function createContentService({
         movies: await Promise.all(
           paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
         ),
+        series: seriesOnly
+          ? await Promise.all(paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext)))
+          : undefined,
         pagination: {
           page: currentPage,
           limit: perPage,
@@ -1287,6 +1414,9 @@ export function createContentService({
         duration_seconds: serializedMovie.duration_seconds,
         playback: serializedMovie.playback,
         cache_key: `${serializedMovie.id}:${serializedMovie.updatedAt || serializedMovie.createdAt || ""}`,
+        downloaded: true,
+        more_actions_enabled: false,
+        available_actions: [],
         updatedAt: serializedMovie.updatedAt
       };
 

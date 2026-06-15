@@ -15,6 +15,9 @@ const defaultTariffs = [
       ru: "Default access for free content.",
       uz: "Bepul kontent uchun asosiy kirish."
     },
+    duration_days: 30,
+    max_children: 1,
+    features: ["free_content"],
     is_default: true,
     can_watch_premium: false,
     price_cents: 0,
@@ -32,6 +35,9 @@ const defaultTariffs = [
       ru: "Access to all free and premium content.",
       uz: "Barcha bepul va premium kontentga kirish."
     },
+    duration_days: 30,
+    max_children: 5,
+    features: ["free_content", "premium_content"],
     is_default: false,
     can_watch_premium: true,
     price_cents: 4900000,
@@ -61,6 +67,9 @@ function serializeTariff(tariff) {
     description: { ...tariff.description },
     is_default: Boolean(tariff.is_default),
     can_watch_premium: Boolean(tariff.can_watch_premium),
+    duration_days: Number(tariff.duration_days) || 30,
+    max_children: Number(tariff.max_children) || 1,
+    features: Array.isArray(tariff.features) ? tariff.features : [],
     price: priceString(priceCents),
     price_cents: priceCents,
     currency: tariff.currency || "UZS",
@@ -107,6 +116,18 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
 
       if (!existingTariff.currency) {
         attributes.currency = tariff.currency;
+      }
+
+      if (existingTariff.duration_days === undefined || existingTariff.duration_days === null) {
+        attributes.duration_days = tariff.duration_days;
+      }
+
+      if (existingTariff.max_children === undefined || existingTariff.max_children === null) {
+        attributes.max_children = tariff.max_children;
+      }
+
+      if (!Array.isArray(existingTariff.features)) {
+        attributes.features = tariff.features;
       }
 
       if (Object.keys(attributes).length > 0) {

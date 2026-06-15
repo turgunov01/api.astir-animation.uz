@@ -45,7 +45,6 @@ import {
 } from "./utils.js";
 
 const clickEnv = [
-  "CLICK_BASE_URL",
   "CLICK_MERCHANT_ID",
   "CLICK_SERVICE_ID",
   "CLICK_SECRET_KEY"
@@ -73,9 +72,17 @@ const latestTranscodingJobJoin = `
 function requireClickEnv() {
   const missing = clickEnv.filter((name) => !process.env[name]);
 
+  if (!process.env.CLICK_BASE_URL && !process.env.CLICK_PAYMENT_URL) {
+    missing.push("CLICK_PAYMENT_URL");
+  }
+
   if (missing.length > 0) {
     throw legacyError(503, "click_unavailable", `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required`);
   }
+}
+
+function legacyClickPaymentBaseUrl() {
+  return process.env.CLICK_PAYMENT_URL || process.env.CLICK_BASE_URL;
 }
 
 function nowPlus(minutes) {
@@ -160,6 +167,7 @@ function serializeSeries(row) {
     title: row.title || {},
     description: row.description || {},
     slug: row.slug,
+    category_id: row.category_id || "",
     kind: row.kind || "seasons",
     poster_path: row.poster_path || "",
     poster_url: row.poster_path ? legacyPosterUrl("series", row.id) : row.poster_url || "",
@@ -479,6 +487,34 @@ function firstBodyString(body, ...fields) {
   return "";
 }
 
+function requestEmailValue(request) {
+  return firstBodyString(request.body, "email")
+    || firstBodyString(request.query, "email");
+}
+
+async function legacyEmailStatus(db, email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw legacyError(400, "email is required", "email is required");
+  }
+
+  const user = await db.one(
+    "SELECT id, role, active FROM users WHERE email = $1",
+    [normalizedEmail]
+  );
+
+  return {
+    email: normalizedEmail,
+    emailExists: Boolean(user),
+    user_exists: Boolean(user),
+    can_register: !user,
+    auth_flow: user ? "login" : "register",
+    user_role: user?.role || "",
+    active: user ? Boolean(user.active) : false
+  };
+}
+
 async function insertRow(db, table, attributes) {
   const entries = Object.entries(attributes).filter(([, value]) => value !== undefined);
   const columns = entries.map(([key]) => key);
@@ -731,6 +767,32 @@ async function resolveLikeTarget(db, id, targetType = "") {
   };
 }
 
+async function legacyBlacklistContentIds(db, id) {
+  if (!isUuid(id)) {
+    throw legacyError(404, "content_not_found", "content or series not found");
+  }
+
+  const content = await db.one("SELECT id FROM content WHERE id = $1", [id]);
+
+  if (content) {
+    return [content.id];
+  }
+
+  const series = await db.one("SELECT id FROM series WHERE id = $1", [id]);
+
+  if (!series) {
+    throw legacyError(404, "content_not_found", "content or series not found");
+  }
+
+  const rows = await db.many("SELECT id FROM content WHERE series_id = $1 ORDER BY season_number NULLS FIRST, episode_number NULLS FIRST, created_at", [series.id]);
+
+  if (rows.length === 0) {
+    throw legacyError(404, "series_content_not_found", "series has no content items");
+  }
+
+  return rows.map((row) => row.id);
+}
+
 async function ownerUserIdForActor(db, actor) {
   if (actor.kind === "user") {
     return actor.user.id;
@@ -760,6 +822,84 @@ async function requireOwnerUserIdForActor(db, actor) {
   }
 
   return userId;
+}
+
+function isLegacyAdminActor(actor) {
+  return actor?.kind === "user" && ["admin", "super_admin"].includes(actor.user?.role);
+}
+
+async function appendLegacyContentVisibilityFilters(db, actor, filters, values, alias = "c") {
+  if (!actor || isLegacyAdminActor(actor)) {
+    return;
+  }
+
+  const userId = await ownerUserIdForActor(db, actor);
+
+  if (userId) {
+    values.push(userId);
+    filters.push(`NOT EXISTS (
+      SELECT 1
+      FROM blocks b
+      WHERE b.user_id = $${values.length}
+        AND b.content_id = ${alias}.id
+    )`);
+  }
+
+  const childId = legacyActorChildId(actor);
+
+  if (childId) {
+    values.push(childId);
+    filters.push(`NOT EXISTS (
+      SELECT 1
+      FROM child_permissions p
+      WHERE p.child_id = $${values.length}
+        AND p.mode = 'deny'
+        AND (
+          p.content_id = ${alias}.id
+          OR (p.category_id IS NOT NULL AND p.category_id = ${alias}.category_id)
+        )
+    )`);
+  }
+}
+
+async function appendLegacySeriesVisibilityFilters(db, actor, filters, values, alias = "s") {
+  if (!actor || isLegacyAdminActor(actor)) {
+    return;
+  }
+
+  const userId = await ownerUserIdForActor(db, actor);
+
+  if (userId) {
+    values.push(userId);
+    filters.push(`NOT EXISTS (
+      SELECT 1
+      FROM blocks b
+      JOIN content bc ON bc.id = b.content_id
+      WHERE b.user_id = $${values.length}
+        AND bc.series_id = ${alias}.id
+    )`);
+  }
+
+  const childId = legacyActorChildId(actor);
+
+  if (childId) {
+    values.push(childId);
+    filters.push(`NOT EXISTS (
+      SELECT 1
+      FROM child_permissions p
+      WHERE p.child_id = $${values.length}
+        AND p.mode = 'deny'
+        AND (
+          (p.category_id IS NOT NULL AND p.category_id = ${alias}.category_id)
+          OR EXISTS (
+            SELECT 1
+            FROM content pc
+            WHERE pc.series_id = ${alias}.id
+              AND p.content_id = pc.id
+          )
+        )
+    )`);
+  }
 }
 
 async function legacyLikedItems(db, userId) {
@@ -869,17 +1009,51 @@ async function activeSubscription(db, userId) {
 }
 
 async function assertCanAccessContent(db, actor, contentId) {
-  if (actor.kind === "user" && ["admin", "super_admin"].includes(actor.user.role)) {
+  if (!isUuid(contentId)) {
     return;
   }
 
-  const blocked = await db.one("SELECT 1 FROM blocks WHERE user_id = $1 AND content_id = $2", [
-    await ownerUserIdForActor(db, actor),
-    contentId
-  ]);
+  if (isLegacyAdminActor(actor)) {
+    return;
+  }
+
+  const content = await db.one("SELECT id FROM content WHERE id = $1", [contentId]);
+
+  if (!content) {
+    return;
+  }
+
+  const ownerId = await ownerUserIdForActor(db, actor);
+  const blocked = ownerId
+    ? await db.one("SELECT 1 FROM blocks WHERE user_id = $1 AND content_id = $2", [ownerId, contentId])
+    : null;
 
   if (blocked) {
     throw legacyError(403, "content_blocked", "content is blocked");
+  }
+
+  const childId = legacyActorChildId(actor);
+
+  if (childId && content) {
+    const denied = await db.one(
+      `
+        SELECT 1
+        FROM child_permissions p
+        JOIN content c ON c.id = $2
+        WHERE p.child_id = $1
+          AND p.mode = 'deny'
+          AND (
+            p.content_id = c.id
+            OR (p.category_id IS NOT NULL AND p.category_id = c.category_id)
+          )
+        LIMIT 1
+      `,
+      [childId, content.id]
+    );
+
+    if (denied) {
+      throw legacyError(403, "content_blocked_for_child", "content is blocked for this child");
+    }
   }
 }
 
@@ -928,6 +1102,96 @@ function legacyWeekdayAllowed(mask) {
   const dayBit = 1 << new Date().getDay();
 
   return (Number(mask) & dayBit) !== 0;
+}
+
+function legacyTimeOfDay(minutes, fallback) {
+  if (!Number.isInteger(minutes)) {
+    return fallback;
+  }
+
+  const bounded = Math.max(0, Math.min(minutes, 1439));
+  const hours = String(Math.floor(bounded / 60)).padStart(2, "0");
+  const mins = String(bounded % 60).padStart(2, "0");
+
+  return `${hours}:${mins}`;
+}
+
+function legacyParseTimeOfDay(value, field, fallback) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value));
+
+  if (!match) {
+    throw legacyError(400, "invalid_time", `${field} must be HH:mm`);
+  }
+
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function legacyMaskToAllowedDays(mask) {
+  if (mask === null || mask === undefined) {
+    return [1, 2, 3, 4, 5, 6, 7];
+  }
+
+  const numericMask = Number(mask);
+  const days = [];
+
+  for (const day of [1, 2, 3, 4, 5, 6, 7]) {
+    const jsDay = day === 7 ? 0 : day;
+
+    if ((numericMask & (1 << jsDay)) !== 0) {
+      days.push(day);
+    }
+  }
+
+  return days;
+}
+
+function legacyAllowedDaysToMask(value, fallbackMask = null) {
+  if (value === undefined || value === null || value === "") {
+    return fallbackMask;
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    throw legacyError(400, "invalid_allowed_days", "allowedDays must be a non-empty array");
+  }
+
+  let mask = 0;
+
+  for (const day of [...new Set(value)]) {
+    if (!Number.isInteger(day) || day < 1 || day > 7) {
+      throw legacyError(400, "invalid_allowed_days", "allowedDays must contain numbers from 1 to 7");
+    }
+
+    mask |= 1 << (day === 7 ? 0 : day);
+  }
+
+  return mask;
+}
+
+function legacyLimitResponse(childId, permission = null) {
+  const dailyMinutes = Number(permission?.daily_limit_minutes || 60);
+  const from = permission?.watch_from_min ?? 8 * 60;
+  const to = permission?.watch_until_min ?? 20 * 60;
+  const allowedDays = legacyMaskToAllowedDays(permission?.weekday_mask);
+
+  return {
+    id: permission?.id || null,
+    childId,
+    child_id: childId,
+    dailyMinutes,
+    daily_minutes: dailyMinutes,
+    allowedFrom: legacyTimeOfDay(from, "08:00"),
+    allowed_from: legacyTimeOfDay(from, "08:00"),
+    allowedTo: legacyTimeOfDay(to, "20:00"),
+    allowed_to: legacyTimeOfDay(to, "20:00"),
+    allowedDays,
+    allowed_days: allowedDays,
+    allowedDates: [],
+    allowed_dates: []
+  };
 }
 
 async function legacyUsedSecondsToday(db, childId) {
@@ -1074,9 +1338,29 @@ async function listLegacyContent(request, response) {
     )`);
   }
 
-  if (request.query.q) {
-    values.push(`%${request.query.q}%`);
-    filters.push(`(c.title->>'en' ILIKE $${values.length} OR c.title->>'ru' ILIKE $${values.length} OR c.title->>'uz' ILIKE $${values.length})`);
+  const search = firstQueryValue(request.query.q || request.query.search);
+  if (search) {
+    values.push(`%${search}%`);
+    const patternParam = values.length;
+    values.push(search);
+    const searchParam = values.length;
+    filters.push(`(
+      c.title->>'en' ILIKE $${patternParam}
+      OR c.title->>'ru' ILIKE $${patternParam}
+      OR c.title->>'uz' ILIKE $${patternParam}
+      OR c.description->>'en' ILIKE $${patternParam}
+      OR c.description->>'ru' ILIKE $${patternParam}
+      OR c.description->>'uz' ILIKE $${patternParam}
+      OR s.title->>'en' ILIKE $${patternParam}
+      OR s.title->>'ru' ILIKE $${patternParam}
+      OR s.title->>'uz' ILIKE $${patternParam}
+      OR similarity(COALESCE(c.title->>'en', ''), $${searchParam}) > 0.25
+      OR similarity(COALESCE(c.title->>'ru', ''), $${searchParam}) > 0.25
+      OR similarity(COALESCE(c.title->>'uz', ''), $${searchParam}) > 0.25
+      OR similarity(COALESCE(s.title->>'en', ''), $${searchParam}) > 0.25
+      OR similarity(COALESCE(s.title->>'ru', ''), $${searchParam}) > 0.25
+      OR similarity(COALESCE(s.title->>'uz', ''), $${searchParam}) > 0.25
+    )`);
   }
 
   if (request.query.min_age) {
@@ -1124,9 +1408,17 @@ async function listLegacyContent(request, response) {
     filters.push(`EXISTS (SELECT 1 FROM likes l WHERE l.target_type = 'content' AND l.target_id = c.id AND l.user_id = $${values.length})`);
   }
 
+  await appendLegacyContentVisibilityFilters(request.legacyDb, request.legacyActor, filters, values, "c");
+
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const total = await request.legacyDb.one(
-    `SELECT COUNT(*)::integer AS count FROM content c LEFT JOIN categories cat ON cat.id = c.category_id ${where}`,
+    `
+      SELECT COUNT(*)::integer AS count
+      FROM content c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      LEFT JOIN series s ON s.id = c.series_id
+      ${where}
+    `,
     values
   );
   values.push(limit, offset);
@@ -1496,9 +1788,25 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   const videoUpload = media.upload("videos", { maxMb: config.maxVideoUploadMb || 2048 }).single("file");
   const supportUpload = media.upload("support", { maxMb: 50 }).single("file");
 
+  const checkEmailHandler = asyncHandler(async (request, response) => {
+    response.json(await legacyEmailStatus(request.legacyDb, requestEmailValue(request)));
+  });
+
+  router.get("/auth/email/check", checkEmailHandler);
+  router.post("/auth/email/check", checkEmailHandler);
+  router.get("/auth/check-email", checkEmailHandler);
+  router.post("/auth/check-email", checkEmailHandler);
+
   router.post("/auth/otp/request", asyncHandler(async (request, response) => {
     requireFields(request.body, ["email"]);
-    response.json(await createOtp(request.legacyDb, request.body.email, "login"));
+    const status = await legacyEmailStatus(request.legacyDb, request.body.email);
+    const otp = await createOtp(request.legacyDb, status.email, "login");
+
+    response.json({
+      ...otp,
+      ...status,
+      otp_sent: true
+    });
   }));
 
   router.post("/auth/forgot-password", asyncHandler(async (request, response) => {
@@ -1516,11 +1824,12 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   router.post("/auth/otp/verify", asyncHandler(async (request, response) => {
     requireFields(request.body, ["email", "code"]);
     await verifyOtp(request.legacyDb, request.body.email, request.body.code);
-    const user = await request.legacyDb.one("SELECT * FROM users WHERE email = $1", [request.body.email.toLowerCase()]);
+    const status = await legacyEmailStatus(request.legacyDb, request.body.email);
+    const user = await request.legacyDb.one("SELECT * FROM users WHERE email = $1", [status.email]);
 
     if (!user) {
       response.json({
-        email: request.body.email.toLowerCase(),
+        ...status,
         user_exists: false,
         access_token: "",
         refresh_token: "",
@@ -1534,6 +1843,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     response.json({
       ...(await issueTokenPair(request.legacyDb, user)),
       email: user.email,
+      ...status,
       user_exists: true
     });
   }));
@@ -1554,7 +1864,12 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   }));
 
   router.post("/auth/register", asyncHandler(async (request, response) => {
-    requireFields(request.body, ["email", "name", "password"]);
+    requireFields(request.body, ["email", "name", "password", "pin"]);
+
+    if (!/^\d{4}$/.test(String(request.body.pin || ""))) {
+      throw legacyError(400, "invalid_pin", "PIN must be a 4-digit code");
+    }
+
     const existing = await request.legacyDb.one("SELECT id FROM users WHERE email = $1", [request.body.email.toLowerCase()]);
 
     if (existing) {
@@ -1575,6 +1890,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       name: request.body.name,
       last_name: request.body.last_name || "",
       password_hash: hashSecret(request.body.password),
+      pin_hash: hashSecret(request.body.pin),
       role: "parent",
       last_login_at: new Date().toISOString()
     });
@@ -1629,6 +1945,33 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     await request.legacyDb.query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
     response.json(await issueTokenPair(request.legacyDb, user));
   }));
+
+  const changeLegacyPinHandler = asyncHandler(async (request, response) => {
+    const currentPin = request.body.current_pin || request.body.currentPin || request.body.old_pin || request.body.oldPin;
+    const newPin = request.body.new_pin || request.body.newPin || request.body.pin;
+
+    if (request.legacyUser.role !== "parent") {
+      throw legacyError(403, "forbidden", "parent role is required");
+    }
+
+    if (!/^\d{4}$/.test(String(currentPin || "")) || !/^\d{4}$/.test(String(newPin || ""))) {
+      throw legacyError(400, "invalid_pin", "PIN must be a 4-digit code");
+    }
+
+    if (!request.legacyUser.pin_hash || !verifySecret(currentPin, request.legacyUser.pin_hash)) {
+      throw legacyError(401, "invalid_pin", "invalid PIN");
+    }
+
+    await request.legacyDb.query(
+      "UPDATE users SET pin_hash = $1 WHERE id = $2",
+      [hashSecret(newPin), request.legacyUser.id]
+    );
+
+    response.json({ changed: true });
+  });
+
+  router.patch("/auth/pin", requireUser, changeLegacyPinHandler);
+  router.put("/auth/pin", requireUser, changeLegacyPinHandler);
 
   router.post("/auth/google", asyncHandler(async (request, response) => {
     const token = request.body.id_token || request.body.idToken;
@@ -1864,6 +2207,241 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       throw legacyError(404, "child_not_found", "child not found");
     }
     response.json(child);
+  }));
+
+  router.get("/children/:id/limits", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
+    const permission = await request.legacyDb.one(
+      `
+        SELECT *
+        FROM child_permissions
+        WHERE child_id = $1
+          AND mode = 'allow'
+          AND content_id IS NULL
+          AND category_id IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [child.id]
+    );
+
+    response.json({ limit: legacyLimitResponse(child.id, permission) });
+  }));
+
+  router.put("/children/:id/limits", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
+    const existing = await request.legacyDb.one(
+      `
+        SELECT *
+        FROM child_permissions
+        WHERE child_id = $1
+          AND mode = 'allow'
+          AND content_id IS NULL
+          AND category_id IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [child.id]
+    );
+    const body = request.body || {};
+    const dailyMinutes = toInteger(body.dailyMinutes ?? body.daily_minutes, existing?.daily_limit_minutes || 60);
+    const watchFromMin = legacyParseTimeOfDay(
+      body.allowedFrom ?? body.allowed_from,
+      "allowedFrom",
+      existing?.watch_from_min ?? 8 * 60
+    );
+    const watchUntilMin = legacyParseTimeOfDay(
+      body.allowedTo ?? body.allowed_to,
+      "allowedTo",
+      existing?.watch_until_min ?? 20 * 60
+    );
+    const weekdayMask = legacyAllowedDaysToMask(
+      body.allowedDays ?? body.allowed_days,
+      existing?.weekday_mask ?? legacyAllowedDaysToMask([1, 2, 3, 4, 5, 6, 7])
+    );
+
+    if (dailyMinutes < 1 || dailyMinutes > 1440) {
+      throw legacyError(400, "invalid_daily_limit", "dailyMinutes must be between 1 and 1440");
+    }
+
+    const permission = existing
+      ? await request.legacyDb.one(
+        `
+          UPDATE child_permissions
+          SET daily_limit_minutes = $1,
+              watch_from_min = $2,
+              watch_until_min = $3,
+              weekday_mask = $4
+          WHERE id = $5
+          RETURNING *
+        `,
+        [dailyMinutes, watchFromMin, watchUntilMin, weekdayMask, existing.id]
+      )
+      : await insertRow(request.legacyDb, "child_permissions", {
+        child_id: child.id,
+        mode: "allow",
+        category_id: null,
+        content_id: null,
+        watch_from_min: watchFromMin,
+        watch_until_min: watchUntilMin,
+        weekday_mask: weekdayMask,
+        daily_limit_minutes: dailyMinutes
+      });
+
+    response.json({ limit: legacyLimitResponse(child.id, permission) });
+  }));
+
+  router.get("/children/:id/blacklist", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
+    const rows = await request.legacyDb.many(
+      `
+        SELECT p.id,
+               p.child_id,
+               p.content_id,
+               p.created_at,
+               c.title,
+               c.poster_url,
+               c.series_id
+        FROM child_permissions p
+        JOIN content c ON c.id = p.content_id
+        WHERE p.child_id = $1
+          AND p.mode = 'deny'
+          AND p.content_id IS NOT NULL
+        ORDER BY p.created_at DESC
+      `,
+      [child.id]
+    );
+
+    const blacklist = rows.map((row) => ({
+      id: row.id,
+      childId: row.child_id,
+      child_id: row.child_id,
+      contentId: row.content_id,
+      content_id: row.content_id,
+      series_id: row.series_id || null,
+      title: row.title,
+      poster_url: row.poster_url || "",
+      createdAt: row.created_at,
+      created_at: row.created_at
+    }));
+
+    response.json({
+      blacklist,
+      items: blacklist,
+      total: blacklist.length
+    });
+  }));
+
+  router.post("/children/:id/blacklist", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
+    const targetId = request.body.contentId || request.body.content_id || request.body.seriesId || request.body.series_id;
+    const contentIds = await legacyBlacklistContentIds(request.legacyDb, targetId);
+    const items = [];
+
+    for (const contentId of contentIds) {
+      const existing = await request.legacyDb.one(
+        "SELECT * FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND content_id = $2 LIMIT 1",
+        [child.id, contentId]
+      );
+
+      items.push(existing || await insertRow(request.legacyDb, "child_permissions", {
+        child_id: child.id,
+        mode: "deny",
+        category_id: null,
+        content_id: contentId,
+        watch_from_min: null,
+        watch_until_min: null,
+        weekday_mask: null,
+        daily_limit_minutes: null
+      }));
+    }
+
+    response.status(201).json({
+      blacklisted: true,
+      childId: child.id,
+      child_id: child.id,
+      content_id: contentIds[0],
+      content_ids: contentIds,
+      items
+    });
+  }));
+
+  router.delete("/children/:id/blacklist/:content_id", requireParent, asyncHandler(async (request, response) => {
+    if (!isUuid(request.params.id)) {
+      throw legacyError(400, "invalid child_id", "invalid child_id");
+    }
+
+    const child = await request.legacyDb.one("SELECT id FROM children WHERE id = $1 AND parent_id = $2", [
+      request.params.id,
+      request.legacyUser.id
+    ]);
+
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+
+    const contentIds = await legacyBlacklistContentIds(request.legacyDb, request.params.content_id);
+    const result = await request.legacyDb.query(
+      "DELETE FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND content_id = ANY($2::uuid[])",
+      [child.id, contentIds]
+    );
+
+    response.json({
+      blacklisted: false,
+      deleted: result.rowCount || 0,
+      childId: child.id,
+      child_id: child.id,
+      content_id: contentIds[0],
+      content_ids: contentIds
+    });
   }));
 
   router.get("/children/:id/devices", requireParent, asyncHandler(async (request, response) => {
@@ -2137,7 +2715,11 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     }
     const extendedUntil = nowPlus(120);
     await updateById(request.legacyDb, "children", child.id, { extended_until: extendedUntil });
-    response.json({ message: "ok" });
+    response.json({
+      message: "ok",
+      extended_until: extendedUntil,
+      extends_until: extendedUntil
+    });
   }));
 
   router.get("/children/:id/extend/:ticket_id/status", requireActor, asyncHandler(async (request, response) => {
@@ -2318,8 +2900,73 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
   router.get("/series", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
-    const userId = await optionalLegacyUserId(request);
-    const rows = await request.legacyDb.many("SELECT * FROM series WHERE active = true ORDER BY created_at DESC");
+    const actor = await optionalLegacyActor(request);
+    const userId = actor ? await ownerUserIdForActor(request.legacyDb, actor) : null;
+    const search = firstQueryValue(request.query.q || request.query.search);
+    const category = firstQueryValue(request.query.category || request.query.category_id);
+    let rows;
+
+    if (!search && !category) {
+      rows = await request.legacyDb.many("SELECT * FROM series WHERE active = true ORDER BY created_at DESC");
+    } else {
+      const filters = ["s.active = true"];
+      const values = [];
+
+      if (category) {
+        values.push(category);
+        filters.push(`(
+          s.category_id::text = $${values.length}
+          OR lower(cat.slug) = lower($${values.length})
+          OR lower(cat.name->>'en') = lower($${values.length})
+          OR lower(cat.name->>'ru') = lower($${values.length})
+          OR lower(cat.name->>'uz') = lower($${values.length})
+        )`);
+      }
+
+      if (search) {
+        values.push(`%${search}%`);
+        const patternParam = values.length;
+        values.push(search);
+        const searchParam = values.length;
+        filters.push(`(
+          s.title->>'en' ILIKE $${patternParam}
+          OR s.title->>'ru' ILIKE $${patternParam}
+          OR s.title->>'uz' ILIKE $${patternParam}
+          OR s.description->>'en' ILIKE $${patternParam}
+          OR s.description->>'ru' ILIKE $${patternParam}
+          OR s.description->>'uz' ILIKE $${patternParam}
+          OR EXISTS (
+            SELECT 1
+            FROM content ec
+            WHERE ec.series_id = s.id
+              AND (
+                ec.title->>'en' ILIKE $${patternParam}
+                OR ec.title->>'ru' ILIKE $${patternParam}
+                OR ec.title->>'uz' ILIKE $${patternParam}
+                OR similarity(COALESCE(ec.title->>'en', ''), $${searchParam}) > 0.25
+                OR similarity(COALESCE(ec.title->>'ru', ''), $${searchParam}) > 0.25
+                OR similarity(COALESCE(ec.title->>'uz', ''), $${searchParam}) > 0.25
+              )
+          )
+          OR similarity(COALESCE(s.title->>'en', ''), $${searchParam}) > 0.25
+          OR similarity(COALESCE(s.title->>'ru', ''), $${searchParam}) > 0.25
+          OR similarity(COALESCE(s.title->>'uz', ''), $${searchParam}) > 0.25
+        )`);
+      }
+
+      await appendLegacySeriesVisibilityFilters(request.legacyDb, actor, filters, values, "s");
+
+      rows = await request.legacyDb.many(
+        `
+          SELECT s.*
+          FROM series s
+          LEFT JOIN categories cat ON cat.id = s.category_id
+          WHERE ${filters.join(" AND ")}
+          ORDER BY s.created_at DESC
+        `,
+        values
+      );
+    }
     const data = await Promise.all(
       rows.map(async (row) => localizeRecord(
         await serializeSeriesWithLikes(request.legacyDb, row, userId),
@@ -2337,6 +2984,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       title,
       description: normalizeI18n(request.body.description, ""),
       kind: request.body.kind || "seasons",
+      category_id: request.body.category_id || null,
       poster_url: request.body.poster_url || "",
       slug: createSlug(title, "series"),
       active: request.body.active !== false
@@ -2358,6 +3006,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       title: request.body.title ? normalizeI18n(request.body.title) : undefined,
       description: request.body.description ? normalizeI18n(request.body.description) : undefined,
       kind: request.body.kind,
+      category_id: request.body.category_id,
       poster_url: request.body.poster_url,
       active: request.body.active
     };
@@ -2374,16 +3023,37 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
   router.get("/series/:id/episodes", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
-    const rows = await request.legacyDb.many(
-      `
-        SELECT c.*, ${latestTranscodingJobSelect}
-        FROM content c
-        ${latestTranscodingJobJoin}
-        WHERE c.series_id = $1 AND c.published = true
-        ORDER BY c.season_number NULLS FIRST, c.episode_number NULLS FIRST, c.created_at
-      `,
-      [request.params.id]
-    );
+    const actor = await optionalLegacyActor(request);
+    let rows;
+
+    if (!actor) {
+      rows = await request.legacyDb.many(
+        `
+          SELECT c.*, ${latestTranscodingJobSelect}
+          FROM content c
+          ${latestTranscodingJobJoin}
+          WHERE c.series_id = $1 AND c.published = true
+          ORDER BY c.season_number NULLS FIRST, c.episode_number NULLS FIRST, c.created_at
+        `,
+        [request.params.id]
+      );
+    } else {
+      const filters = ["c.series_id = $1", "c.published = true"];
+      const values = [request.params.id];
+
+      await appendLegacyContentVisibilityFilters(request.legacyDb, actor, filters, values, "c");
+
+      rows = await request.legacyDb.many(
+        `
+          SELECT c.*, ${latestTranscodingJobSelect}
+          FROM content c
+          ${latestTranscodingJobJoin}
+          WHERE ${filters.join(" AND ")}
+          ORDER BY c.season_number NULLS FIRST, c.episode_number NULLS FIRST, c.created_at
+        `,
+        values
+      );
+    }
     const movieRows = movieEpisodesForSeries(contentMovies, request.params.id);
     const data = [...rows.map(serializeContent), ...movieRows];
 
@@ -2420,6 +3090,20 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
   router.get("/content", requireActor, asyncHandler(listLegacyContent));
   router.get("/content/movies", requireActor, asyncHandler(listLegacyContent));
+  router.get("/content/filters", requireActor, asyncHandler(async (request, response) => {
+    const lang = requestedLang(request);
+    const categories = await request.legacyDb.many(
+      "SELECT * FROM categories WHERE active = true ORDER BY sort_order, created_at DESC"
+    );
+    const tags = await request.legacyDb.many(
+      "SELECT * FROM tags WHERE active = true ORDER BY slug, created_at DESC"
+    );
+
+    response.json({
+      categories: categories.map((row) => localizeRecord(row, lang, ["name", "description"])),
+      tags: tags.map((row) => localizeRecord(row, lang, ["name"]))
+    });
+  }));
 
   router.post("/content", requireAdmin, asyncHandler(async (request, response) => {
     requireFields(request.body, ["title"]);
@@ -2475,7 +3159,6 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     if (!row) {
       throw legacyError(404, "content_not_found", "content not found");
     }
-    await request.legacyDb.query("UPDATE content SET views_count = views_count + 1 WHERE id = $1", [row.id]);
     response.json(await contentListItem(request.legacyDb, row, request.legacyActor, requestedLang(request)));
   }));
 
@@ -2648,7 +3331,23 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
   router.get("/me/likes", requireActor, asyncHandler(async (request, response) => {
     const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
-    const data = await legacyLikedItems(request.legacyDb, userId);
+    const data = [];
+
+    for (const item of await legacyLikedItems(request.legacyDb, userId)) {
+      if (item.target_type === "content") {
+        try {
+          await assertCanAccessContent(request.legacyDb, request.legacyActor, item.target_id);
+        } catch (error) {
+          if (error.statusCode === 403) {
+            continue;
+          }
+
+          throw error;
+        }
+      }
+
+      data.push(item);
+    }
 
     response.json({
       data
@@ -2657,12 +3356,31 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
 
   router.get("/me/favourites", requireActor, asyncHandler(async (request, response) => {
     const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
-    const data = await favouriteItems({
+    const favourites = await favouriteItems({
       contentLikes,
       contentMovies,
       db: request.legacyDb,
       userId
     });
+    const data = [];
+
+    for (const item of favourites) {
+      const contentId = item.target_id || item.content_id || item.id;
+
+      if (item.target_type === "content" && contentId) {
+        try {
+          await assertCanAccessContent(request.legacyDb, request.legacyActor, contentId);
+        } catch (error) {
+          if (error.statusCode === 403) {
+            continue;
+          }
+
+          throw error;
+        }
+      }
+
+      data.push(item);
+    }
 
     response.json({
       data,
@@ -2791,6 +3509,11 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
     const actor = request.legacyActor;
     const viewerId = actor.kind === "user" ? actor.user.id : actor.id;
     const position = toInteger(request.body.position_sec, 0);
+    const previousProgress = await request.legacyDb.one(
+      "SELECT position_sec FROM watch_progress WHERE viewer_id = $1 AND viewer_kind = $2 AND content_id = $3",
+      [viewerId, actor.kind, request.params.id]
+    );
+
     await request.legacyDb.query(
       `
         INSERT INTO watch_progress (viewer_id, viewer_kind, content_id, position_sec)
@@ -2800,6 +3523,14 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       `,
       [viewerId, actor.kind, request.params.id, position]
     );
+
+    if (position >= 10 && Number(previousProgress?.position_sec || 0) < 10) {
+      await request.legacyDb.query(
+        "UPDATE content SET views_count = views_count + 1 WHERE id = $1",
+        [request.params.id]
+      );
+    }
+
     await insertRow(request.legacyDb, "watch_history", {
       viewer_id: viewerId,
       viewer_kind: actor.kind,
@@ -2812,16 +3543,22 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   router.get("/me/history", requireActor, asyncHandler(async (request, response) => {
     const actor = request.legacyActor;
     const viewerId = actor.kind === "user" ? actor.user.id : actor.id;
+    const filters = ["h.viewer_id = $1", "h.viewer_kind = $2"];
+    const values = [viewerId, actor.kind];
+
+    await appendLegacyContentVisibilityFilters(request.legacyDb, actor, filters, values, "c");
+    values.push(100);
+
     const rows = await request.legacyDb.many(
       `
         SELECT h.*, c.title, c.poster_url, c.duration_sec
         FROM watch_history h
         JOIN content c ON c.id = h.content_id
-        WHERE h.viewer_id = $1 AND h.viewer_kind = $2
+        WHERE ${filters.join(" AND ")}
         ORDER BY h.watched_at DESC
-        LIMIT 100
+        LIMIT $${values.length}
       `,
-      [viewerId, actor.kind]
+      values
     );
     response.json({ data: rows.map((row) => localizeRecord(row, requestedLang(request), ["title"])) });
   }));
@@ -2900,7 +3637,12 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   }));
 
   router.get("/recommendations", asyncHandler(async (request, response) => {
-    response.json(await request.legacyDb.many("SELECT * FROM recommendations WHERE active = true ORDER BY sort_order, created_at"));
+    const { limit, offset } = parseLimitOffset(request.query, 10, 10);
+
+    response.json(await request.legacyDb.many(
+      "SELECT * FROM recommendations WHERE active = true ORDER BY sort_order, created_at LIMIT $1 OFFSET $2",
+      [limit, offset]
+    ));
   }));
 
   router.post("/recommendations", requireAdmin, asyncHandler(async (request, response) => {
@@ -2915,15 +3657,23 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   }));
 
   router.get("/recommendations/personalized", requireActor, asyncHandler(async (request, response) => {
+    const { limit } = parseLimitOffset(request.query, 10, 10);
+    const filters = ["c.published = true"];
+    const values = [];
+
+    await appendLegacyContentVisibilityFilters(request.legacyDb, request.legacyActor, filters, values, "c");
+    values.push(limit);
+
     const rows = await request.legacyDb.many(
       `
         SELECT DISTINCT c.*
         FROM content c
         LEFT JOIN watch_history h ON h.content_id = c.id
-        WHERE c.published = true
+        WHERE ${filters.join(" AND ")}
         ORDER BY c.views_count DESC, c.created_at DESC
-        LIMIT 20
-      `
+        LIMIT $${values.length}
+      `,
+      values
     );
     response.json({ data: rows.map(serializeContent) });
   }));
@@ -3225,7 +3975,7 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
       provider_ref: `click-${Date.now()}`
     });
     response.status(201).json({
-      checkout_url: `${process.env.CLICK_BASE_URL}/checkout/${transaction.id}${hosted ? "?deeplink=1" : ""}`,
+      checkout_url: `${legacyClickPaymentBaseUrl()}/checkout/${transaction.id}${hosted ? "?deeplink=1" : ""}`,
       transaction,
       subscription: null
     });
@@ -3268,12 +4018,43 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   router.post("/payments/click/webhook", asyncHandler(async (request, response) => {
     requireClickEnv();
     const providerRef = request.body.provider_ref || request.body.payment_id || request.body.click_trans_id;
-    if (providerRef) {
-      await request.legacyDb.query(
-        "UPDATE transactions SET status = 'succeeded', processed_at = now(), provider_payload = $2 WHERE provider_ref = $1",
-        [String(providerRef), request.body]
+    const merchantTransId = request.body.merchant_trans_id || request.body.transaction_id;
+    const clickError = Number(request.body.error || 0);
+    const status = clickError < 0 ? "failed" : "succeeded";
+
+    if (providerRef || merchantTransId) {
+      let transaction = await request.legacyDb.one(
+        `
+          UPDATE transactions
+          SET status = $1,
+              processed_at = CASE WHEN $1 = 'succeeded' THEN now() ELSE processed_at END,
+              provider_ref = COALESCE($2, provider_ref),
+              provider_payload = $3
+          WHERE provider_ref = $2
+             OR id::text = $2
+             OR id::text = $4
+          RETURNING *
+        `,
+        [status, providerRef ? String(providerRef) : null, request.body, merchantTransId ? String(merchantTransId) : null]
       );
+
+      if (transaction?.status === "succeeded" && !transaction.subscription_id && transaction.user_id && transaction.plan_id) {
+        const plan = await request.legacyDb.one("SELECT * FROM plans WHERE id = $1", [transaction.plan_id]);
+        const subscription = await insertRow(request.legacyDb, "subscriptions", {
+          user_id: transaction.user_id,
+          plan_id: transaction.plan_id,
+          status: "active",
+          starts_at: new Date().toISOString(),
+          ends_at: new Date(Date.now() + (plan?.duration_days || 30) * 24 * 60 * 60 * 1000).toISOString()
+        });
+
+        transaction = await request.legacyDb.one(
+          "UPDATE transactions SET subscription_id = $1 WHERE id = $2 RETURNING *",
+          [subscription.id, transaction.id]
+        );
+      }
     }
+
     response.json({ ok: true });
   }));
 

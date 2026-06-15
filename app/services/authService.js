@@ -51,11 +51,29 @@ async function sendOtpEmail(config, email, code) {
 }
 
 export function createAuthService({ config, otpCodes, parents }) {
-  async function requestRegistrationOtp({ email }) {
-    const existingParent = parents.findByEmail(email);
+  async function emailStatus(email) {
+    const existingParent = await parents.findByEmail(email);
 
-    if (existingParent) {
-      throw conflict("A parent account already exists for this email", "EMAIL_EXISTS");
+    return {
+      email,
+      emailExists: Boolean(existingParent),
+      user_exists: Boolean(existingParent),
+      can_register: !existingParent,
+      auth_flow: existingParent ? "login" : "register"
+    };
+  }
+
+  async function requestRegistrationOtp({ email }) {
+    const status = await emailStatus(email);
+
+    if (status.emailExists) {
+      return {
+        ...status,
+        otpSent: false,
+        otp_sent: false,
+        expiresAt: null,
+        debugCode: ""
+      };
     }
 
     const code = config.otpDefaultCode || randomCode(6);
@@ -73,14 +91,15 @@ export function createAuthService({ config, otpCodes, parents }) {
     }
 
     return {
-      email,
-      emailExists: false,
+      ...status,
       expiresAt,
+      otpSent: true,
+      otp_sent: true,
       debugCode: (config.otpDefaultCode || config.otpDebug) ? code : ""
     };
   }
 
-  function verifyRegistrationOtp({ email, code }) {
+  async function verifyRegistrationOtp({ email, code }) {
     const recentOtpCodes = otpCodes.findRecentUnverified(email, registrationOtpPurpose);
     const matchingOtpCode = recentOtpCodes.find((otp) => verifySecret(code, otp.codeHash));
 
@@ -93,12 +112,12 @@ export function createAuthService({ config, otpCodes, parents }) {
     return {
       email,
       verified: true,
-      emailExists: Boolean(parents.findByEmail(email))
+      ...await emailStatus(email)
     };
   }
 
-  function registerParent({ name, email, password, pin }) {
-    const existingParent = parents.findByEmail(email);
+  async function registerParent({ name, email, password, pin }) {
+    const existingParent = await parents.findByEmail(email);
 
     if (existingParent) {
       throw conflict("A parent account already exists for this email", "EMAIL_EXISTS");
@@ -110,7 +129,7 @@ export function createAuthService({ config, otpCodes, parents }) {
       throw unauthorized("OTP verification is required", "OTP_REQUIRED");
     }
 
-    const parent = parents.create({
+    const parent = await parents.create({
       name,
       email,
       passwordHash: hashSecret(password),
@@ -126,8 +145,8 @@ export function createAuthService({ config, otpCodes, parents }) {
     };
   }
 
-  function loginParent({ email, password }) {
-    const parent = parents.findByEmail(email);
+  async function loginParent({ email, password }) {
+    const parent = await parents.findByEmail(email);
 
     if (!parent || !verifySecret(password, parent.passwordHash)) {
       throw unauthorized("Invalid email or password", "INVALID_CREDENTIALS");
@@ -147,7 +166,26 @@ export function createAuthService({ config, otpCodes, parents }) {
     return { verified: true };
   }
 
+  async function changeParentPin(parent, { currentPin, newPin }) {
+    verifyParentPin(parent, currentPin);
+
+    const pinHash = hashSecret(newPin);
+    const updatedParent = await parents.update(parent.id, {
+      pinHash
+    });
+
+    return {
+      changed: true,
+      parent: serializeParent(updatedParent || {
+        ...parent,
+        pinHash
+      })
+    };
+  }
+
   return {
+    changeParentPin,
+    checkEmail: emailStatus,
     loginParent,
     requestRegistrationOtp,
     registerParent,

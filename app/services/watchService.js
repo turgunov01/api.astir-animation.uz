@@ -312,11 +312,29 @@ export function createWatchService({ childService, children, contentService, wat
   async function listHistory(actor, { childId = "", limit = 20, unique = true } = {}) {
     const maxItems = Math.max(Number(limit) || 20, 1);
     const seenContentIds = new Set();
+    const normalizedActor = normalizeActor(actor);
+    const parentChildId = normalizedActor?.type === "parent" ? String(childId || "").trim() : "";
     const sessions = (await sessionsForActor(actor, { childId }))
       .sort((left, right) => sessionSortTime(right) - sessionSortTime(left));
     const filteredSessions = [];
 
     for (const session of sessions) {
+      if (normalizedActor?.type === "device" && isSessionBlacklisted(normalizedActor.device, session)) {
+        continue;
+      }
+
+      if (
+        normalizedActor?.type === "parent"
+        && parentChildId
+        && childService.isAnyContentBlacklisted?.(
+          normalizedActor.parent.id,
+          parentChildId,
+          [session.contentId, session.parentSeriesId].filter(Boolean)
+        )
+      ) {
+        continue;
+      }
+
       if (unique && seenContentIds.has(session.contentId)) {
         continue;
       }

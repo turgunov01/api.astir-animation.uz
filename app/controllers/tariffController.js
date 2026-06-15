@@ -77,6 +77,74 @@ function pricingAttributes(body, { defaults = false } = {}) {
   return attributes;
 }
 
+function optionalIntegerValue(body, field, fallback = null, options = {}) {
+  const value = body?.[field];
+
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const numeric = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isInteger(numeric)) {
+    throw badRequest(`${field} must be an integer`, "VALIDATION_ERROR");
+  }
+
+  if (options.min !== undefined && numeric < options.min) {
+    throw badRequest(`${field} must be at least ${options.min}`, "VALIDATION_ERROR");
+  }
+
+  if (options.max !== undefined && numeric > options.max) {
+    throw badRequest(`${field} must be at most ${options.max}`, "VALIDATION_ERROR");
+  }
+
+  return numeric;
+}
+
+function optionalStringList(body, field, fallback = null) {
+  const value = body?.[field];
+
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  if (!Array.isArray(value)) {
+    throw badRequest(`${field} must be an array`, "VALIDATION_ERROR");
+  }
+
+  for (const item of value) {
+    if (typeof item !== "string" || item.trim() === "") {
+      throw badRequest(`${field} must contain only non-empty strings`, "VALIDATION_ERROR");
+    }
+  }
+
+  return value.map((item) => item.trim());
+}
+
+function constructorAttributes(body, { defaults = false } = {}) {
+  const attributes = {};
+
+  if (defaults || Object.hasOwn(body || {}, "duration_days") || Object.hasOwn(body || {}, "durationDays")) {
+    attributes.duration_days = optionalIntegerValue({
+      duration_days: firstValue(body, "duration_days", "durationDays")
+    }, "duration_days", defaults ? 30 : null, { min: 1, max: 3660 });
+  }
+
+  if (defaults || Object.hasOwn(body || {}, "max_children") || Object.hasOwn(body || {}, "maxChildren")) {
+    attributes.max_children = optionalIntegerValue({
+      max_children: firstValue(body, "max_children", "maxChildren")
+    }, "max_children", defaults ? 1 : null, { min: 1, max: 100 });
+  }
+
+  if (defaults || Object.hasOwn(body || {}, "features")) {
+    attributes.features = optionalStringList(body, "features", defaults ? [] : null);
+  }
+
+  return Object.fromEntries(
+    Object.entries(attributes).filter(([, value]) => value !== null)
+  );
+}
+
 function optionalDeleteBoolean(request, defaultValue, ...fields) {
   for (const source of [request.query, request.body]) {
     for (const field of fields) {
@@ -109,6 +177,7 @@ export function createTariffController({ tariffService }) {
         description: requiredLocalizedText(request.body, "description"),
         is_default: optionalBoolean(request.body, "is_default", false),
         can_watch_premium: optionalBoolean(request.body, "can_watch_premium", false),
+        ...constructorAttributes(request.body, { defaults: true }),
         ...pricingAttributes(request.body, { defaults: true })
       };
       const id = optionalString(request.body, "id");
@@ -163,6 +232,7 @@ export function createTariffController({ tariffService }) {
         attributes.can_watch_premium = optionalBoolean(request.body, "can_watch_premium");
       }
 
+      Object.assign(attributes, constructorAttributes(request.body));
       Object.assign(attributes, pricingAttributes(request.body));
 
       if (Object.keys(attributes).length === 0) {

@@ -1,6 +1,8 @@
 import { badRequest, notFound } from "../lib/errors.js";
 
 const allowedTypes = new Set(["category", "content", "movie", "series"]);
+const defaultRecommendationLimit = 10;
+const maxRecommendationLimit = 10;
 
 function normalizeType(type) {
   const normalized = String(type || "").trim().toLowerCase();
@@ -32,6 +34,16 @@ function serializeRecommendation(recommendation) {
     createdAt: recommendation.createdAt || recommendation.created_at || null,
     updatedAt: recommendation.updatedAt || recommendation.updated_at || null
   };
+}
+
+function boundedRecommendationLimit(limit) {
+  const numeric = Number(limit);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return defaultRecommendationLimit;
+  }
+
+  return Math.min(Math.trunc(numeric), maxRecommendationLimit);
 }
 
 export function createRecommendationService({ contentService, recommendations }) {
@@ -71,8 +83,8 @@ export function createRecommendationService({ contentService, recommendations })
   }
 
   return {
-    async list(actor, { includeInactive = false, limit = 20 } = {}) {
-      const maxItems = Math.max(Number(limit) || 20, 1);
+    async list(actor, { includeInactive = false, limit = defaultRecommendationLimit } = {}) {
+      const maxItems = boundedRecommendationLimit(limit);
       const list = includeInactive ? recommendations.list() : recommendations.listActive();
       const hydrated = await Promise.all(
         list.slice(0, maxItems).map((recommendation) => hydrateRecommendation(actor, recommendation))
@@ -84,8 +96,11 @@ export function createRecommendationService({ contentService, recommendations })
       };
     },
 
-    async popular(actor, { childId = "", limit = 20 } = {}) {
-      return contentService.listPopularMovies(actor, { childId, limit });
+    async popular(actor, { childId = "", limit = defaultRecommendationLimit } = {}) {
+      return contentService.listPopularMovies(actor, {
+        childId,
+        limit: boundedRecommendationLimit(limit)
+      });
     },
 
     create({ type, referenceId, sortOrder = 0, active = true }) {

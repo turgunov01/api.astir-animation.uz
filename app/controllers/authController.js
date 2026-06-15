@@ -1,22 +1,30 @@
 import { email, otpCode, pin, requiredString } from "../lib/validation.js";
 
+function requestEmail(request) {
+  return email(Object.hasOwn(request.body || {}, "email") ? request.body : request.query);
+}
+
 export function createAuthController({ authService }) {
   return {
+    async checkEmail(request, response) {
+      response.json(await authService.checkEmail(requestEmail(request)));
+    },
+
     async requestRegistrationOtp(request, response) {
       response.json(await authService.requestRegistrationOtp({
-        email: email(request.body)
+        email: requestEmail(request)
       }));
     },
 
-    verifyRegistrationOtp(request, response) {
-      response.json(authService.verifyRegistrationOtp({
+    async verifyRegistrationOtp(request, response) {
+      response.json(await authService.verifyRegistrationOtp({
         email: email(request.body),
         code: otpCode(request.body)
       }));
     },
 
-    register(request, response) {
-      const result = authService.registerParent({
+    async register(request, response) {
+      const result = await authService.registerParent({
         name: requiredString(request.body, "name"),
         email: email(request.body),
         password: requiredString(request.body, "password", { minLength: 8 }),
@@ -26,8 +34,8 @@ export function createAuthController({ authService }) {
       response.status(201).json(result);
     },
 
-    login(request, response) {
-      const result = authService.loginParent({
+    async login(request, response) {
+      const result = await authService.loginParent({
         email: email(request.body),
         password: requiredString(request.body, "password")
       });
@@ -41,6 +49,17 @@ export function createAuthController({ authService }) {
 
     verifyPin(request, response) {
       response.json(authService.verifyParentPin(request.parent, pin(request.body)));
+    },
+
+    async changePin(request, response) {
+      response.json(await authService.changeParentPin(request.parent, {
+        currentPin: pin({
+          pin: request.body?.currentPin || request.body?.current_pin || request.body?.oldPin || request.body?.old_pin
+        }),
+        newPin: pin({
+          pin: request.body?.newPin || request.body?.new_pin || request.body?.pin
+        })
+      }));
     }
   };
 }

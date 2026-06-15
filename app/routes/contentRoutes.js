@@ -14,8 +14,10 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
   const iconUpload = uploadMiddleware.single("icon");
 
   router.get("/", authMiddleware.requireActor, asyncHandler(contentController.list));
+  router.get("/filters", authMiddleware.requireActor, asyncHandler(contentController.listFilters));
   router.get("/movies", authMiddleware.requireActor, asyncHandler(contentController.listMovies));
   router.get("/movies/popular", authMiddleware.requireActor, asyncHandler(contentController.listPopularMovies));
+  router.get("/series", authMiddleware.requireActor, asyncHandler(contentController.listSeries));
   router.get("/movies/:movie_id", authMiddleware.requireActor, asyncHandler(contentController.getMovie));
   router.get("/movies/:movie_id/offline", authMiddleware.requireActor, asyncHandler(contentController.getMovieOffline));
   router.get("/movies/:movie_id/series", authMiddleware.requireActor, asyncHandler(contentController.getMovieSeries));

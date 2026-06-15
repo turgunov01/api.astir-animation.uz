@@ -475,6 +475,10 @@ export function createContentController({ contentService }) {
       response.json(await contentService.listCategories());
     },
 
+    async listFilters(request, response) {
+      response.json(await contentService.listFilters());
+    },
+
     async listLikes(request, response) {
       response.json(await contentService.listLikedContent(request.actor));
     },
@@ -483,12 +487,32 @@ export function createContentController({ contentService }) {
       response.json(await contentService.listMovies(request.actor, {
         category: firstQueryValue(request.query.category || request.query.category_id),
         childId: optionalChildIdParam(request),
+        kind: firstQueryValue(request.query.kind || request.query.type),
         liked: request.query.liked === "true",
         q: firstQueryValue(request.query.q || request.query.search),
         tags: queryList(request.query.tags || request.query.tag_ids),
         page: firstQueryValue(request.query.page),
         limit: firstQueryValue(request.query.limit)
       }));
+    },
+
+    async listSeries(request, response) {
+      const result = await contentService.listMovies(request.actor, {
+        category: firstQueryValue(request.query.category || request.query.category_id),
+        childId: optionalChildIdParam(request),
+        kind: "series",
+        liked: request.query.liked === "true",
+        q: firstQueryValue(request.query.q || request.query.search),
+        tags: queryList(request.query.tags || request.query.tag_ids),
+        page: firstQueryValue(request.query.page),
+        limit: firstQueryValue(request.query.limit)
+      });
+
+      response.json({
+        series: result.series || result.movies,
+        movies: result.movies,
+        pagination: result.pagination
+      });
     },
 
     async listPopularMovies(request, response) {
