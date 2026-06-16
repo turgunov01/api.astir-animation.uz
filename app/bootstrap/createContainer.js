@@ -32,6 +32,7 @@ export function createContainer({ store = defaultStore } = {}) {
   services.children = createChildService({
     childContentBlacklist: repositories.childContentBlacklist,
     children: repositories.children,
+    contentLikes: repositories.contentLikes,
     contentMovies: repositories.contentMovies,
     devices: repositories.devices,
     watchLimits: repositories.watchLimits

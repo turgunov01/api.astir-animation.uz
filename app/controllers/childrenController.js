@@ -6,6 +6,18 @@ function requiredContentId(body) {
   }, "contentId");
 }
 
+function requestLocale(request) {
+  const queryLocale = request.query?.lang;
+
+  if (["uz", "ru", "en"].includes(queryLocale)) {
+    return queryLocale;
+  }
+
+  const headerLocale = request.get?.("accept-language")?.split(",")[0]?.trim()?.slice(0, 2);
+
+  return ["uz", "ru", "en"].includes(headerLocale) ? headerLocale : "en";
+}
+
 export function createChildrenController({ childService }) {
   return {
     async list(request, response) {
@@ -49,7 +61,9 @@ export function createChildrenController({ childService }) {
 
     async listBlacklist(request, response) {
       response.json({
-        blacklist: await childService.listBlacklistAsync(request.parent.id, request.params.childId)
+        blacklist: await childService.listBlacklistAsync(request.parent.id, request.params.childId, {
+          locale: requestLocale(request)
+        })
       });
     },
 

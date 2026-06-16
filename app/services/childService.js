@@ -1,3 +1,4 @@
+import path from "node:path";
 import { forbidden, notFound } from "../lib/errors.js";
 
 const defaultLimit = {
@@ -7,6 +8,90 @@ const defaultLimit = {
   allowedDays: [1, 2, 3, 4, 5, 6, 7],
   allowedDates: []
 };
+const supportedLocales = ["uz", "ru", "en"];
+const defaultLocale = "en";
+
+function localeOrDefault(locale) {
+  return supportedLocales.includes(locale) ? locale : defaultLocale;
+}
+
+function localizedText(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      en: value.en || "",
+      ru: value.ru || "",
+      uz: value.uz || ""
+    };
+  }
+
+  return {
+    en: value || "",
+    ru: value || "",
+    uz: value || ""
+  };
+}
+
+function sourceUrl(source) {
+  if (!source) {
+    return null;
+  }
+
+  if (typeof source === "string") {
+    return source;
+  }
+
+  if (source.url) {
+    return source.url;
+  }
+
+  const fileName = source.fileName || source.file_name || (source.path ? path.basename(source.path) : null);
+
+  return fileName ? `/media/uploads/${encodeURIComponent(fileName)}` : null;
+}
+
+function posterMetadata(poster, posterUrl) {
+  if (!posterUrl) {
+    return null;
+  }
+
+  if (!poster || typeof poster === "string") {
+    return { url: posterUrl };
+  }
+
+  return {
+    url: posterUrl,
+    storage_path: poster.path || poster.storage_path || null,
+    original_name: poster.originalName || poster.original_name || null,
+    mime_type: poster.mimeType || poster.mime_type || null,
+    size: poster.size || null
+  };
+}
+
+function blacklistContentMetadata(movie, { contentLikes, locale }) {
+  if (!movie) {
+    return {};
+  }
+
+  const normalizedLocale = localeOrDefault(locale);
+  const title = localizedText(movie.title);
+  const posterUrl = sourceUrl(movie.poster) || movie.poster_url || null;
+  const views = Number(movie.views_count || movie.views || 0);
+  const likes = contentLikes?.countByTarget?.(movie.id, "content") || 0;
+
+  return {
+    title,
+    title_en: title.en || "",
+    title_ru: title.ru || "",
+    title_uz: title.uz || "",
+    [`title_${normalizedLocale}`]: title[normalizedLocale] || title.en || title.ru || title.uz || "",
+    poster: posterMetadata(movie.poster, posterUrl),
+    poster_url: posterUrl,
+    views,
+    views_count: views,
+    likes,
+    likes_count: likes
+  };
+}
 
 export function serializeChild(child) {
   return {
@@ -19,19 +104,25 @@ export function serializeChild(child) {
   };
 }
 
-function serializeBlacklistItem(item) {
+function serializeBlacklistItem(item, options = {}) {
+  const parentId = item.parentId || item.parent_id;
+  const childId = item.childId || item.child_id;
+  const contentId = item.contentId || item.content_id;
+  const movie = options.contentMovies?.findById?.(contentId);
+
   return {
     id: item.id,
-    parentId: item.parentId,
-    parent_id: item.parentId,
-    childId: item.childId,
-    child_id: item.childId,
-    contentId: item.contentId,
-    content_id: item.contentId,
+    parentId,
+    parent_id: parentId,
+    childId,
+    child_id: childId,
+    contentId,
+    content_id: contentId,
     createdAt: item.createdAt,
     created_at: item.createdAt,
     updatedAt: item.updatedAt,
-    updated_at: item.updatedAt
+    updated_at: item.updatedAt,
+    ...blacklistContentMetadata(movie, options)
   };
 }
 
@@ -58,7 +149,7 @@ function assertChildBelongsToParent(child, parentId) {
   }
 }
 
-export function createChildService({ childContentBlacklist, children, contentMovies, devices, watchLimits }) {
+export function createChildService({ childContentBlacklist, children, contentLikes, contentMovies, devices, watchLimits }) {
   function listChildren(parentId) {
     const list = children.listByParentId(parentId);
     // Handle both sync arrays and async promises
@@ -200,16 +291,20 @@ export function createChildService({ childContentBlacklist, children, contentMov
     }
   }
 
-  function listBlacklist(parentId, childId) {
+  function listBlacklist(parentId, childId, { locale = defaultLocale } = {}) {
     getChildForParent(parentId, childId);
 
-    return childContentBlacklist.listByChildId(childId).map(serializeBlacklistItem);
+    return childContentBlacklist
+      .listByChildId(childId)
+      .map((item) => serializeBlacklistItem(item, { contentLikes, contentMovies, locale }));
   }
 
-  async function listBlacklistAsync(parentId, childId) {
+  async function listBlacklistAsync(parentId, childId, { locale = defaultLocale } = {}) {
     await getChildForParentAsync(parentId, childId);
 
-    return childContentBlacklist.listByChildId(childId).map(serializeBlacklistItem);
+    return childContentBlacklist
+      .listByChildId(childId)
+      .map((item) => serializeBlacklistItem(item, { contentLikes, contentMovies, locale }));
   }
 
   function findBlacklistItem(parentId, childId, contentId) {

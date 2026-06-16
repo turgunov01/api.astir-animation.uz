@@ -393,11 +393,35 @@ export const openApiDocument = {
         properties: {
           id: { type: "string" },
           parentId: { type: "string" },
+          parent_id: { type: "string" },
           childId: { type: "string" },
+          child_id: { type: "string" },
           contentId: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
           content_id: { type: "string", example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8" },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          title_en: { type: "string", example: "Smoke Movie" },
+          title_ru: { type: "string", example: "Smoke Movie RU" },
+          title_uz: { type: "string", example: "Smoke Movie UZ" },
+          poster: {
+            type: "object",
+            nullable: true,
+            properties: {
+              url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+              storage_path: { type: "string", nullable: true },
+              original_name: { type: "string", nullable: true },
+              mime_type: { type: "string", nullable: true },
+              size: { type: "integer", nullable: true }
+            }
+          },
+          poster_url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+          views: { type: "integer", example: 12 },
+          views_count: { type: "integer", example: 12 },
+          likes: { type: "integer", example: 1 },
+          likes_count: { type: "integer", example: 1 },
           createdAt: { type: "string", format: "date-time" },
-          updatedAt: { type: "string", format: "date-time" }
+          created_at: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" }
         }
       },
       ContentItem: {

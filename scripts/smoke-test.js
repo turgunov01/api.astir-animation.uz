@@ -1346,6 +1346,22 @@ try {
   assert.equal(parentBlacklistedMovie.body.blacklisted, true);
   assert.equal(parentBlacklistedMovie.body.child_id, childId);
 
+  const childBlacklist = await request(baseUrl, `/v1/children/${childId}/blacklist?lang=ru`, {
+    headers: {
+      authorization: `Bearer ${parentToken}`,
+      "accept-language": "ru"
+    }
+  });
+  const childBlacklistMovie = childBlacklist.blacklist.find((item) => item.content_id === movieId);
+
+  assert.ok(childBlacklistMovie);
+  assert.equal(childBlacklistMovie.title_ru, updatedMovie.movie.title.ru);
+  assert.equal(Object.hasOwn(childBlacklistMovie, "poster"), true);
+  assert.equal(Object.hasOwn(childBlacklistMovie, "views"), true);
+  assert.equal(Object.hasOwn(childBlacklistMovie, "likes"), true);
+  assert.equal(childBlacklistMovie.views, childBlacklistMovie.views_count);
+  assert.equal(childBlacklistMovie.likes, childBlacklistMovie.likes_count);
+
   const parentMoviesWithoutChildFilter = await request(baseUrl, "/v1/content/movies?limit=100", {
     headers: { authorization: `Bearer ${parentToken}` }
   });
