@@ -1807,12 +1807,143 @@ async function maybeStartTranscode(db, config, content) {
   return job;
 }
 
-export function createLegacyRoutes({ config, contentLikes = null, contentMovies = null, media, tariffs = null }) {
+export function createLegacyRoutes({ config, contentCategories = null, contentLikes = null, contentMovies = null, media, tariffs = null }) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
   const videoUpload = media.upload("videos", { maxMb: config.maxVideoUploadMb || 2048 }).single("file");
   const supportUpload = media.upload("support", { maxMb: 50 }).single("file");
+
+  function localizedContentCategoryValue(value, lang) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return String(value[lang] || value.ru || value.uz || value.en || Object.values(value)[0] || "");
+    }
+
+    return String(value || "");
+  }
+
+  function contentCategoryTitle(category) {
+    return category?.title || category?.name || category?.label || category?.slug || category?.id || "";
+  }
+
+  function contentCategoryDescription(category) {
+    return category?.description || "";
+  }
+
+  function legacyCategoryKind(category) {
+    const value = String(category?.kind || category?.type || "other").trim().toLowerCase();
+
+    if (["film", "series", "cartoon", "other"].includes(value)) {
+      return value;
+    }
+
+    if (["movie", "movies"].includes(value)) {
+      return "film";
+    }
+
+    return "other";
+  }
+
+  function contentCategorySlug(category) {
+    return String(category?.slug || slugify(contentCategoryTitle(category), "category")).trim();
+  }
+
+  function contentCategoryAsLegacyResponse(category, lang) {
+    const title = contentCategoryTitle(category);
+
+    return {
+      id: category.id,
+      name: localizedContentCategoryValue(title, lang),
+      title: localizedContentCategoryValue(title, lang),
+      description: localizedContentCategoryValue(contentCategoryDescription(category), lang),
+      kind: legacyCategoryKind(category),
+      slug: contentCategorySlug(category),
+      active: category.active !== false,
+      source: "content"
+    };
+  }
+
+  async function findLegacyCategoryForContentCategory(db, category) {
+    if (isUuid(category?.id)) {
+      const byId = await db.one("SELECT * FROM categories WHERE id = $1", [category.id]);
+
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const slug = contentCategorySlug(category);
+
+    if (!slug) {
+      return null;
+    }
+
+    return await db.one("SELECT * FROM categories WHERE lower(slug) = lower($1) ORDER BY created_at DESC LIMIT 1", [slug]);
+  }
+
+  async function ensureLegacyCategoryForContentCategory(db, category) {
+    const existing = await findLegacyCategoryForContentCategory(db, category);
+
+    if (existing) {
+      return existing;
+    }
+
+    const title = contentCategoryTitle(category);
+    const slug = contentCategorySlug(category);
+
+    try {
+      return await insertRow(db, "categories", {
+        id: isUuid(category?.id) ? category.id : undefined,
+        name: normalizeI18n(title),
+        description: normalizeI18n(contentCategoryDescription(category), ""),
+        kind: legacyCategoryKind(category),
+        slug,
+        active: category.active !== false
+      });
+    } catch (error) {
+      if (error?.code !== "23505") {
+        throw error;
+      }
+
+      const fallback = await findLegacyCategoryForContentCategory(db, category);
+
+      if (fallback) {
+        return fallback;
+      }
+
+      throw error;
+    }
+  }
+
+  async function resolveLegacySeriesCategoryId(db, value) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null || value === "") {
+      return null;
+    }
+
+    const categoryId = String(value);
+
+    if (isUuid(categoryId)) {
+      const legacyCategory = await db.one("SELECT * FROM categories WHERE id = $1", [categoryId]);
+
+      if (legacyCategory) {
+        return legacyCategory.id;
+      }
+    }
+
+    const contentCategory = contentCategories?.findById?.(categoryId);
+
+    if (!contentCategory) {
+      return categoryId;
+    }
+
+    const legacyCategory = await ensureLegacyCategoryForContentCategory(db, contentCategory);
+
+    return legacyCategory.id;
+  }
 
   const checkEmailHandler = asyncHandler(async (request, response) => {
     response.json(await legacyEmailStatus(request.legacyDb, requestEmailValue(request)));
@@ -2775,7 +2906,32 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   router.get("/categories", asyncHandler(async (request, response) => {
     const lang = requestedLang(request);
     const rows = await request.legacyDb.many("SELECT * FROM categories WHERE active = true ORDER BY sort_order, created_at DESC");
-    response.json(rows.map((row) => localizeRecord(row, lang, ["name", "description"])));
+    const seen = new Set();
+    const categories = rows.map((row) => localizeRecord(row, lang, ["name", "description"]));
+
+    for (const category of categories) {
+      seen.add(String(category.id));
+      if (category.slug) {
+        seen.add(`slug:${String(category.slug).toLowerCase()}`);
+      }
+    }
+
+    for (const category of contentCategories?.list?.() || []) {
+      const legacyCategory = contentCategoryAsLegacyResponse(category, lang);
+      const slugKey = legacyCategory.slug ? `slug:${String(legacyCategory.slug).toLowerCase()}` : "";
+
+      if (seen.has(String(legacyCategory.id)) || (slugKey && seen.has(slugKey)) || legacyCategory.active === false) {
+        continue;
+      }
+
+      seen.add(String(legacyCategory.id));
+      if (slugKey) {
+        seen.add(slugKey);
+      }
+      categories.push(legacyCategory);
+    }
+
+    response.json(categories);
   }));
 
   router.post("/categories", requireAdmin, asyncHandler(async (request, response) => {
@@ -3007,11 +3163,12 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   router.post("/series", requireAdmin, asyncHandler(async (request, response) => {
     requireFields(request.body, ["title"]);
     const title = normalizeI18n(request.body.title);
+    const categoryId = await resolveLegacySeriesCategoryId(request.legacyDb, request.body.category_id);
     const row = await insertRow(request.legacyDb, "series", {
       title,
       description: normalizeI18n(request.body.description, ""),
       kind: request.body.kind || "seasons",
-      category_id: request.body.category_id || null,
+      category_id: categoryId || null,
       poster_url: request.body.poster_url || "",
       slug: createSlug(title, "series"),
       active: request.body.active !== false
@@ -3029,11 +3186,14 @@ export function createLegacyRoutes({ config, contentLikes = null, contentMovies 
   }));
 
   router.put("/series/:id", requireAdmin, asyncHandler(async (request, response) => {
+    const categoryId = Object.hasOwn(request.body || {}, "category_id")
+      ? await resolveLegacySeriesCategoryId(request.legacyDb, request.body.category_id)
+      : undefined;
     const attrs = {
       title: request.body.title ? normalizeI18n(request.body.title) : undefined,
       description: request.body.description ? normalizeI18n(request.body.description) : undefined,
       kind: request.body.kind,
-      category_id: request.body.category_id,
+      category_id: categoryId,
       poster_url: request.body.poster_url,
       active: request.body.active
     };

@@ -53,6 +53,7 @@ export function createApp({ container = createContainer() } = {}) {
 
   const legacyRoutes = createLegacyRoutes({
     config: container.config,
+    contentCategories: container.repositories.contentCategories,
     contentLikes: container.repositories.contentLikes,
     contentMovies: container.repositories.contentMovies,
     media: legacyMedia,
