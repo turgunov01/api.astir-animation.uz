@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1403,6 +1403,26 @@ try {
   assert.equal(Object.hasOwn(childBlacklistMovie, "likes"), true);
   assert.equal(childBlacklistMovie.views, childBlacklistMovie.views_count);
   assert.equal(childBlacklistMovie.likes, childBlacklistMovie.likes_count);
+
+  const staleBlacklistContentId = randomUUID();
+  store.insert("childContentBlacklist", {
+    parentId,
+    childId,
+    contentId: staleBlacklistContentId
+  });
+
+  const staleUnblacklistedMovie = await request(baseUrl, `/v1/content/${staleBlacklistContentId}/blacklist?childId=${encodeURIComponent(childId)}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(staleUnblacklistedMovie.blacklisted, false);
+  assert.equal(staleUnblacklistedMovie.deleted, true);
+  assert.equal(staleUnblacklistedMovie.content_id, staleBlacklistContentId);
+  assert.equal(
+    store.findOne("childContentBlacklist", (item) => item.childId === childId && item.contentId === staleBlacklistContentId),
+    null
+  );
 
   const parentMoviesWithoutChildFilter = await request(baseUrl, "/v1/content/movies?limit=100", {
     headers: { authorization: `Bearer ${parentToken}` }

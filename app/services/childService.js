@@ -351,9 +351,10 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   function findBlacklistItem(parentId, childId, contentId) {
+    const access = parentAccess(parentId);
     const item = childContentBlacklist.findByChildAndContent(childId, contentId);
 
-    if (!item || item.parentId !== parentId) {
+    if (!item || (!access.isAdmin && item.parentId !== access.id)) {
       return null;
     }
 
@@ -361,17 +362,21 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   function addToBlacklist(parentId, childId, contentId) {
+    const access = parentAccess(parentId);
+
     getChildForParent(parentId, childId);
     assertBlacklistMovieExists(contentId);
 
-    return serializeBlacklistItem(childContentBlacklist.findOrCreate(parentId, childId, contentId));
+    return serializeBlacklistItem(childContentBlacklist.findOrCreate(access.id, childId, contentId));
   }
 
   async function addToBlacklistAsync(parentId, childId, contentId) {
+    const access = parentAccess(parentId);
+
     await getChildForParentAsync(parentId, childId);
     assertBlacklistMovieExists(contentId);
 
-    return serializeBlacklistItem(childContentBlacklist.findOrCreate(parentId, childId, contentId));
+    return serializeBlacklistItem(childContentBlacklist.findOrCreate(access.id, childId, contentId));
   }
 
   function removeFromBlacklist(parentId, childId, contentId) {
@@ -432,9 +437,10 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   function isContentBlacklisted(parentId, childId, contentId) {
+    const access = parentAccess(parentId);
     const item = childContentBlacklist.findByChildAndContent(childId, contentId);
 
-    return Boolean(item && item.parentId === parentId);
+    return Boolean(item && (access.isAdmin || item.parentId === access.id));
   }
 
   function isAnyContentBlacklisted(parentId, childId, contentIds) {

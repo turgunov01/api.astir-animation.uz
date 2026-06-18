@@ -177,7 +177,7 @@ function blacklistTarget(request) {
   }
 
   return {
-    parentId: request.parent?.id || request.actor?.parent?.id,
+    parentId: request.parent || request.actor?.parent || request.parent?.id || request.actor?.parent?.id,
     childId: blacklistChildIdParam(request)
   };
 }

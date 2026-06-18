@@ -912,6 +912,17 @@ export function createContentService({
     };
   }
 
+  function resolveOptionalBlacklistTarget(contentId) {
+    const movie = contentMovies.findById(contentId);
+
+    return {
+      id: movie?.id || contentId,
+      targetType: "content",
+      itemType: "movie",
+      movie: movie || null
+    };
+  }
+
   function likeResponse(ownerId, target, liked) {
     return {
       liked,
@@ -1158,7 +1169,7 @@ export function createContentService({
     },
 
     unblacklistContent(parentId, childId, contentId) {
-      const target = resolveBlacklistTarget(contentId);
+      const target = resolveOptionalBlacklistTarget(contentId);
       const result = childService.removeFromBlacklist(parentId, childId, target.id);
 
       return {
@@ -1168,7 +1179,7 @@ export function createContentService({
     },
 
     async unblacklistContentAsync(parentId, childId, contentId) {
-      const target = resolveBlacklistTarget(contentId);
+      const target = resolveOptionalBlacklistTarget(contentId);
       const result = await childService.removeFromBlacklistAsync(parentId, childId, target.id);
 
       return {
