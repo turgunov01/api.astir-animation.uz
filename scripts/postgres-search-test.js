@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createPostgresContentSearchRepository } from "../app/repositories/postgresContentSearchRepository.js";
+import { createRepositories } from "../app/repositories/index.js";
 import { createContentService } from "../app/services/contentService.js";
 
 const calls = [];
@@ -37,6 +38,13 @@ const db = {
 };
 
 const repository = createPostgresContentSearchRepository(db);
+const repositories = createRepositories({}, {
+  contentDb: null,
+  searchDb: db
+});
+
+assert.ok(repositories.contentSearch);
+
 const results = await repository.search("Поднятие", {
   includeUnpublished: true
 });

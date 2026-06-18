@@ -21,7 +21,10 @@ export function createContainer({ store = defaultStore } = {}) {
   const contentDb = config.contentStorage === "postgres" && config.databaseUrl
     ? createLegacyDb({ databaseUrl: config.databaseUrl })
     : null;
-  const repositories = createRepositories(store, { contentDb });
+  const searchDb = config.databaseUrl
+    ? contentDb || createLegacyDb({ databaseUrl: config.databaseUrl })
+    : null;
+  const repositories = createRepositories(store, { contentDb, searchDb });
   const services = {};
 
   services.auth = createAuthService({
@@ -107,6 +110,7 @@ export function createContainer({ store = defaultStore } = {}) {
     repositories,
     services,
     store,
-    contentDb
+    contentDb,
+    searchDb
   };
 }

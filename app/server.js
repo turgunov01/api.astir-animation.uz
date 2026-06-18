@@ -27,7 +27,7 @@ export function createApp({ container = createContainer() } = {}) {
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: false }));
 
-  const legacyDb = createLegacyDb();
+  const legacyDb = container.searchDb || createLegacyDb();
   const legacyMedia = createLegacyMedia({
     mediaRoot: container.config.mediaRoot,
     signingSecret: process.env.MEDIA_SIGNING_SECRET

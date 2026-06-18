@@ -23,7 +23,7 @@ import { createTransactionRepository } from "./transactionRepository.js";
 import { createWatchLimitRepository } from "./watchLimitRepository.js";
 import { createWatchSessionRepository } from "./watchSessionRepository.js";
 
-export function createRepositories(store, { contentDb = null } = {}) {
+export function createRepositories(store, { contentDb = null, searchDb = contentDb } = {}) {
   const contentTags = contentDb
     ? createPostgresContentTagRepository(contentDb)
     : createContentTagRepository(store);
@@ -44,7 +44,7 @@ export function createRepositories(store, { contentDb = null } = {}) {
     contentLikes: createContentLikeRepository(store),
     contentMovieTags,
     contentMovies: createContentMovieRepository(store),
-    contentSearch: contentDb ? createPostgresContentSearchRepository(contentDb) : null,
+    contentSearch: searchDb ? createPostgresContentSearchRepository(searchDb) : null,
     contentTags,
     devices: createDeviceRepository(store),
     faqs: createFaqRepository(store),

@@ -6,6 +6,7 @@ import path from "node:path";
 const dataFile = path.join(os.tmpdir(), `astir-auth-toggle-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
 process.env.CONTENT_STORAGE = "json";
+process.env.DATABASE_URL = "";
 process.env.JWT_SECRET = "astir-auth-toggle-secret";
 process.env.REQUIRE_AUTH = "false";
 
