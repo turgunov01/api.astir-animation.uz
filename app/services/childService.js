@@ -126,6 +126,25 @@ function serializeBlacklistItem(item, options = {}) {
   };
 }
 
+function liveBlacklistItems(childContentBlacklist, contentMovies, childId) {
+  if (!contentMovies?.findById) {
+    return childContentBlacklist.listByChildId(childId);
+  }
+
+  return childContentBlacklist
+    .listByChildId(childId)
+    .filter((item) => {
+      const contentId = item.contentId || item.content_id;
+
+      if (contentMovies?.findById?.(contentId)) {
+        return true;
+      }
+
+      childContentBlacklist.deleteByChildAndContent(childId, contentId);
+      return false;
+    });
+}
+
 function serializeDevice(device) {
   return {
     id: device.id,
@@ -294,16 +313,14 @@ export function createChildService({ childContentBlacklist, children, contentLik
   function listBlacklist(parentId, childId, { locale = defaultLocale } = {}) {
     getChildForParent(parentId, childId);
 
-    return childContentBlacklist
-      .listByChildId(childId)
+    return liveBlacklistItems(childContentBlacklist, contentMovies, childId)
       .map((item) => serializeBlacklistItem(item, { contentLikes, contentMovies, locale }));
   }
 
   async function listBlacklistAsync(parentId, childId, { locale = defaultLocale } = {}) {
     await getChildForParentAsync(parentId, childId);
 
-    return childContentBlacklist
-      .listByChildId(childId)
+    return liveBlacklistItems(childContentBlacklist, contentMovies, childId)
       .map((item) => serializeBlacklistItem(item, { contentLikes, contentMovies, locale }));
   }
 
