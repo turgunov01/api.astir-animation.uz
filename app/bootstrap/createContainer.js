@@ -21,9 +21,11 @@ export function createContainer({ store = defaultStore } = {}) {
   const databaseDb = config.databaseUrl
     ? createLegacyDb({ databaseUrl: config.databaseUrl })
     : null;
+  const billingDb = databaseDb;
   const contentDb = config.contentStorage === "postgres" ? databaseDb : null;
   const searchDb = databaseDb;
   const repositories = createRepositories(store, {
+    billingDb,
     contentDb,
     identityDb: databaseDb,
     searchDb
@@ -43,8 +45,13 @@ export function createContainer({ store = defaultStore } = {}) {
     devices: repositories.devices,
     watchLimits: repositories.watchLimits
   });
+  services.notifications = createNotificationService({
+    config,
+    notifications: repositories.notifications
+  });
   services.subscriptions = createSubscriptionService({
     config,
+    notificationService: services.notifications,
     parents: repositories.parents,
     subscriptions: repositories.subscriptions,
     tariffs: repositories.tariffs,
@@ -76,10 +83,6 @@ export function createContainer({ store = defaultStore } = {}) {
   services.recommendations = createRecommendationService({
     contentService: services.content,
     recommendations: repositories.recommendations
-  });
-  services.notifications = createNotificationService({
-    config,
-    notifications: repositories.notifications
   });
   services.pairing = createPairingService({
     childService: services.children,

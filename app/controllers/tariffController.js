@@ -191,8 +191,8 @@ export function createTariffController({ tariffService }) {
       });
     },
 
-    current(request, response) {
-      response.json(tariffService.currentForActor(request.actor));
+    async current(request, response) {
+      response.json(await tariffService.currentForActor(request.actor));
     },
 
     async delete(request, response) {

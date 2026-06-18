@@ -4140,35 +4140,6 @@
                 }
             }
         },
-        "/payments/click/webhook": {
-            "post": {
-                "description": "Gateway callback — validates sign_string and updates the transaction + subscription.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "billing"
-                ],
-                "summary": "Click webhook endpoint",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/plans": {
             "get": {
                 "produces": [

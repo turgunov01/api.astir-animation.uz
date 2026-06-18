@@ -150,7 +150,8 @@ try {
   assert.equal(doc.host, `127.0.0.1:${port}`);
   assert.deepEqual(doc.schemes, ["http"]);
   assert.equal(Object.keys(doc.paths).length, Object.keys(legacyRaw.paths).length);
-  assert.equal(countOperations(doc), 139);
+  assert.equal(countOperations(doc), 138);
+  assert.equal(Boolean(doc.paths["/payments/click/webhook"]), false);
   assert.equal(Object.keys(doc.definitions).length, Object.keys(legacyRaw.definitions).length);
   assert.deepEqual(doc.definitions["handler.RegisterRequest"].required, ["email", "name", "password", "pin"]);
   assert.deepEqual(

@@ -178,17 +178,24 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
     throw forbidden("Tariff owner was not found", "TARIFF_OWNER_NOT_FOUND");
   }
 
-  function currentTariffForParent(parent) {
-    const subscription = subscriptions.activeForParent(parent.id);
+  function currentTariffForParentSync(parent) {
+    const tariff = tariffs.findById(parentTariffId(parent))
+      || defaultTariff();
+
+    return { subscription: null, tariff };
+  }
+
+  async function currentTariffForParent(parent) {
+    const subscription = await subscriptions.activeForParent(parent.id);
     const tariff = tariffs.findById(subscription?.tariffId)
-      || tariffs.findById(parent?.tariff)
+      || tariffs.findById(parentTariffId(parent))
       || defaultTariff();
 
     return { subscription, tariff };
   }
 
   function canWatchPremium(actor) {
-    return currentTariffForParent(parentFromActor(actor)).tariff.can_watch_premium;
+    return currentTariffForParentSync(parentFromActor(actor)).tariff.can_watch_premium;
   }
 
   seedDefaultTariffs();
@@ -226,8 +233,8 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       return serializeTariff(tariffs.create(createAttributes));
     },
 
-    currentForActor(actor) {
-      const currentTariff = currentTariffForParent(parentFromActor(actor));
+    async currentForActor(actor) {
+      const currentTariff = await currentTariffForParent(parentFromActor(actor));
 
       return tariffResponse(
         currentTariff.tariff,
@@ -235,8 +242,8 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       );
     },
 
-    currentForParent(parent) {
-      const currentTariff = currentTariffForParent(parent);
+    async currentForParent(parent) {
+      const currentTariff = await currentTariffForParent(parent);
 
       return tariffResponse(
         currentTariff.tariff,
@@ -305,7 +312,7 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       const updatedParent = parents?.update
         ? await parents.update(parent.id, { tariff: tariff.id }) || { ...parent, tariff: tariff.id }
         : { ...parent, tariff: tariff.id };
-      const currentTariff = currentTariffForParent(updatedParent);
+      const currentTariff = await currentTariffForParent(updatedParent);
 
       return tariffResponse(
         currentTariff.tariff,

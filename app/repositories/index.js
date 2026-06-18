@@ -15,6 +15,8 @@ import { createPostgresContentMovieTagRepository } from "./postgresContentMovieT
 import { createPostgresContentSearchRepository } from "./postgresContentSearchRepository.js";
 import { createPostgresContentTagRepository } from "./postgresContentTagRepository.js";
 import { createPostgresParentRepository } from "./postgresParentRepository.js";
+import { createPostgresSubscriptionRepository } from "./postgresSubscriptionRepository.js";
+import { createPostgresTransactionRepository } from "./postgresTransactionRepository.js";
 import { createOtpCodeRepository } from "./otpCodeRepository.js";
 import { createRecommendationRepository } from "./recommendationRepository.js";
 import { createSubscriptionRepository } from "./subscriptionRepository.js";
@@ -24,6 +26,7 @@ import { createWatchLimitRepository } from "./watchLimitRepository.js";
 import { createWatchSessionRepository } from "./watchSessionRepository.js";
 
 export function createRepositories(store, {
+  billingDb = null,
   contentDb = null,
   identityDb = contentDb,
   searchDb = contentDb
@@ -40,6 +43,12 @@ export function createRepositories(store, {
   const parents = identityDb
     ? createPostgresParentRepository(identityDb)
     : createParentRepository(store);
+  const subscriptions = billingDb
+    ? createPostgresSubscriptionRepository(billingDb)
+    : createSubscriptionRepository(store);
+  const transactions = billingDb
+    ? createPostgresTransactionRepository(billingDb)
+    : createTransactionRepository(store);
 
   return {
     childContentBlacklist: createChildContentBlacklistRepository(store),
@@ -57,9 +66,9 @@ export function createRepositories(store, {
     pairingSessions: createPairingSessionRepository(store),
     parents,
     recommendations: createRecommendationRepository(store),
-    subscriptions: createSubscriptionRepository(store),
+    subscriptions,
     tariffs: createTariffRepository(store),
-    transactions: createTransactionRepository(store),
+    transactions,
     watchLimits: createWatchLimitRepository(store),
     watchSessions: createWatchSessionRepository(store)
   };

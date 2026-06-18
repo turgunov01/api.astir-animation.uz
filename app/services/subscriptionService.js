@@ -210,7 +210,7 @@ function nextClickLocalId() {
   return Number(`${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(-9));
 }
 
-export function createSubscriptionService({ config, parents, subscriptions, tariffs, transactions }) {
+export function createSubscriptionService({ config, notificationService = null, parents, subscriptions, tariffs, transactions }) {
   async function parentFromActor(actor) {
     if (actor?.type === "parent" && actor.parent) {
       return await parents.findById(actor.parent.id) || actor.parent;
@@ -237,15 +237,15 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     return tariff;
   }
 
-  function latestActiveForParent(parentId) {
-    const activeSubscriptions = subscriptions.listByParentId(parentId)
+  async function latestActiveForParent(parentId) {
+    const activeSubscriptions = (await subscriptions.listByParentId(parentId))
       .filter(isSubscriptionActive)
       .sort((left, right) => new Date(right.expiresAt).getTime() - new Date(left.expiresAt).getTime());
 
     return activeSubscriptions[0] || null;
   }
 
-  function upsertVerifiedSubscription(parent, {
+  async function upsertVerifiedSubscription(parent, {
     expiresAt,
     provider,
     providerPayload,
@@ -265,13 +265,13 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       expiresAt: assertDate(expiresAt, "expires_at"),
       providerPayload
     };
-    const existingSubscription = subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
+    const existingSubscription = await subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
 
     if (existingSubscription) {
-      return subscriptions.update(existingSubscription.id, attributes);
+      return await subscriptions.update(existingSubscription.id, attributes);
     }
 
-    return subscriptions.create(attributes);
+    return await subscriptions.create(attributes);
   }
 
   function clickConfig() {
@@ -322,8 +322,8 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     return url.toString();
   }
 
-  function getClickTransaction(merchantTransId) {
-    return transactions.findById(merchantTransId);
+  async function getClickTransaction(merchantTransId) {
+    return await transactions.findById(merchantTransId);
   }
 
   async function transactionParent(transaction) {
@@ -347,7 +347,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
   async function activateClickTransaction(transaction, body) {
     const parent = await transactionParent(transaction);
     const providerSubscriptionId = `click:${clickString(body, "click_trans_id")}`;
-    const subscription = upsertVerifiedSubscription(parent, {
+    const subscription = await upsertVerifiedSubscription(parent, {
       expiresAt: transaction.expiresAt,
       provider: "click",
       providerPayload: {
@@ -360,29 +360,37 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     });
     await parents.update?.(parent.id, { tariff: transaction.tariffId });
     const confirmId = transaction.merchant_confirm_id || nextClickLocalId();
+    const updatedTransaction = await transactions.update(transaction.id, {
+      status: "succeeded",
+      subscriptionId: subscription.id,
+      subscription_id: subscription.id,
+      provider_ref: clickString(body, "click_trans_id"),
+      click_trans_id: clickString(body, "click_trans_id"),
+      click_paydoc_id: clickString(body, "click_paydoc_id"),
+      merchant_confirm_id: confirmId,
+      processed_at: new Date().toISOString(),
+      provider_payload: {
+        ...(transaction.provider_payload || {}),
+        complete: body
+      }
+    });
+
+    await notifyPaymentActivated(parent, {
+      provider: "click",
+      subscription,
+      tariff: getTariff(transaction.tariffId),
+      transaction: updatedTransaction
+    });
 
     return {
       subscription,
-      transaction: transactions.update(transaction.id, {
-        status: "succeeded",
-        subscriptionId: subscription.id,
-        subscription_id: subscription.id,
-        provider_ref: clickString(body, "click_trans_id"),
-        click_trans_id: clickString(body, "click_trans_id"),
-        click_paydoc_id: clickString(body, "click_paydoc_id"),
-        merchant_confirm_id: confirmId,
-        processed_at: new Date().toISOString(),
-        provider_payload: {
-          ...(transaction.provider_payload || {}),
-          complete: body
-        }
-      })
+      transaction: updatedTransaction
     };
   }
 
-  function findWebhookSubscription(provider, body) {
+  async function findWebhookSubscription(provider, body) {
     if (body.subscription_id) {
-      return subscriptions.findById(body.subscription_id);
+      return await subscriptions.findById(body.subscription_id);
     }
 
     const providerSubscriptionId = body.provider_subscription_id
@@ -394,7 +402,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       throw badRequest("provider_subscription_id is required", "VALIDATION_ERROR");
     }
 
-    return subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
+    return await subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
   }
 
   async function verifyPurchase(parent, provider, body) {
@@ -407,7 +415,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       throw badRequest("provider_subscription_id is required", "VALIDATION_ERROR");
     }
 
-    const subscription = upsertVerifiedSubscription(parent, {
+    const subscription = await upsertVerifiedSubscription(parent, {
       expiresAt: body.expires_at,
       provider,
       providerPayload: body.provider_payload || null,
@@ -417,6 +425,13 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     await parents.update?.(parent.id, { tariff: subscription.tariffId });
     const tariff = getTariff(subscription.tariffId);
 
+    await notifyPaymentActivated(parent, {
+      provider,
+      subscription,
+      tariff,
+      transaction: null
+    });
+
     return {
       subscription: serializeSubscription(subscription),
       tariff: serializeTariff(tariff),
@@ -424,6 +439,36 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
         can_watch_premium: Boolean(tariff.can_watch_premium)
       }
     };
+  }
+
+  async function notifyPaymentActivated(parent, {
+    provider,
+    subscription,
+    tariff,
+    transaction
+  }) {
+    if (!notificationService?.sendPush || !parent?.id || !tariff) {
+      return null;
+    }
+
+    try {
+      return await notificationService.sendPush(
+        { type: "parent", parent },
+        {
+          title: "Оплата прошла",
+          body: `Тариф ${tariff.id} активирован.`,
+          data: {
+            type: "billing.payment_succeeded",
+            provider,
+            tariff_id: tariff.id,
+            subscription_id: subscription?.id || "",
+            transaction_id: transaction?.id || ""
+          }
+        }
+      );
+    } catch {
+      return null;
+    }
   }
 
   return {
@@ -459,7 +504,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       const expiresAtValue = expiresAt
         ? assertDate(expiresAt, "expires_at")
         : expiryAfterDays(clickConfig().defaultSubscriptionDays || 30);
-      const transaction = transactions.create({
+      const transaction = await transactions.create({
         parentId: parent.id,
         tariffId: tariff.id,
         provider: "click",
@@ -474,7 +519,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
         provider_payload: null
       });
       const checkoutUrl = buildClickPaymentUrl(transaction, { cardType, returnUrl });
-      const updatedTransaction = transactions.update(transaction.id, {
+      const updatedTransaction = await transactions.update(transaction.id, {
         checkout_url: checkoutUrl
       });
 
@@ -489,17 +534,19 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     },
 
     async getClickTransaction(parent, transactionId) {
-      const transaction = transactions.findById(transactionId);
+      const transaction = await transactions.findById(transactionId);
 
       if (!transaction || transaction.parentId !== parent.id || transaction.provider !== "click") {
         throw notFound("Click transaction not found", "CLICK_TRANSACTION_NOT_FOUND");
       }
 
+      const subscriptionId = transaction.subscriptionId || transaction.subscription_id;
+
       return {
         transaction: serializeTransaction(transaction),
         subscription: serializeSubscription(
-          transaction.subscriptionId || transaction.subscription_id
-            ? subscriptions.findById(transaction.subscriptionId || transaction.subscription_id)
+          subscriptionId
+            ? await subscriptions.findById(subscriptionId)
             : null
         )
       };
@@ -508,7 +555,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     async handleClickPrepare(body = {}) {
       const click = assertClickCallbackConfig();
       const merchantTransId = clickString(body, "merchant_trans_id");
-      const transaction = getClickTransaction(merchantTransId);
+      const transaction = await getClickTransaction(merchantTransId);
 
       if (clickString(body, "action") !== "0") {
         return clickResponse(clickErrors.actionNotFound, body, transaction);
@@ -537,7 +584,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       }
 
       const prepareId = transaction.merchant_prepare_id || nextClickLocalId();
-      const updatedTransaction = transactions.update(transaction.id, {
+      const updatedTransaction = await transactions.update(transaction.id, {
         click_trans_id: clickString(body, "click_trans_id"),
         click_paydoc_id: clickString(body, "click_paydoc_id"),
         merchant_prepare_id: prepareId,
@@ -555,7 +602,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     async handleClickComplete(body = {}) {
       const click = assertClickCallbackConfig();
       const merchantTransId = clickString(body, "merchant_trans_id");
-      const transaction = getClickTransaction(merchantTransId);
+      const transaction = await getClickTransaction(merchantTransId);
 
       if (clickString(body, "action") !== "1") {
         return clickResponse(clickErrors.actionNotFound, body, transaction);
@@ -588,7 +635,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       }
 
       if ((clickNumber(body, "error") || 0) < 0) {
-        const cancelledTransaction = transactions.update(transaction.id, {
+        const cancelledTransaction = await transactions.update(transaction.id, {
           status: "canceled",
           provider_payload: {
             ...(transaction.provider_payload || {}),
@@ -608,7 +655,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     },
 
     async applyWebhook(provider, body) {
-      const subscription = findWebhookSubscription(provider, body);
+      const subscription = await findWebhookSubscription(provider, body);
 
       if (!subscription) {
         return {
@@ -623,7 +670,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
         throw badRequest("status is not supported", "VALIDATION_ERROR");
       }
 
-      const updatedSubscription = subscriptions.update(subscription.id, {
+      const updatedSubscription = await subscriptions.update(subscription.id, {
         status,
         expiresAt: assertDate(body.expires_at || subscription.expiresAt, "expires_at"),
         providerPayload: body.provider_payload || subscription.providerPayload || null
@@ -635,9 +682,9 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       };
     },
 
-    currentForParent(parent) {
+    async currentForParent(parent) {
       return {
-        subscription: serializeSubscription(latestActiveForParent(parent.id))
+        subscription: serializeSubscription(await latestActiveForParent(parent.id))
       };
     },
 
@@ -645,15 +692,19 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       const parent = await parentFromActor(actor);
 
       return {
-        subscription: serializeSubscription(latestActiveForParent(parent.id))
+        subscription: serializeSubscription(await latestActiveForParent(parent.id))
       };
     },
 
-    listByTariffId(tariffId) {
-      return subscriptions.listByTariffId(tariffId);
+    async listByTariffId(tariffId) {
+      return await subscriptions.listByTariffId(tariffId);
     },
 
     serializeSubscription,
+
+    async update(id, attributes) {
+      return await subscriptions.update(id, attributes);
+    },
 
     async verifyApplePurchase(parent, body) {
       if (!body.receipt) {
