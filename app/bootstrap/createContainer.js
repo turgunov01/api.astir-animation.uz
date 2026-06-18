@@ -18,13 +18,16 @@ import { createWatchService } from "../services/watchService.js";
 import { store as defaultStore } from "../store/jsonStore.js";
 
 export function createContainer({ store = defaultStore } = {}) {
-  const contentDb = config.contentStorage === "postgres" && config.databaseUrl
+  const databaseDb = config.databaseUrl
     ? createLegacyDb({ databaseUrl: config.databaseUrl })
     : null;
-  const searchDb = config.databaseUrl
-    ? contentDb || createLegacyDb({ databaseUrl: config.databaseUrl })
-    : null;
-  const repositories = createRepositories(store, { contentDb, searchDb });
+  const contentDb = config.contentStorage === "postgres" ? databaseDb : null;
+  const searchDb = databaseDb;
+  const repositories = createRepositories(store, {
+    contentDb,
+    identityDb: databaseDb,
+    searchDb
+  });
   const services = {};
 
   services.auth = createAuthService({
@@ -110,6 +113,7 @@ export function createContainer({ store = defaultStore } = {}) {
     repositories,
     services,
     store,
+    databaseDb,
     contentDb,
     searchDb
   };

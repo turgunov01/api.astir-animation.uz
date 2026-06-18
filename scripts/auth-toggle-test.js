@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import jwt from "jsonwebtoken";
 
 const dataFile = path.join(os.tmpdir(), `astir-auth-toggle-${Date.now()}.json`);
 process.env.DATA_FILE = dataFile;
@@ -11,6 +12,7 @@ process.env.JWT_SECRET = "astir-auth-toggle-secret";
 process.env.REQUIRE_AUTH = "false";
 
 const { createServer } = await import("../app/server.js");
+const { store } = await import("../app/store/jsonStore.js");
 
 const server = createServer();
 
@@ -249,6 +251,51 @@ try {
   assert.equal(movie.movie.category_id, category.category.id);
   assert.deepEqual(movie.movie.tag_ids, [tag.tag.id]);
   assert.match(movie.movie.id, uuidPattern);
+
+  const authenticatedParent = store.insert("parents", {
+    email: "authenticated-parent@example.com",
+    name: "Authenticated Parent",
+    role: "parent",
+    tariff: "free",
+    active: true
+  });
+  const authenticatedChild = store.insert("children", {
+    parentId: authenticatedParent.id,
+    name: "Authenticated Child",
+    birthYear: 2019,
+    active: true
+  });
+  const authenticatedToken = jwt.sign(
+    {
+      sub: authenticatedParent.id,
+      user_id: authenticatedParent.id,
+      role: "parent",
+      kind: "user"
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" }
+  );
+  const authenticatedHeaders = {
+    authorization: `Bearer ${authenticatedToken}`
+  };
+  const authenticatedChildren = await request(baseUrl, "/v1/children", {
+    headers: authenticatedHeaders
+  });
+
+  assert.equal(authenticatedChildren.children.length, 1);
+  assert.equal(authenticatedChildren.children[0].id, authenticatedChild.id);
+
+  const authenticatedBlacklist = await request(
+    baseUrl,
+    `/v1/content/${movie.movie.id}/blacklist?childId=${authenticatedChild.id}`,
+    {
+      method: "POST",
+      headers: authenticatedHeaders
+    }
+  );
+
+  assert.equal(authenticatedBlacklist.blacklisted, true);
+  assert.equal(authenticatedBlacklist.child_id, authenticatedChild.id);
 
   const missingFilterQuery = await requestWithStatus(baseUrl, "/v1/filter");
   assert.equal(missingFilterQuery.status, 400);

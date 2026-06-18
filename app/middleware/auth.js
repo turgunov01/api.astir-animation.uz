@@ -156,6 +156,11 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
   }
 
   async function attachLocalParent(request, response, next) {
+    if (request.get("authorization")) {
+      requireParent(request, response, next);
+      return;
+    }
+
     try {
       const context = await getLocalContext();
 
@@ -168,6 +173,11 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
   }
 
   async function attachLocalDevice(request, response, next) {
+    if (request.get("authorization")) {
+      requireDevice(request, response, next);
+      return;
+    }
+
     try {
       const context = await getLocalContext();
 
@@ -180,6 +190,11 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
   }
 
   async function attachLocalActor(request, response, next) {
+    if (request.get("authorization")) {
+      requireActor(request, response, next);
+      return;
+    }
+
     try {
       const context = await getLocalContext();
 

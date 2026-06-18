@@ -23,18 +23,22 @@ import { createTransactionRepository } from "./transactionRepository.js";
 import { createWatchLimitRepository } from "./watchLimitRepository.js";
 import { createWatchSessionRepository } from "./watchSessionRepository.js";
 
-export function createRepositories(store, { contentDb = null, searchDb = contentDb } = {}) {
+export function createRepositories(store, {
+  contentDb = null,
+  identityDb = contentDb,
+  searchDb = contentDb
+} = {}) {
   const contentTags = contentDb
     ? createPostgresContentTagRepository(contentDb)
     : createContentTagRepository(store);
   const contentMovieTags = contentDb
     ? createPostgresContentMovieTagRepository(contentDb)
     : createContentMovieTagRepository(store);
-  const children = contentDb
-    ? createPostgresChildRepository(contentDb)
+  const children = identityDb
+    ? createPostgresChildRepository(identityDb)
     : createChildRepository(store);
-  const parents = contentDb
-    ? createPostgresParentRepository(contentDb)
+  const parents = identityDb
+    ? createPostgresParentRepository(identityDb)
     : createParentRepository(store);
 
   return {
