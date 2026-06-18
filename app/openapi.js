@@ -5437,6 +5437,40 @@ export const openApiDocument = {
           403: { $ref: "#/components/responses/Forbidden" },
           404: { $ref: "#/components/responses/NotFound" }
         }
+      },
+      delete: {
+        tags: ["Children"],
+        summary: "Reset child watch limits",
+        description: "Deletes the custom watch limit row and recreates the default child watch limits.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Child watch limits reset",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    reset: { type: "boolean", example: true },
+                    limit: { $ref: "#/components/schemas/WatchLimit" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
       }
     },
     "/v1/billing/subscription/current": {

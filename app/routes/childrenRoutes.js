@@ -9,6 +9,7 @@ export function createChildrenRoutes({ authMiddleware, childrenController }) {
   router.get("/:childId", authMiddleware.requireParent, asyncHandler(childrenController.get));
   router.get("/:childId/limits", authMiddleware.requireParent, asyncHandler(childrenController.getLimits));
   router.put("/:childId/limits", authMiddleware.requireParent, asyncHandler(childrenController.updateLimits));
+  router.delete("/:childId/limits", authMiddleware.requireParent, asyncHandler(childrenController.resetLimits));
   router.get("/:childId/devices", authMiddleware.requireParent, asyncHandler(childrenController.listDevices));
   router.delete("/:childId/devices/:deviceId", authMiddleware.requireParent, asyncHandler(childrenController.revokeDevice));
   router.get("/:childId/blacklist", authMiddleware.requireParent, asyncHandler(childrenController.listBlacklist));

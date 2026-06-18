@@ -40,7 +40,7 @@ export function createChildrenController({ childService }) {
     },
 
     async getLimits(request, response) {
-      response.json({ limit: await childService.getLimitsAsync(request.parent.id, request.params.childId) });
+      response.json({ limit: await childService.getLimitsAsync(request.parent, request.params.childId) });
     },
 
     async listDevices(request, response) {
@@ -56,7 +56,7 @@ export function createChildrenController({ childService }) {
     },
 
     async updateLimits(request, response) {
-      const limit = await childService.updateLimitsAsync(request.parent.id, request.params.childId, {
+      const limit = await childService.updateLimitsAsync(request.parent, request.params.childId, {
         dailyMinutes: requiredInteger(request.body, "dailyMinutes", { min: 1, max: 1440 }),
         allowedFrom: timeOfDay(request.body, "allowedFrom"),
         allowedTo: timeOfDay(request.body, "allowedTo"),
@@ -65,6 +65,10 @@ export function createChildrenController({ childService }) {
       });
 
       response.json({ limit });
+    },
+
+    async resetLimits(request, response) {
+      response.json(await childService.resetLimitsAsync(request.parent, request.params.childId));
     },
 
     async listBlacklist(request, response) {

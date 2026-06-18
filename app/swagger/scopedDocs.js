@@ -65,6 +65,7 @@ const scopes = [
       "POST /v1/pairing/sessions/{sessionId}/approve",
       "GET /v1/children/{childId}/limits",
       "PUT /v1/children/{childId}/limits",
+      "DELETE /v1/children/{childId}/limits",
       "GET /v1/children/{childId}/devices",
       "DELETE /v1/children/{childId}/devices/{deviceId}",
       "GET /v1/children/{childId}/blacklist",

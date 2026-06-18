@@ -1222,6 +1222,19 @@ try {
   assert.equal(dateBlockedWatch.status, 403);
   assert.equal(dateBlockedWatch.body.code, "WATCH_DATE_BLOCKED");
 
+  const resetLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(resetLimit.reset, true);
+  assert.equal(resetLimit.deleted, true);
+  assert.equal(resetLimit.limit.dailyMinutes, 60);
+  assert.equal(resetLimit.limit.allowedFrom, "08:00");
+  assert.equal(resetLimit.limit.allowedTo, "20:00");
+  assert.deepEqual(resetLimit.limit.allowedDays, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(resetLimit.limit.allowedDates, []);
+
   const restoredWeeklyLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {
     method: "PUT",
     headers: { authorization: `Bearer ${parentToken}` },

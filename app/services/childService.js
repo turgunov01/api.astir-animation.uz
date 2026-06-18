@@ -268,13 +268,13 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   function getLimits(parentId, childId) {
-    getChildForParent(parentId, childId);
+    const child = getChildForParent(parentId, childId);
 
     const limit = watchLimits.findByChildId(childId);
 
     if (!limit) {
       return watchLimits.create({
-        parentId,
+        parentId: childParentId(child),
         childId,
         ...defaultLimit
       });
@@ -284,13 +284,13 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   async function getLimitsAsync(parentId, childId) {
-    await getChildForParentAsync(parentId, childId);
+    const child = await getChildForParentAsync(parentId, childId);
 
     const limit = await watchLimits.findByChildId(childId);
 
     if (!limit) {
       return watchLimits.create({
-        parentId,
+        parentId: childParentId(child),
         childId,
         ...defaultLimit
       });
@@ -311,23 +311,39 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   function updateLimits(parentId, childId, attributes) {
-    getChildForParent(parentId, childId);
+    const child = getChildForParent(parentId, childId);
 
     return watchLimits.upsertByChildId(childId, {
-      parentId,
+      parentId: childParentId(child),
       childId,
       ...attributes
     });
   }
 
   async function updateLimitsAsync(parentId, childId, attributes) {
-    await getChildForParentAsync(parentId, childId);
+    const child = await getChildForParentAsync(parentId, childId);
 
     return watchLimits.upsertByChildId(childId, {
-      parentId,
+      parentId: childParentId(child),
       childId,
       ...attributes
     });
+  }
+
+  async function resetLimitsAsync(parentId, childId) {
+    const child = await getChildForParentAsync(parentId, childId);
+    const deleted = watchLimits.deleteByChildId?.(childId) || null;
+    const limit = watchLimits.create({
+      parentId: childParentId(child),
+      childId,
+      ...defaultLimit
+    });
+
+    return {
+      deleted: Boolean(deleted),
+      reset: true,
+      limit
+    };
   }
 
   function assertBlacklistMovieExists(contentId) {
@@ -467,6 +483,7 @@ export function createChildService({ childContentBlacklist, children, contentLik
     removeContentFromAllBlacklists,
     removeFromBlacklist,
     removeFromBlacklistAsync,
+    resetLimitsAsync,
     revokeDeviceAsync,
     serializeChild,
     updateLimits,
