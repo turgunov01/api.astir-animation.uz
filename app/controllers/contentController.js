@@ -467,10 +467,12 @@ export function createContentController({ contentService }) {
     },
 
     async filter(request, response) {
-      const tagIds = queryList(request.query.tag);
-      const categoryIds = queryList(request.query.category);
-      const hasTag = hasQueryField(request, "tag");
-      const hasCategory = hasQueryField(request, "category");
+      const tagFields = ["tag", "tag_id", "tags", "tag_ids"];
+      const categoryFields = ["category", "category_id", "categories", "category_ids"];
+      const tagIds = queryList(tagFields.map((field) => request.query[field]));
+      const categoryIds = queryList(categoryFields.map((field) => request.query[field]));
+      const hasTag = tagFields.some((field) => hasQueryField(request, field));
+      const hasCategory = categoryFields.some((field) => hasQueryField(request, field));
 
       if ((!hasTag && !hasCategory) || (tagIds.length === 0 && categoryIds.length === 0)) {
         response.status(400).json({

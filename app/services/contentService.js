@@ -566,6 +566,13 @@ function categoryFilterValues(contentCategories, category) {
   return [...new Set([value, ...matches.map((item) => item.id)])];
 }
 
+function categoryFilterIds(contentCategories, categories = []) {
+  return uniqueStrings(categories)
+    .flatMap((category) => categoryFilterValues(contentCategories, category))
+    .map(normalized)
+    .filter(Boolean);
+}
+
 async function tagFilterIds(contentTags, tags = []) {
   const tagIds = [];
 
@@ -1398,7 +1405,7 @@ export function createContentService({
     },
 
     async filterContent(actor, { categoryIds = [], tagIds = [] } = {}) {
-      const normalizedCategoryIds = uniqueStrings(categoryIds);
+      const normalizedCategoryIds = categoryFilterIds(contentCategories, categoryIds);
       const normalizedTagIds = uniqueStrings(tagIds);
       const likeContext = likeContextForActor(actor);
       const adminActor = isAdminActor(actor);
@@ -1407,7 +1414,7 @@ export function createContentService({
           .filter((movie) => canExposeMovieToActor(actor, movie, adminActor))
           .filter((movie) => (
             normalizedCategoryIds.length === 0
-            || normalizedCategoryIds.includes(movie.category_id)
+            || normalizedCategoryIds.includes(normalized(movie.category_id))
           ))
           .map(async (movie) => ({
             movie,

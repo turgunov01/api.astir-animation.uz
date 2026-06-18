@@ -6211,15 +6211,43 @@ export const openApiDocument = {
             name: "tag",
             in: "query",
             required: false,
-            description: "Comma-separated content tag ids. Matches when a movie or series has at least one requested tag.",
+            description: "Comma-separated content tag ids. Aliases: tag_id, tags, tag_ids. Matches when a movie or series has at least one requested tag.",
             schema: { type: "string", example: "tag-id-1,tag-id-2" }
+          },
+          {
+            name: "tag_id",
+            in: "query",
+            required: false,
+            description: "Alias for tag.",
+            schema: { type: "string" }
+          },
+          {
+            name: "tag_ids",
+            in: "query",
+            required: false,
+            description: "Comma-separated alias for tag.",
+            schema: { type: "string" }
           },
           {
             name: "category",
             in: "query",
             required: false,
-            description: "Comma-separated category ids. Matches when a movie or series belongs to at least one requested category.",
+            description: "Comma-separated category ids, slugs, or localized titles. Aliases: category_id, categories, category_ids.",
             schema: { type: "string", example: "cat-id-1,cat-id-2" }
+          },
+          {
+            name: "category_id",
+            in: "query",
+            required: false,
+            description: "Category id alias for category.",
+            schema: { type: "string" }
+          },
+          {
+            name: "category_ids",
+            in: "query",
+            required: false,
+            description: "Comma-separated category id alias for category.",
+            schema: { type: "string" }
           }
         ],
         responses: {

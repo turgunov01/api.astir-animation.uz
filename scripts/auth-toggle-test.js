@@ -268,6 +268,33 @@ try {
     true
   );
 
+  const filteredByCategoryIdAlias = await request(
+    baseUrl,
+    `/v1/filter?category_id=${encodeURIComponent(category.category.id)}`
+  );
+  assert.equal(
+    filteredByCategoryIdAlias.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
+  const filteredByCategorySlug = await request(
+    baseUrl,
+    `/v1/filter?category=${encodeURIComponent(category.category.slug)}`
+  );
+  assert.equal(
+    filteredByCategorySlug.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
+  const filteredByCategoryTitle = await request(
+    baseUrl,
+    `/v1/filter?category=${encodeURIComponent(category.category.title.en)}`
+  );
+  assert.equal(
+    filteredByCategoryTitle.data.some((item) => item.id === movie.movie.id && item.type === "movies"),
+    true
+  );
+
   const filteredByWrongCategory = await request(
     baseUrl,
     `/v1/filter?tag=${encodeURIComponent(tag.tag.id)}&category=missing-category-id`
