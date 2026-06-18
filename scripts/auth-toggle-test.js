@@ -287,6 +287,54 @@ try {
     true
   );
 
+  const xenozMovie = await request(baseUrl, "/v1/content/movies/create", {
+    method: "POST",
+    body: {
+      title: {
+        en: "Uta Edit - Xenoz",
+        ru: "Uta Edit - Xenoz RU",
+        uz: "Uta Edit - Xenoz UZ"
+      },
+      description: {
+        en: "Exact title search target",
+        ru: "Exact title search target RU",
+        uz: "Exact title search target UZ"
+      },
+      category_id: category.category.id,
+      tag_ids: [tag.tag.id],
+      is_premium: false
+    }
+  });
+
+  const fuzzyDescriptionMovie = await request(baseUrl, "/v1/content/movies/create", {
+    method: "POST",
+    body: {
+      title: {
+        en: "Unrelated Search Result",
+        ru: "Unrelated Search Result RU",
+        uz: "Unrelated Search Result UZ"
+      },
+      description: {
+        en: "Kenoz is intentionally close but not the requested word",
+        ru: "Kenoz is intentionally close but not the requested word RU",
+        uz: "Kenoz is intentionally close but not the requested word UZ"
+      },
+      category_id: category.category.id,
+      tag_ids: [tag.tag.id],
+      is_premium: false
+    }
+  });
+
+  const xenozSearch = await request(baseUrl, `/v1/search?q=${encodeURIComponent("xenoz")}`);
+  assert.equal(
+    xenozSearch.data.some((item) => item.id === xenozMovie.movie.id && item.type === "movies"),
+    true
+  );
+  assert.equal(
+    xenozSearch.data.some((item) => item.id === fuzzyDescriptionMovie.movie.id),
+    false
+  );
+
   const seriesItem = await request(baseUrl, `/v1/content/movies/${movie.movie.id}/series`, {
     method: "POST",
     body: {

@@ -448,7 +448,11 @@ function fuzzyDistanceLimit(token) {
 }
 
 function tokenMatchesSearchValue(searchToken, valueToken) {
-  if (valueToken.includes(searchToken) || searchToken.includes(valueToken)) {
+  if (valueToken.includes(searchToken)) {
+    return true;
+  }
+
+  if (valueToken.length >= Math.max(4, searchToken.length - 1) && searchToken.includes(valueToken)) {
     return true;
   }
 
@@ -457,7 +461,7 @@ function tokenMatchesSearchValue(searchToken, valueToken) {
   return maxDistance > 0 && boundedEditDistance(searchToken, valueToken, maxDistance) <= maxDistance;
 }
 
-function searchValueMatches(value, query) {
+function literalSearchValueMatches(value, query) {
   const queryTokens = searchTokens(query);
 
   if (queryTokens.length === 0) {
@@ -467,6 +471,24 @@ function searchValueMatches(value, query) {
   const normalizedValue = normalizeSearchValue(value);
 
   if (normalizedValue.includes(normalizeSearchValue(query))) {
+    return true;
+  }
+
+  const valueTokens = searchTokens(value);
+
+  return queryTokens.every((queryToken) => (
+    valueTokens.some((valueToken) => valueToken.includes(queryToken))
+  ));
+}
+
+function searchValueMatches(value, query) {
+  const queryTokens = searchTokens(query);
+
+  if (queryTokens.length === 0) {
+    return true;
+  }
+
+  if (literalSearchValueMatches(value, query)) {
     return true;
   }
 
@@ -565,9 +587,9 @@ function movieMatchesSearch(movie, query) {
 
   return [
     ...localizedValues(movie.title),
-    ...localizedValues(movie.description),
     movie.content_type
-  ].some((value) => searchValueMatches(value, query));
+  ].some((value) => searchValueMatches(value, query))
+    || localizedValues(movie.description).some((value) => literalSearchValueMatches(value, query));
 }
 
 function metricValue(value) {
