@@ -671,7 +671,7 @@ function posterMetadata(poster, posterUrl) {
   };
 }
 
-function serializeSearchResultMovie(movie, resultType) {
+function serializeSearchResultMovie(movie, resultType, targetType = "content") {
   const durationSeconds = movie.duration_sec ?? 0;
   const durationMinutes = durationSeconds > 0 ? Math.ceil(durationSeconds / 60) : 0;
   const posterUrl = sourceUrl(movie.poster) || movie.poster_url || null;
@@ -681,7 +681,7 @@ function serializeSearchResultMovie(movie, resultType) {
   return {
     id: movie.id,
     item_type: resultType === "series" ? "series" : "movie",
-    target_type: "content",
+    target_type: targetType,
     target_id: movie.id,
     type: resultType,
     title: toLocalizedText(movie.title),
@@ -775,6 +775,7 @@ export function createContentService({
   contentLikes,
   contentMovieTags,
   contentMovies,
+  contentSearch,
   contentTags,
   tariffService,
   transcoder
@@ -1454,11 +1455,15 @@ export function createContentService({
       function addResult(movie) {
         const resultMovie = searchResultMovie(movie);
 
-        if (!resultMovie || !canExposeMovieToActor(actor, resultMovie, adminActor) || resultsById.has(resultMovie.id)) {
+        if (!resultMovie || !canExposeMovieToActor(actor, resultMovie, adminActor)) {
           return;
         }
 
-        resultsById.set(resultMovie.id, resultMovie);
+        resultsById.set(`content:${resultMovie.id}`, {
+          movie: resultMovie,
+          resultType: filterResultType(resultMovie),
+          targetType: "content"
+        });
       }
 
       for (const movie of contentMovies.list()) {
@@ -1482,12 +1487,26 @@ export function createContentService({
         }
       }
 
-      const data = await Promise.all(
-        [...resultsById.values()].map(async (movie) => {
-          const resultType = filterResultType(movie);
+      if (contentSearch) {
+        const persistedResults = await contentSearch.search(q, {
+          includeUnpublished: adminActor,
+          ownerId: adminActor ? null : actorOwnerId(actor),
+          childId: adminActor || actor?.type !== "device" ? null : deviceChildId(actor.device)
+        });
 
-          return serializeSearchResultMovie(movie, resultType);
-        })
+        for (const result of persistedResults) {
+          const resultKey = `${result.targetType}:${result.movie.id}`;
+
+          if (!resultsById.has(resultKey)) {
+            resultsById.set(resultKey, result);
+          }
+        }
+      }
+
+      const data = await Promise.all(
+        [...resultsById.values()].map(async ({ movie, resultType, targetType }) => (
+          serializeSearchResultMovie(movie, resultType, targetType)
+        ))
       );
 
       return { data };

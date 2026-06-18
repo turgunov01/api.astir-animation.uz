@@ -513,7 +513,12 @@ export const openApiDocument = {
             enum: ["movie", "series"],
             example: "series"
           },
-          target_type: { type: "string", example: "content" },
+          target_type: {
+            type: "string",
+            enum: ["content", "series"],
+            description: "Resource type used with target_id.",
+            example: "series"
+          },
           target_id: {
             type: "string",
             format: "uuid",

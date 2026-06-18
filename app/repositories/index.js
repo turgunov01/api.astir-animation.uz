@@ -12,6 +12,7 @@ import { createPairingSessionRepository } from "./pairingSessionRepository.js";
 import { createParentRepository } from "./parentRepository.js";
 import { createPostgresChildRepository } from "./postgresChildRepository.js";
 import { createPostgresContentMovieTagRepository } from "./postgresContentMovieTagRepository.js";
+import { createPostgresContentSearchRepository } from "./postgresContentSearchRepository.js";
 import { createPostgresContentTagRepository } from "./postgresContentTagRepository.js";
 import { createPostgresParentRepository } from "./postgresParentRepository.js";
 import { createOtpCodeRepository } from "./otpCodeRepository.js";
@@ -43,6 +44,7 @@ export function createRepositories(store, { contentDb = null } = {}) {
     contentLikes: createContentLikeRepository(store),
     contentMovieTags,
     contentMovies: createContentMovieRepository(store),
+    contentSearch: contentDb ? createPostgresContentSearchRepository(contentDb) : null,
     contentTags,
     devices: createDeviceRepository(store),
     faqs: createFaqRepository(store),

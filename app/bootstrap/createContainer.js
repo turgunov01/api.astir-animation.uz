@@ -58,6 +58,7 @@ export function createContainer({ store = defaultStore } = {}) {
     contentLikes: repositories.contentLikes,
     contentMovieTags: repositories.contentMovieTags,
     contentMovies: repositories.contentMovies,
+    contentSearch: repositories.contentSearch,
     contentTags: repositories.contentTags,
     childService: services.children,
     tariffService: services.tariffs,
