@@ -617,6 +617,291 @@ try {
     await closeServer(commentsServer);
   }
 
+  const visibilityParentId = "52a3e7e4-3e8d-4bea-8c35-a6811a102bbc";
+  const visibilityChildId = "7447d81f-920c-4245-bc33-afca1c6191eb";
+  const visibilityDevice = {
+    id: "70ad9484-e170-448f-adea-602ae1f2c63a",
+    child_id: visibilityChildId
+  };
+  const visibilitySeriesId = "d9c69d2b-f73d-4a52-bd39-cd341c55b040";
+  const visibilityEpisodeOneId = "2c5f5c53-eb7f-42af-a662-0bf656e96522";
+  const visibilityEpisodeTwoId = "6092a3ca-bba5-4de7-84bf-c00c459d4b62";
+  const visibilityParent = {
+    id: visibilityParentId,
+    email: "visibility-parent@example.com",
+    role: "parent",
+    active: true
+  };
+  const visibilitySeries = {
+    id: visibilitySeriesId,
+    title: { en: "Visibility Series", ru: "Visibility Series RU", uz: "Visibility Series UZ" },
+    description: {},
+    kind: "episodes",
+    slug: "visibility-series",
+    active: true,
+    category_id: null,
+    created_at: "2026-06-15T00:00:00.000Z",
+    updated_at: "2026-06-15T00:00:00.000Z"
+  };
+  const visibilityEpisodes = [
+    {
+      id: visibilityEpisodeOneId,
+      title: { en: "Episode One", ru: "Episode One RU", uz: "Episode One UZ" },
+      description: {},
+      series_id: visibilitySeriesId,
+      published: true,
+      season_number: 1,
+      episode_number: 1,
+      created_at: "2026-06-15T01:00:00.000Z",
+      updated_at: "2026-06-15T01:00:00.000Z"
+    },
+    {
+      id: visibilityEpisodeTwoId,
+      title: { en: "Episode Two", ru: "Episode Two RU", uz: "Episode Two UZ" },
+      description: {},
+      series_id: visibilitySeriesId,
+      published: true,
+      season_number: 1,
+      episode_number: 2,
+      created_at: "2026-06-15T02:00:00.000Z",
+      updated_at: "2026-06-15T02:00:00.000Z"
+    }
+  ];
+  const visibilityPermissions = [];
+  const visibilityDb = {
+    one(sql, values) {
+      if (/FROM users WHERE id = \$1 AND active = true/.test(sql)) {
+        return values[0] === visibilityParentId ? visibilityParent : null;
+      }
+
+      if (/FROM child_devices WHERE id = \$1 AND revoked_at IS NULL/.test(sql)) {
+        return values[0] === visibilityDevice.id ? visibilityDevice : null;
+      }
+
+      if (/SELECT parent_id FROM children WHERE id = \$1/.test(sql)) {
+        return values[0] === visibilityChildId ? { parent_id: visibilityParentId } : null;
+      }
+
+      if (/SELECT id FROM children WHERE id = \$1 AND parent_id = \$2/.test(sql)) {
+        return values[0] === visibilityChildId && values[1] === visibilityParentId
+          ? { id: visibilityChildId }
+          : null;
+      }
+
+      if (/SELECT id, series_id FROM content WHERE id = \$1/.test(sql)) {
+        const episode = visibilityEpisodes.find((item) => item.id === values[0]);
+        return episode ? { id: episode.id, series_id: episode.series_id } : null;
+      }
+
+      if (/SELECT id FROM series WHERE id = \$1/.test(sql)) {
+        return values[0] === visibilitySeriesId ? { id: visibilitySeriesId } : null;
+      }
+
+      if (/FROM child_permissions p[\s\S]*JOIN series s ON s\.id = \$2/.test(sql)) {
+        return visibilityPermissions.some((permission) => (
+          permission.child_id === values[0]
+          && permission.mode === "deny"
+          && permission.series_id === values[1]
+        ))
+          ? { "?column?": 1 }
+          : null;
+      }
+
+      if (/SELECT \* FROM child_permissions WHERE child_id = \$1/.test(sql)) {
+        const field = /series_id = \$2/.test(sql) ? "series_id" : "content_id";
+        return visibilityPermissions.find((permission) => (
+          permission.child_id === values[0]
+          && permission.mode === "deny"
+          && permission[field] === values[1]
+        )) || null;
+      }
+
+      if (/SELECT COUNT\(\*\)::integer AS count FROM likes/.test(sql)) {
+        return { count: 0 };
+      }
+
+      if (/SELECT 1 FROM likes/.test(sql)) {
+        return null;
+      }
+
+      throw new Error(`unexpected visibility one query: ${sql}`);
+    },
+    many(sql, values) {
+      if (/SELECT id FROM content WHERE series_id = \$1/.test(sql)) {
+        return values[0] === visibilitySeriesId
+          ? visibilityEpisodes.map((episode) => ({ id: episode.id }))
+          : [];
+      }
+
+      if (/FROM content c[\s\S]*WHERE c\.series_id = \$1/.test(sql)) {
+        assert.match(sql, /p\.content_id = c\.id/);
+        assert.match(sql, /p\.series_id IS NOT NULL AND p\.series_id = c\.series_id/);
+        const seriesBlocked = visibilityPermissions.some((permission) => (
+          permission.child_id === visibilityChildId
+          && permission.series_id === visibilitySeriesId
+        ));
+
+        return seriesBlocked
+          ? []
+          : visibilityEpisodes.filter((episode) => !visibilityPermissions.some((permission) => (
+            permission.child_id === visibilityChildId
+            && permission.content_id === episode.id
+          )));
+      }
+
+      if (/SELECT s\.\*[\s\S]*FROM series s/.test(sql)) {
+        assert.match(sql, /p\.series_id IS NOT NULL AND p\.series_id = s\.id/);
+        assert.doesNotMatch(sql, /p\.content_id/);
+        const seriesBlocked = visibilityPermissions.some((permission) => (
+          permission.child_id === visibilityChildId
+          && permission.series_id === visibilitySeriesId
+        ));
+
+        return seriesBlocked ? [] : [visibilitySeries];
+      }
+
+      throw new Error(`unexpected visibility many query: ${sql}`);
+    },
+    query(sql, values) {
+      if (/INSERT INTO child_permissions/.test(sql)) {
+        const permission = {
+          id: `permission-${visibilityPermissions.length + 1}`,
+          child_id: values[0],
+          mode: values[1],
+          category_id: values[2],
+          content_id: values[3],
+          series_id: values[4],
+          created_at: "2026-06-15T03:00:00.000Z"
+        };
+        visibilityPermissions.push(permission);
+        return { rows: [permission], rowCount: 1 };
+      }
+
+      if (/DELETE FROM child_permissions/.test(sql)) {
+        const field = /series_id = \$2/.test(sql) ? "series_id" : "content_id";
+        const index = visibilityPermissions.findIndex((permission) => (
+          permission.child_id === values[0]
+          && permission.mode === "deny"
+          && permission[field] === values[1]
+        ));
+        if (index !== -1) {
+          visibilityPermissions.splice(index, 1);
+        }
+        return { rows: [], rowCount: index === -1 ? 0 : 1 };
+      }
+
+      throw new Error(`unexpected visibility write: ${sql}`);
+    }
+  };
+  const visibilityApp = express();
+  visibilityApp.use(express.json());
+  visibilityApp.use((request, response, next) => {
+    request.legacyDb = visibilityDb;
+    next();
+  });
+  visibilityApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    media: fakeMedia
+  }));
+  const visibilityServer = await listenApp(visibilityApp);
+
+  try {
+    const visibilityBaseUrl = `http://127.0.0.1:${visibilityServer.address().port}`;
+    const parentHeaders = {
+      "content-type": "application/json",
+      authorization: `Bearer ${legacyUserToken(visibilityParent)}`
+    };
+    const deviceHeaders = {
+      authorization: `Bearer ${legacyChildDeviceToken(visibilityDevice)}`
+    };
+    const blockSeriesResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/children/${visibilityChildId}/blacklist`,
+      {
+        method: "POST",
+        headers: parentHeaders,
+        body: JSON.stringify({ series_id: visibilitySeriesId })
+      }
+    );
+    const blockSeriesBody = await blockSeriesResponse.json();
+
+    assert.equal(blockSeriesResponse.status, 201);
+    assert.equal(blockSeriesBody.target_type, "series");
+    assert.equal(blockSeriesBody.series_id, visibilitySeriesId);
+    assert.equal(visibilityPermissions.length, 1);
+    assert.equal(visibilityPermissions[0].series_id, visibilitySeriesId);
+    assert.equal(visibilityPermissions[0].content_id, null);
+
+    const blockedSeriesListResponse = await fetch(`${visibilityBaseUrl}/api/v1/series`, {
+      headers: deviceHeaders
+    });
+    const blockedSeriesListBody = await blockedSeriesListResponse.json();
+    assert.equal(blockedSeriesListResponse.status, 200);
+    assert.deepEqual(blockedSeriesListBody, []);
+
+    const blockedSeriesDetailResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/series/${visibilitySeriesId}`,
+      { headers: deviceHeaders }
+    );
+    const blockedSeriesDetailBody = await blockedSeriesDetailResponse.json();
+    assert.equal(blockedSeriesDetailResponse.status, 404);
+    assert.equal(blockedSeriesDetailBody.error, "series_not_found");
+
+    const blockedSeriesEpisodesResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/series/${visibilitySeriesId}/episodes`,
+      { headers: deviceHeaders }
+    );
+    const blockedSeriesEpisodesBody = await blockedSeriesEpisodesResponse.json();
+    assert.equal(blockedSeriesEpisodesResponse.status, 200);
+    assert.deepEqual(blockedSeriesEpisodesBody, []);
+
+    const unblockSeriesResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/children/${visibilityChildId}/blacklist/${visibilitySeriesId}`,
+      {
+        method: "DELETE",
+        headers: parentHeaders
+      }
+    );
+    assert.equal(unblockSeriesResponse.status, 200);
+    assert.equal(visibilityPermissions.length, 0);
+
+    const blockEpisodeResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/children/${visibilityChildId}/blacklist`,
+      {
+        method: "POST",
+        headers: parentHeaders,
+        body: JSON.stringify({ content_id: visibilityEpisodeOneId })
+      }
+    );
+    const blockEpisodeBody = await blockEpisodeResponse.json();
+
+    assert.equal(blockEpisodeResponse.status, 201);
+    assert.equal(blockEpisodeBody.target_type, "content");
+    assert.equal(blockEpisodeBody.content_id, visibilityEpisodeOneId);
+    assert.equal(blockEpisodeBody.series_id, visibilitySeriesId);
+    assert.equal(visibilityPermissions.length, 1);
+    assert.equal(visibilityPermissions[0].content_id, visibilityEpisodeOneId);
+    assert.equal(visibilityPermissions[0].series_id, null);
+
+    const visibleSeriesListResponse = await fetch(`${visibilityBaseUrl}/api/v1/series`, {
+      headers: deviceHeaders
+    });
+    const visibleSeriesListBody = await visibleSeriesListResponse.json();
+    assert.equal(visibleSeriesListResponse.status, 200);
+    assert.equal(visibleSeriesListBody.length, 1);
+    assert.equal(visibleSeriesListBody[0].id, visibilitySeriesId);
+
+    const filteredEpisodesResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/series/${visibilitySeriesId}/episodes`,
+      { headers: deviceHeaders }
+    );
+    const filteredEpisodesBody = await filteredEpisodesResponse.json();
+    assert.equal(filteredEpisodesResponse.status, 200);
+    assert.equal(filteredEpisodesBody.length, 1);
+    assert.equal(filteredEpisodesBody[0].id, visibilityEpisodeTwoId);
+  } finally {
+    await closeServer(visibilityServer);
+  }
+
   const likeParentId = "9df0170b-f0c7-4f47-b2af-c99787704633";
   const likeChildId = "1e4c8fa8-9465-4a58-840b-284a2f91b7a8";
   const likeDevice = {
@@ -686,6 +971,10 @@ try {
         return values[0] === likedSeriesId ? { id: likedSeriesId } : null;
       }
 
+      if (/FROM child_permissions p[\s\S]*JOIN series s ON s\.id = \$2/.test(sql)) {
+        return null;
+      }
+
       if (/SELECT 1 FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
         return likeRows.some((row) => (
           row.user_id === values[0]
@@ -705,7 +994,7 @@ try {
       throw new Error(`unexpected likes one query: ${sql}`);
     },
     many(sql, values) {
-      if (/SELECT \* FROM series WHERE active = true ORDER BY created_at DESC/.test(sql)) {
+      if (/SELECT s\.\*[\s\S]*FROM series s/.test(sql)) {
         return [{ ...likedSeriesRow }];
       }
 
@@ -929,7 +1218,7 @@ try {
       throw new Error(`unexpected poster one query: ${sql}`);
     },
     many(sql, values) {
-      if (/SELECT \* FROM series WHERE active = true/.test(sql)) {
+      if (/SELECT s\.\*[\s\S]*FROM series s/.test(sql)) {
         return [{ ...seriesPosterState }];
       }
 

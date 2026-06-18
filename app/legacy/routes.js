@@ -793,15 +793,20 @@ async function resolveLikeTarget(db, id, targetType = "") {
   };
 }
 
-async function legacyBlacklistContentIds(db, id) {
+async function legacyBlacklistTarget(db, id) {
   if (!isUuid(id)) {
     throw legacyError(404, "content_not_found", "content or series not found");
   }
 
-  const content = await db.one("SELECT id FROM content WHERE id = $1", [id]);
+  const content = await db.one("SELECT id, series_id FROM content WHERE id = $1", [id]);
 
   if (content) {
-    return [content.id];
+    return {
+      type: "content",
+      id: content.id,
+      seriesId: content.series_id || null,
+      contentIds: [content.id]
+    };
   }
 
   const series = await db.one("SELECT id FROM series WHERE id = $1", [id]);
@@ -812,11 +817,12 @@ async function legacyBlacklistContentIds(db, id) {
 
   const rows = await db.many("SELECT id FROM content WHERE series_id = $1 ORDER BY season_number NULLS FIRST, episode_number NULLS FIRST, created_at", [series.id]);
 
-  if (rows.length === 0) {
-    throw legacyError(404, "series_content_not_found", "series has no content items");
-  }
-
-  return rows.map((row) => row.id);
+  return {
+    type: "series",
+    id: series.id,
+    seriesId: series.id,
+    contentIds: rows.map((row) => row.id)
+  };
 }
 
 async function ownerUserIdForActor(db, actor) {
@@ -882,6 +888,7 @@ async function appendLegacyContentVisibilityFilters(db, actor, filters, values, 
         AND p.mode = 'deny'
         AND (
           p.content_id = ${alias}.id
+          OR (p.series_id IS NOT NULL AND p.series_id = ${alias}.series_id)
           OR (p.category_id IS NOT NULL AND p.category_id = ${alias}.category_id)
         )
     )`);
@@ -891,19 +898,6 @@ async function appendLegacyContentVisibilityFilters(db, actor, filters, values, 
 async function appendLegacySeriesVisibilityFilters(db, actor, filters, values, alias = "s") {
   if (!actor || isLegacyAdminActor(actor)) {
     return;
-  }
-
-  const userId = await ownerUserIdForActor(db, actor);
-
-  if (userId) {
-    values.push(userId);
-    filters.push(`NOT EXISTS (
-      SELECT 1
-      FROM blocks b
-      JOIN content bc ON bc.id = b.content_id
-      WHERE b.user_id = $${values.length}
-        AND bc.series_id = ${alias}.id
-    )`);
   }
 
   const childId = legacyActorChildId(actor);
@@ -917,15 +911,40 @@ async function appendLegacySeriesVisibilityFilters(db, actor, filters, values, a
         AND p.mode = 'deny'
         AND (
           (p.category_id IS NOT NULL AND p.category_id = ${alias}.category_id)
-          OR EXISTS (
-            SELECT 1
-            FROM content pc
-            WHERE pc.series_id = ${alias}.id
-              AND p.content_id = pc.id
-          )
+          OR (p.series_id IS NOT NULL AND p.series_id = ${alias}.id)
         )
     )`);
   }
+}
+
+async function legacySeriesDeniedForActor(db, actor, seriesId) {
+  if (!actor || isLegacyAdminActor(actor)) {
+    return false;
+  }
+
+  const childId = legacyActorChildId(actor);
+
+  if (!childId) {
+    return false;
+  }
+
+  const denied = await db.one(
+    `
+      SELECT 1
+      FROM child_permissions p
+      JOIN series s ON s.id = $2
+      WHERE p.child_id = $1
+        AND p.mode = 'deny'
+        AND (
+          (p.series_id IS NOT NULL AND p.series_id = s.id)
+          OR (p.category_id IS NOT NULL AND p.category_id = s.category_id)
+        )
+      LIMIT 1
+    `,
+    [childId, seriesId]
+  );
+
+  return Boolean(denied);
 }
 
 async function legacyLikedItems(db, userId) {
@@ -1070,6 +1089,7 @@ async function assertCanAccessContent(db, actor, contentId) {
           AND p.mode = 'deny'
           AND (
             p.content_id = c.id
+            OR (p.series_id IS NOT NULL AND p.series_id = c.series_id)
             OR (p.category_id IS NOT NULL AND p.category_id = c.category_id)
           )
         LIMIT 1
@@ -1093,6 +1113,10 @@ function legacyActorChildId(actor) {
 
 function legacyPermissionApplies(permission, content) {
   if (permission.content_id && permission.content_id !== content.id) {
+    return false;
+  }
+
+  if (permission.series_id && permission.series_id !== content.series_id) {
     return false;
   }
 
@@ -2389,6 +2413,7 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
           AND mode = 'allow'
           AND content_id IS NULL
           AND category_id IS NULL
+          AND series_id IS NULL
         ORDER BY created_at DESC
         LIMIT 1
       `,
@@ -2420,6 +2445,7 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
           AND mode = 'allow'
           AND content_id IS NULL
           AND category_id IS NULL
+          AND series_id IS NULL
         ORDER BY created_at DESC
         LIMIT 1
       `,
@@ -2492,15 +2518,17 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
         SELECT p.id,
                p.child_id,
                p.content_id,
+               p.series_id,
                p.created_at,
-               c.title,
-               c.poster_url,
-               c.series_id
+               COALESCE(c.title, s.title) AS title,
+               COALESCE(c.poster_url, s.poster_url, '') AS poster_url,
+               c.series_id AS content_series_id
         FROM child_permissions p
-        JOIN content c ON c.id = p.content_id
+        LEFT JOIN content c ON c.id = p.content_id
+        LEFT JOIN series s ON s.id = p.series_id
         WHERE p.child_id = $1
           AND p.mode = 'deny'
-          AND p.content_id IS NOT NULL
+          AND (p.content_id IS NOT NULL OR p.series_id IS NOT NULL)
         ORDER BY p.created_at DESC
       `,
       [child.id]
@@ -2512,7 +2540,10 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
       child_id: row.child_id,
       contentId: row.content_id,
       content_id: row.content_id,
-      series_id: row.series_id || null,
+      seriesId: row.series_id || row.content_series_id || null,
+      series_id: row.series_id || row.content_series_id || null,
+      target_type: row.series_id ? "series" : "content",
+      target_id: row.series_id || row.content_id,
       title: row.title,
       poster_url: row.poster_url || "",
       createdAt: row.created_at,
@@ -2541,34 +2572,34 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
     }
 
     const targetId = request.body.contentId || request.body.content_id || request.body.seriesId || request.body.series_id;
-    const contentIds = await legacyBlacklistContentIds(request.legacyDb, targetId);
-    const items = [];
-
-    for (const contentId of contentIds) {
-      const existing = await request.legacyDb.one(
-        "SELECT * FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND content_id = $2 LIMIT 1",
-        [child.id, contentId]
-      );
-
-      items.push(existing || await insertRow(request.legacyDb, "child_permissions", {
-        child_id: child.id,
-        mode: "deny",
-        category_id: null,
-        content_id: contentId,
-        watch_from_min: null,
-        watch_until_min: null,
-        weekday_mask: null,
-        daily_limit_minutes: null
-      }));
-    }
+    const target = await legacyBlacklistTarget(request.legacyDb, targetId);
+    const targetColumn = target.type === "series" ? "series_id" : "content_id";
+    const existing = await request.legacyDb.one(
+      `SELECT * FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND ${targetColumn} = $2 LIMIT 1`,
+      [child.id, target.id]
+    );
+    const item = existing || await insertRow(request.legacyDb, "child_permissions", {
+      child_id: child.id,
+      mode: "deny",
+      category_id: null,
+      content_id: target.type === "content" ? target.id : null,
+      series_id: target.type === "series" ? target.id : null,
+      watch_from_min: null,
+      watch_until_min: null,
+      weekday_mask: null,
+      daily_limit_minutes: null
+    });
 
     response.status(201).json({
       blacklisted: true,
       childId: child.id,
       child_id: child.id,
-      content_id: contentIds[0],
-      content_ids: contentIds,
-      items
+      target_type: target.type,
+      target_id: target.id,
+      content_id: target.type === "content" ? target.id : null,
+      content_ids: target.contentIds,
+      series_id: target.seriesId,
+      items: [item]
     });
   }));
 
@@ -2586,10 +2617,11 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
       throw legacyError(404, "child_not_found", "child not found");
     }
 
-    const contentIds = await legacyBlacklistContentIds(request.legacyDb, request.params.content_id);
+    const target = await legacyBlacklistTarget(request.legacyDb, request.params.content_id);
+    const targetColumn = target.type === "series" ? "series_id" : "content_id";
     const result = await request.legacyDb.query(
-      "DELETE FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND content_id = ANY($2::uuid[])",
-      [child.id, contentIds]
+      `DELETE FROM child_permissions WHERE child_id = $1 AND mode = 'deny' AND ${targetColumn} = $2`,
+      [child.id, target.id]
     );
 
     response.json({
@@ -2597,8 +2629,11 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
       deleted: result.rowCount || 0,
       childId: child.id,
       child_id: child.id,
-      content_id: contentIds[0],
-      content_ids: contentIds
+      target_type: target.type,
+      target_id: target.id,
+      content_id: target.type === "content" ? target.id : null,
+      content_ids: target.contentIds,
+      series_id: target.seriesId
     });
   }));
 
@@ -2681,6 +2716,7 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
       mode: request.body.mode || "allow",
       category_id: request.body.category_id || null,
       content_id: request.body.content_id || null,
+      series_id: request.body.series_id || null,
       watch_from_min: toInteger(request.body.watch_from_min, null),
       watch_until_min: toInteger(request.body.watch_until_min, null),
       weekday_mask: toInteger(request.body.weekday_mask, null),
@@ -2703,18 +2739,20 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
         SET mode = COALESCE($1, p.mode),
             category_id = $2,
             content_id = $3,
-            watch_from_min = $4,
-            watch_until_min = $5,
-            weekday_mask = $6,
-            daily_limit_minutes = $7
+            series_id = $4,
+            watch_from_min = $5,
+            watch_until_min = $6,
+            weekday_mask = $7,
+            daily_limit_minutes = $8
         FROM children c
-        WHERE p.id = $8 AND p.child_id = c.id AND c.parent_id = $9
+        WHERE p.id = $9 AND p.child_id = c.id AND c.parent_id = $10
         RETURNING p.*
       `,
       [
         request.body.mode,
         request.body.category_id || null,
         request.body.content_id || null,
+        request.body.series_id || null,
         toInteger(request.body.watch_from_min, null),
         toInteger(request.body.watch_until_min, null),
         toInteger(request.body.weekday_mask, null),
@@ -2825,6 +2863,7 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
         mode: permission.mode || "allow",
         category_id: permission.category_id || null,
         content_id: permission.content_id || null,
+        series_id: permission.series_id || null,
         watch_from_min: toInteger(permission.watch_from_min, null),
         watch_until_min: toInteger(permission.watch_until_min, null),
         weekday_mask: toInteger(permission.weekday_mask, null),
@@ -3087,69 +3126,63 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
     const userId = actor ? await ownerUserIdForActor(request.legacyDb, actor) : null;
     const search = firstQueryValue(request.query.q || request.query.search);
     const category = firstQueryValue(request.query.category || request.query.category_id);
-    let rows;
+    const filters = ["s.active = true"];
+    const values = [];
 
-    if (!search && !category) {
-      rows = await request.legacyDb.many("SELECT * FROM series WHERE active = true ORDER BY created_at DESC");
-    } else {
-      const filters = ["s.active = true"];
-      const values = [];
-
-      if (category) {
-        values.push(category);
-        filters.push(`(
-          s.category_id::text = $${values.length}
-          OR lower(cat.slug) = lower($${values.length})
-          OR lower(cat.name->>'en') = lower($${values.length})
-          OR lower(cat.name->>'ru') = lower($${values.length})
-          OR lower(cat.name->>'uz') = lower($${values.length})
-        )`);
-      }
-
-      if (search) {
-        values.push(`%${search}%`);
-        const patternParam = values.length;
-        values.push(search);
-        const searchParam = values.length;
-        filters.push(`(
-          s.title->>'en' ILIKE $${patternParam}
-          OR s.title->>'ru' ILIKE $${patternParam}
-          OR s.title->>'uz' ILIKE $${patternParam}
-          OR s.description->>'en' ILIKE $${patternParam}
-          OR s.description->>'ru' ILIKE $${patternParam}
-          OR s.description->>'uz' ILIKE $${patternParam}
-          OR EXISTS (
-            SELECT 1
-            FROM content ec
-            WHERE ec.series_id = s.id
-              AND (
-                ec.title->>'en' ILIKE $${patternParam}
-                OR ec.title->>'ru' ILIKE $${patternParam}
-                OR ec.title->>'uz' ILIKE $${patternParam}
-                OR similarity(COALESCE(ec.title->>'en', ''), $${searchParam}) > 0.25
-                OR similarity(COALESCE(ec.title->>'ru', ''), $${searchParam}) > 0.25
-                OR similarity(COALESCE(ec.title->>'uz', ''), $${searchParam}) > 0.25
-              )
-          )
-          OR similarity(COALESCE(s.title->>'en', ''), $${searchParam}) > 0.25
-          OR similarity(COALESCE(s.title->>'ru', ''), $${searchParam}) > 0.25
-          OR similarity(COALESCE(s.title->>'uz', ''), $${searchParam}) > 0.25
-        )`);
-      }
-
-      await appendLegacySeriesVisibilityFilters(request.legacyDb, actor, filters, values, "s");
-
-      rows = await request.legacyDb.many(
-        `
-          SELECT s.*
-          FROM series s
-          LEFT JOIN categories cat ON cat.id = s.category_id
-          WHERE ${filters.join(" AND ")}
-          ORDER BY s.created_at DESC
-        `,
-        values
-      );
+    if (category) {
+      values.push(category);
+      filters.push(`(
+        s.category_id::text = $${values.length}
+        OR lower(cat.slug) = lower($${values.length})
+        OR lower(cat.name->>'en') = lower($${values.length})
+        OR lower(cat.name->>'ru') = lower($${values.length})
+        OR lower(cat.name->>'uz') = lower($${values.length})
+      )`);
     }
+
+    if (search) {
+      values.push(`%${search}%`);
+      const patternParam = values.length;
+      values.push(search);
+      const searchParam = values.length;
+      filters.push(`(
+        s.title->>'en' ILIKE $${patternParam}
+        OR s.title->>'ru' ILIKE $${patternParam}
+        OR s.title->>'uz' ILIKE $${patternParam}
+        OR s.description->>'en' ILIKE $${patternParam}
+        OR s.description->>'ru' ILIKE $${patternParam}
+        OR s.description->>'uz' ILIKE $${patternParam}
+        OR EXISTS (
+          SELECT 1
+          FROM content ec
+          WHERE ec.series_id = s.id
+            AND (
+              ec.title->>'en' ILIKE $${patternParam}
+              OR ec.title->>'ru' ILIKE $${patternParam}
+              OR ec.title->>'uz' ILIKE $${patternParam}
+              OR similarity(COALESCE(ec.title->>'en', ''), $${searchParam}) > 0.25
+              OR similarity(COALESCE(ec.title->>'ru', ''), $${searchParam}) > 0.25
+              OR similarity(COALESCE(ec.title->>'uz', ''), $${searchParam}) > 0.25
+            )
+        )
+        OR similarity(COALESCE(s.title->>'en', ''), $${searchParam}) > 0.25
+        OR similarity(COALESCE(s.title->>'ru', ''), $${searchParam}) > 0.25
+        OR similarity(COALESCE(s.title->>'uz', ''), $${searchParam}) > 0.25
+      )`);
+    }
+
+    await appendLegacySeriesVisibilityFilters(request.legacyDb, actor, filters, values, "s");
+
+    const rows = await request.legacyDb.many(
+      `
+        SELECT s.*
+        FROM series s
+        LEFT JOIN categories cat ON cat.id = s.category_id
+        WHERE ${filters.join(" AND ")}
+        ORDER BY s.created_at DESC
+      `,
+      values
+    );
     const data = await Promise.all(
       rows.map(async (row) => localizeRecord(
         await serializeSeriesWithLikes(request.legacyDb, row, userId),
@@ -3177,7 +3210,13 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
   }));
 
   router.get("/series/:id", asyncHandler(async (request, response) => {
-    const userId = await optionalLegacyUserId(request);
+    const actor = await optionalLegacyActor(request);
+
+    if (await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)) {
+      throw legacyError(404, "series_not_found", "series not found");
+    }
+
+    const userId = actor ? await ownerUserIdForActor(request.legacyDb, actor) : null;
     const row = await getById(request.legacyDb, "series", request.params.id);
     response.json(localizeRecord(
       await serializeSeriesWithLikes(request.legacyDb, row, userId),
@@ -3212,6 +3251,11 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
     const lang = requestedLang(request);
     const actor = await optionalLegacyActor(request);
     let rows;
+
+    if (await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)) {
+      response.json([]);
+      return;
+    }
 
     if (!actor) {
       rows = await request.legacyDb.many(

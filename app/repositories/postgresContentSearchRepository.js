@@ -105,6 +105,7 @@ export function createPostgresContentSearchRepository(db) {
                     AND p.mode = 'deny'
                     AND (
                       p.content_id = c.id
+                      OR (p.series_id IS NOT NULL AND p.series_id = c.series_id)
                       OR (p.category_id IS NOT NULL AND p.category_id = c.category_id)
                     )
                 )
@@ -146,16 +147,6 @@ export function createPostgresContentSearchRepository(db) {
                 )
               )
               AND (
-                $3::uuid IS NULL
-                OR NOT EXISTS (
-                  SELECT 1
-                  FROM blocks b
-                  JOIN content blocked_content ON blocked_content.id = b.content_id
-                  WHERE b.user_id = $3
-                    AND blocked_content.series_id = s.id
-                )
-              )
-              AND (
                 $4::uuid IS NULL
                 OR NOT EXISTS (
                   SELECT 1
@@ -164,12 +155,7 @@ export function createPostgresContentSearchRepository(db) {
                     AND p.mode = 'deny'
                     AND (
                       (p.category_id IS NOT NULL AND p.category_id = s.category_id)
-                      OR EXISTS (
-                        SELECT 1
-                        FROM content denied_content
-                        WHERE denied_content.series_id = s.id
-                          AND p.content_id = denied_content.id
-                      )
+                      OR (p.series_id IS NOT NULL AND p.series_id = s.id)
                     )
                 )
               )

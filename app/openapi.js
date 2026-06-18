@@ -221,6 +221,7 @@ export const openApiDocument = {
           mode: { type: "string", example: "allow" },
           category_id: { type: "string", nullable: true },
           content_id: { type: "string", nullable: true },
+          series_id: { type: "string", nullable: true },
           watch_from_min: { type: "integer", nullable: true, example: 0 },
           watch_until_min: { type: "integer", nullable: true, example: 1320 },
           weekday_mask: { type: "integer", nullable: true, example: 127 },
@@ -4909,6 +4910,7 @@ export const openApiDocument = {
                 properties: {
                   category_id: { type: "string", example: "string" },
                   content_id: { type: "string", example: "string" },
+                  series_id: { type: "string", example: "string" },
                   daily_limit_minutes: { type: "integer", example: 0 },
                   mode: { type: "string", example: "allow" },
                   watch_from_min: { type: "integer", example: 0 },
@@ -4986,6 +4988,7 @@ export const openApiDocument = {
                 properties: {
                   category_id: { type: "string", example: "string" },
                   content_id: { type: "string", example: "string" },
+                  series_id: { type: "string", example: "string" },
                   daily_limit_minutes: { type: "integer", example: 0 },
                   mode: { type: "string", example: "allow" },
                   watch_from_min: { type: "integer", example: 0 },

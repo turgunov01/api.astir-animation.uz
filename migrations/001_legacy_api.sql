@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS child_permissions (
   mode text NOT NULL CHECK (mode IN ('allow', 'deny')),
   category_id uuid REFERENCES categories(id) ON DELETE CASCADE,
   content_id uuid REFERENCES content(id) ON DELETE CASCADE,
+  series_id uuid REFERENCES series(id) ON DELETE CASCADE,
   watch_from_min integer,
   watch_until_min integer,
   weekday_mask integer,
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS child_permissions (
 );
 
 CREATE INDEX IF NOT EXISTS child_permissions_child_id_idx ON child_permissions(child_id);
+CREATE INDEX IF NOT EXISTS child_permissions_series_id_idx ON child_permissions(series_id);
 
 CREATE TABLE IF NOT EXISTS child_devices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
