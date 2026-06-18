@@ -10,6 +10,7 @@ const defaultLimit = {
 };
 const supportedLocales = ["uz", "ru", "en"];
 const defaultLocale = "en";
+const adminRoles = new Set(["admin", "super_admin"]);
 
 function localeOrDefault(locale) {
   return supportedLocales.includes(locale) ? locale : defaultLocale;
@@ -153,17 +154,39 @@ function serializeDevice(device) {
     name: device.name || device.device_name,
     platform: device.platform,
     pairedAt: device.pairedAt || device.paired_at,
+    revokedAt: device.revokedAt || device.revoked_at || null,
+    revoked_at: device.revokedAt || device.revoked_at || null,
     createdAt: device.createdAt || device.created_at,
     updatedAt: device.updatedAt || device.updated_at
   };
+}
+
+function isRevokedDevice(device) {
+  return Boolean(device?.revokedAt || device?.revoked_at);
 }
 
 function childParentId(child) {
   return child?.parentId || child?.parent_id || child?.parentid;
 }
 
-function assertChildBelongsToParent(child, parentId) {
-  if (childParentId(child) !== parentId) {
+function parentAccess(parent) {
+  if (parent && typeof parent === "object") {
+    return {
+      id: parent.id || parent.parentId || parent.parent_id,
+      isAdmin: adminRoles.has(parent.role)
+    };
+  }
+
+  return {
+    id: parent,
+    isAdmin: false
+  };
+}
+
+function assertChildBelongsToParent(child, parent) {
+  const access = parentAccess(parent);
+
+  if (!access.isAdmin && childParentId(child) !== access.id) {
     throw forbidden("Child does not belong to this parent", "CHILD_FORBIDDEN");
   }
 }
@@ -277,10 +300,13 @@ export function createChildService({ childContentBlacklist, children, contentLik
   }
 
   async function listDevicesAsync(parentId, childId) {
+    const access = parentAccess(parentId);
+
     await getChildForParentAsync(parentId, childId);
 
     return (devices?.listByChildId(childId) || [])
-      .filter((device) => (device.parentId || device.parent_id) === parentId)
+      .filter((device) => access.isAdmin || (device.parentId || device.parent_id) === access.id)
+      .filter((device) => !isRevokedDevice(device))
       .map(serializeDevice);
   }
 
@@ -372,6 +398,35 @@ export function createChildService({ childContentBlacklist, children, contentLik
     };
   }
 
+  async function revokeDeviceAsync(parentId, childId, deviceId) {
+    const access = parentAccess(parentId);
+
+    await getChildForParentAsync(parentId, childId);
+
+    const device = devices?.findById?.(deviceId);
+
+    if (
+      !device
+      || (!access.isAdmin && (device.parentId || device.parent_id) !== access.id)
+      || (device.childId || device.child_id) !== childId
+    ) {
+      throw notFound("Device not found", "DEVICE_NOT_FOUND");
+    }
+
+    const revokedDevice = devices.revoke
+      ? devices.revoke(device.id)
+      : devices.update(device.id, {
+          revokedAt: new Date().toISOString(),
+          tokenHash: null
+        });
+
+    return {
+      revoked: true,
+      deleted: true,
+      device: serializeDevice(revokedDevice)
+    };
+  }
+
   function removeContentFromAllBlacklists(contentId) {
     childContentBlacklist.deleteByContentId(contentId);
   }
@@ -406,6 +461,7 @@ export function createChildService({ childContentBlacklist, children, contentLik
     removeContentFromAllBlacklists,
     removeFromBlacklist,
     removeFromBlacklistAsync,
+    revokeDeviceAsync,
     serializeChild,
     updateLimits,
     updateLimitsAsync

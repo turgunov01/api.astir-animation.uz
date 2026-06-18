@@ -1155,6 +1155,48 @@ try {
   });
 
   assert.equal(childDevices.devices.some((device) => device.id === config.device.id), true);
+
+  const revokePairing = await request(baseUrl, "/v1/pairing/sessions", {
+    method: "POST",
+    body: {
+      deviceName: "Smoke Revoked TV",
+      platform: "tv"
+    }
+  });
+
+  await request(baseUrl, `/v1/pairing/sessions/${revokePairing.pairingSession.id}/approve`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: { childId }
+  });
+
+  const revokedPairing = await request(baseUrl, `/v1/pairing/sessions/${revokePairing.pairingSession.id}`, {
+    headers: { "x-setup-token": revokePairing.pairingSession.setupToken }
+  });
+  const revokedDeviceId = revokedPairing.pairingSession.deviceId;
+  const revokedDeviceToken = revokedPairing.pairingSession.deviceToken;
+
+  const revokedDevice = await request(baseUrl, `/v1/children/${childId}/devices/${revokedDeviceId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${superAdminToken}` }
+  });
+
+  assert.equal(revokedDevice.revoked, true);
+  assert.equal(revokedDevice.device.id, revokedDeviceId);
+  assert.equal(typeof revokedDevice.device.revokedAt, "string");
+
+  const childDevicesAfterRevoke = await request(baseUrl, `/v1/children/${childId}/devices`, {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(childDevicesAfterRevoke.devices.some((device) => device.id === revokedDeviceId), false);
+  assert.equal(childDevicesAfterRevoke.devices.some((device) => device.id === config.device.id), true);
+
+  const revokedDeviceConfig = await requestWithStatus(baseUrl, "/v1/device/config", {
+    headers: { authorization: `Bearer ${revokedDeviceToken}` }
+  });
+
+  assert.equal(revokedDeviceConfig.status, 401);
   assert.deepEqual(config.limit.allowedDates, []);
 
   const tomorrowOnlyLimit = await request(baseUrl, `/v1/children/${childId}/limits`, {

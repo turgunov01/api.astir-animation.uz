@@ -23,6 +23,13 @@ export function createDeviceRepository(store) {
 
     update(id, attributes) {
       return store.update("devices", id, attributes);
+    },
+
+    revoke(id) {
+      return store.update("devices", id, {
+        revokedAt: new Date().toISOString(),
+        tokenHash: null
+      });
     }
   };
 }

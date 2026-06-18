@@ -44,7 +44,15 @@ export function createChildrenController({ childService }) {
     },
 
     async listDevices(request, response) {
-      response.json({ devices: await childService.listDevicesAsync(request.parent.id, request.params.childId) });
+      response.json({ devices: await childService.listDevicesAsync(request.parent, request.params.childId) });
+    },
+
+    async revokeDevice(request, response) {
+      response.json(await childService.revokeDeviceAsync(
+        request.parent,
+        request.params.childId,
+        request.params.deviceId
+      ));
     },
 
     async updateLimits(request, response) {

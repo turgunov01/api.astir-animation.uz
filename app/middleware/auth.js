@@ -81,6 +81,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
     normalized.childId = firstValue(normalized.childId, normalized.child_id, legacyChildId(payload));
     normalized.tokenHash = firstValue(normalized.tokenHash, normalized.token_hash);
     normalized.pairedAt = firstValue(normalized.pairedAt, normalized.paired_at);
+    normalized.revokedAt = firstValue(normalized.revokedAt, normalized.revoked_at);
 
     if (!normalized.parentId && normalized.childId) {
       const child = await children.findById(normalized.childId);
@@ -92,6 +93,10 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
     }
 
     return normalized;
+  }
+
+  function isDeviceRevoked(device) {
+    return Boolean(device?.revokedAt || device?.revoked_at);
   }
 
   async function storedDeviceFromPayload(payload) {
@@ -239,7 +244,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       if (payload.type === "device") {
         const device = await normalizeDevice(await storedDeviceFromPayload(payload), payload);
 
-        if (!device || device.tokenHash !== sha256(token)) {
+        if (!device || isDeviceRevoked(device) || device.tokenHash !== sha256(token)) {
           throw unauthorized("Device token is no longer valid");
         }
 
@@ -253,7 +258,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
         const device = await normalizeDevice(storedDevice, payload);
         const storedTokenHash = firstValue(storedDevice?.tokenHash, storedDevice?.token_hash);
 
-        if (storedTokenHash && storedTokenHash !== sha256(token)) {
+        if (isDeviceRevoked(device) || (storedTokenHash && storedTokenHash !== sha256(token))) {
           throw unauthorized("Device token is no longer valid");
         }
 
@@ -312,7 +317,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       if (payload.type === "device") {
         const device = await normalizeDevice(await storedDeviceFromPayload(payload), payload);
 
-        if (!device || device.tokenHash !== sha256(token)) {
+        if (!device || isDeviceRevoked(device) || device.tokenHash !== sha256(token)) {
           throw unauthorized("Device token is no longer valid");
         }
 
@@ -327,7 +332,7 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
         const device = await normalizeDevice(storedDevice, payload);
         const storedTokenHash = firstValue(storedDevice?.tokenHash, storedDevice?.token_hash);
 
-        if (storedTokenHash && storedTokenHash !== sha256(token)) {
+        if (isDeviceRevoked(device) || (storedTokenHash && storedTokenHash !== sha256(token))) {
           throw unauthorized("Device token is no longer valid");
         }
 

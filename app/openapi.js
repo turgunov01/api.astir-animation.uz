@@ -384,6 +384,8 @@ export const openApiDocument = {
           name: { type: "string", example: "Astir Child Device" },
           platform: { type: "string", example: "ios" },
           pairedAt: { type: "string", format: "date-time" },
+          revokedAt: { type: "string", format: "date-time", nullable: true },
+          revoked_at: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" }
         }
@@ -5262,6 +5264,85 @@ export const openApiDocument = {
             }
           },
           401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/children/{childId}/devices": {
+      get: {
+        tags: ["Children"],
+        summary: "List paired child devices",
+        description: "Lists active devices paired through the /v1 pairing flow for a child profile owned by the authenticated parent.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Paired child devices",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    devices: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/PairedDevice" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/children/{childId}/devices/{deviceId}": {
+      delete: {
+        tags: ["Children"],
+        summary: "Revoke a paired child device",
+        description: "Revokes a device paired through the /v1 pairing flow. Revoked devices are hidden from the child device list and their device tokens stop working.",
+        security: [{ parentToken: [] }],
+        parameters: [
+          {
+            name: "childId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          },
+          {
+            name: "deviceId",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Device revoked",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    revoked: { type: "boolean", example: true },
+                    deleted: { type: "boolean", example: true },
+                    device: { $ref: "#/components/schemas/PairedDevice" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" }
         }
       }
     },
