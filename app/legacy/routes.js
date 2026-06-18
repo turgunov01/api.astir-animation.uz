@@ -4246,49 +4246,6 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
     response.status(201).json({ subscription, transaction, checkout_url: "" });
   }));
 
-  router.post("/payments/click/webhook", asyncHandler(async (request, response) => {
-    requireClickEnv();
-    const providerRef = request.body.provider_ref || request.body.payment_id || request.body.click_trans_id;
-    const merchantTransId = request.body.merchant_trans_id || request.body.transaction_id;
-    const clickError = Number(request.body.error || 0);
-    const status = clickError < 0 ? "failed" : "succeeded";
-
-    if (providerRef || merchantTransId) {
-      let transaction = await request.legacyDb.one(
-        `
-          UPDATE transactions
-          SET status = $1,
-              processed_at = CASE WHEN $1 = 'succeeded' THEN now() ELSE processed_at END,
-              provider_ref = COALESCE($2, provider_ref),
-              provider_payload = $3
-          WHERE provider_ref = $2
-             OR id::text = $2
-             OR id::text = $4
-          RETURNING *
-        `,
-        [status, providerRef ? String(providerRef) : null, request.body, merchantTransId ? String(merchantTransId) : null]
-      );
-
-      if (transaction?.status === "succeeded" && !transaction.subscription_id && transaction.user_id && transaction.plan_id) {
-        const plan = await request.legacyDb.one("SELECT * FROM plans WHERE id = $1", [transaction.plan_id]);
-        const subscription = await insertRow(request.legacyDb, "subscriptions", {
-          user_id: transaction.user_id,
-          plan_id: transaction.plan_id,
-          status: "active",
-          starts_at: new Date().toISOString(),
-          ends_at: new Date(Date.now() + (plan?.duration_days || 30) * 24 * 60 * 60 * 1000).toISOString()
-        });
-
-        transaction = await request.legacyDb.one(
-          "UPDATE transactions SET subscription_id = $1 WHERE id = $2 RETURNING *",
-          [subscription.id, transaction.id]
-        );
-      }
-    }
-
-    response.json({ ok: true });
-  }));
-
   router.get("/payments/click/mock-pay", asyncHandler(async (request, response) => {
     if (config.env === "production") {
       throw legacyError(404, "not_found", "not found");

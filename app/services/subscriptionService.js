@@ -211,13 +211,13 @@ function nextClickLocalId() {
 }
 
 export function createSubscriptionService({ config, parents, subscriptions, tariffs, transactions }) {
-  function parentFromActor(actor) {
+  async function parentFromActor(actor) {
     if (actor?.type === "parent" && actor.parent) {
-      return parents.findById(actor.parent.id) || actor.parent;
+      return await parents.findById(actor.parent.id) || actor.parent;
     }
 
     if (actor?.type === "device" && actor.device?.parentId) {
-      const parent = parents.findById(actor.device.parentId);
+      const parent = await parents.findById(actor.device.parentId);
 
       if (parent) {
         return parent;
@@ -326,8 +326,8 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     return transactions.findById(merchantTransId);
   }
 
-  function transactionParent(transaction) {
-    const parent = parents.findById(transaction.parentId);
+  async function transactionParent(transaction) {
+    const parent = await parents.findById(transaction.parentId);
 
     if (!parent) {
       throw notFound("Parent account no longer exists", "PARENT_NOT_FOUND");
@@ -344,8 +344,8 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     return clickString(body, "service_id") === String(clickConfig().serviceId);
   }
 
-  function activateClickTransaction(transaction, body) {
-    const parent = transactionParent(transaction);
+  async function activateClickTransaction(transaction, body) {
+    const parent = await transactionParent(transaction);
     const providerSubscriptionId = `click:${clickString(body, "click_trans_id")}`;
     const subscription = upsertVerifiedSubscription(parent, {
       expiresAt: transaction.expiresAt,
@@ -358,6 +358,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       providerSubscriptionId,
       tariffId: transaction.tariffId
     });
+    await parents.update?.(parent.id, { tariff: transaction.tariffId });
     const confirmId = transaction.merchant_confirm_id || nextClickLocalId();
 
     return {
@@ -396,7 +397,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
     return subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
   }
 
-  function verifyPurchase(parent, provider, body) {
+  async function verifyPurchase(parent, provider, body) {
     const providerSubscriptionId = body.provider_subscription_id
       || body.original_transaction_id
       || body.transaction_id
@@ -413,6 +414,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       providerSubscriptionId,
       tariffId: body.tariff_id
     });
+    await parents.update?.(parent.id, { tariff: subscription.tariffId });
     const tariff = getTariff(subscription.tariffId);
 
     return {
@@ -429,7 +431,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       return latestActiveForParent(parentId);
     },
 
-    createClickCheckout(parent, {
+    async createClickCheckout(parent, {
       amount,
       cardType = "",
       expiresAt = "",
@@ -486,7 +488,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       };
     },
 
-    getClickTransaction(parent, transactionId) {
+    async getClickTransaction(parent, transactionId) {
       const transaction = transactions.findById(transactionId);
 
       if (!transaction || transaction.parentId !== parent.id || transaction.provider !== "click") {
@@ -503,7 +505,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       };
     },
 
-    handleClickPrepare(body = {}) {
+    async handleClickPrepare(body = {}) {
       const click = assertClickCallbackConfig();
       const merchantTransId = clickString(body, "merchant_trans_id");
       const transaction = getClickTransaction(merchantTransId);
@@ -550,7 +552,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       });
     },
 
-    handleClickComplete(body = {}) {
+    async handleClickComplete(body = {}) {
       const click = assertClickCallbackConfig();
       const merchantTransId = clickString(body, "merchant_trans_id");
       const transaction = getClickTransaction(merchantTransId);
@@ -597,7 +599,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
         return clickResponse(clickErrors.cancelled, body, cancelledTransaction);
       }
 
-      const result = activateClickTransaction(transaction, body);
+      const result = await activateClickTransaction(transaction, body);
 
       return clickResponse(clickSuccess, body, result.transaction, {
         merchant_confirm_id: result.transaction.merchant_confirm_id,
@@ -605,7 +607,7 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       });
     },
 
-    applyWebhook(provider, body) {
+    async applyWebhook(provider, body) {
       const subscription = findWebhookSubscription(provider, body);
 
       if (!subscription) {
@@ -639,9 +641,11 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       };
     },
 
-    currentForActor(actor) {
+    async currentForActor(actor) {
+      const parent = await parentFromActor(actor);
+
       return {
-        subscription: serializeSubscription(latestActiveForParent(parentFromActor(actor).id))
+        subscription: serializeSubscription(latestActiveForParent(parent.id))
       };
     },
 
@@ -651,12 +655,12 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
 
     serializeSubscription,
 
-    verifyApplePurchase(parent, body) {
+    async verifyApplePurchase(parent, body) {
       if (!body.receipt) {
         throw badRequest("receipt is required", "VALIDATION_ERROR");
       }
 
-      return verifyPurchase(parent, "apple", {
+      return await verifyPurchase(parent, "apple", {
         ...body,
         provider_payload: {
           receipt: body.receipt
@@ -664,12 +668,12 @@ export function createSubscriptionService({ config, parents, subscriptions, tari
       });
     },
 
-    verifyGooglePurchase(parent, body) {
+    async verifyGooglePurchase(parent, body) {
       if (!body.purchase_token) {
         throw badRequest("purchase_token is required", "VALIDATION_ERROR");
       }
 
-      return verifyPurchase(parent, "google", {
+      return await verifyPurchase(parent, "google", {
         ...body,
         provider_subscription_id: body.provider_subscription_id || body.purchase_token,
         provider_payload: {

@@ -875,6 +875,13 @@ try {
 
   assert.equal(clickCurrentSubscription.subscription.id, clickComplete.subscription.id);
 
+  const clickCurrentTariff = await request(baseUrl, "/v1/tariffs/current", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+
+  assert.equal(clickCurrentTariff.tariff.id, "premium");
+  assert.equal(clickCurrentTariff.access.can_watch_premium, true);
+
   const appleSubscriptionId = `apple-sub-${Date.now()}`;
   const applePurchase = await request(baseUrl, "/v1/billing/apple/verify", {
     method: "POST",

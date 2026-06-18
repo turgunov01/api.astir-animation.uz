@@ -54,8 +54,8 @@ function purchasePayload(body, requiredPurchaseField) {
 
 export function createBillingController({ subscriptionService }) {
   return {
-    clickCheckout(request, response) {
-      response.status(201).json(subscriptionService.createClickCheckout(request.parent, {
+    async clickCheckout(request, response) {
+      response.status(201).json(await subscriptionService.createClickCheckout(request.parent, {
         amount: firstValue(request.body || {}, "amount", "amount_uzs", "amountUzs"),
         cardType: firstString(request.body || {}, "card_type", "cardType"),
         expiresAt: firstString(request.body || {}, "expires_at", "expiresAt"),
@@ -66,42 +66,42 @@ export function createBillingController({ subscriptionService }) {
       }));
     },
 
-    currentSubscription(request, response) {
-      response.json(subscriptionService.currentForActor(request.actor));
+    async currentSubscription(request, response) {
+      response.json(await subscriptionService.currentForActor(request.actor));
     },
 
-    clickTransaction(request, response) {
-      response.json(subscriptionService.getClickTransaction(request.parent, request.params.transactionId));
+    async clickTransaction(request, response) {
+      response.json(await subscriptionService.getClickTransaction(request.parent, request.params.transactionId));
     },
 
-    clickComplete(request, response) {
-      response.json(subscriptionService.handleClickComplete(request.body || {}));
+    async clickComplete(request, response) {
+      response.json(await subscriptionService.handleClickComplete(request.body || {}));
     },
 
-    clickPrepare(request, response) {
-      response.json(subscriptionService.handleClickPrepare(request.body || {}));
+    async clickPrepare(request, response) {
+      response.json(await subscriptionService.handleClickPrepare(request.body || {}));
     },
 
-    googleWebhook(request, response) {
-      response.json(subscriptionService.applyWebhook("google", request.body || {}));
+    async googleWebhook(request, response) {
+      response.json(await subscriptionService.applyWebhook("google", request.body || {}));
     },
 
-    verifyApple(request, response) {
-      response.status(201).json(subscriptionService.verifyApplePurchase(
+    async verifyApple(request, response) {
+      response.status(201).json(await subscriptionService.verifyApplePurchase(
         request.parent,
         purchasePayload(request.body, "receipt")
       ));
     },
 
-    verifyGoogle(request, response) {
-      response.status(201).json(subscriptionService.verifyGooglePurchase(
+    async verifyGoogle(request, response) {
+      response.status(201).json(await subscriptionService.verifyGooglePurchase(
         request.parent,
         purchasePayload(request.body, "purchase_token")
       ));
     },
 
-    appleWebhook(request, response) {
-      response.json(subscriptionService.applyWebhook("apple", request.body || {}));
+    async appleWebhook(request, response) {
+      response.json(await subscriptionService.applyWebhook("apple", request.body || {}));
     }
   };
 }
