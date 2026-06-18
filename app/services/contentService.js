@@ -646,6 +646,53 @@ function movieAttributes(attributes) {
   };
 }
 
+function posterMetadata(poster, posterUrl) {
+  if (!posterUrl) {
+    return null;
+  }
+
+  if (!poster || typeof poster === "string") {
+    return { url: posterUrl };
+  }
+
+  return {
+    url: posterUrl,
+    storage_path: poster.path || poster.storage_path || null,
+    original_name: poster.originalName || poster.original_name || null,
+    mime_type: poster.mimeType || poster.mime_type || null,
+    size: poster.size || null
+  };
+}
+
+function serializeSearchResultMovie(movie, resultType) {
+  const durationSeconds = movie.duration_sec ?? 0;
+  const durationMinutes = durationSeconds > 0 ? Math.ceil(durationSeconds / 60) : 0;
+  const posterUrl = sourceUrl(movie.poster) || movie.poster_url || null;
+  const transcodeStatus = movie.transcode?.status || "missing_source";
+  const transcodeError = movie.transcode?.error || null;
+
+  return {
+    id: movie.id,
+    item_type: resultType === "series" ? "series" : "movie",
+    target_type: "content",
+    target_id: movie.id,
+    type: resultType,
+    title: toLocalizedText(movie.title),
+    poster: posterMetadata(movie.poster, posterUrl),
+    poster_url: posterUrl,
+    transcode_status: transcodeStatus,
+    transcode_error: transcodeError,
+    error_message: transcodeError,
+    age_rating: movie.age_rating ?? 0,
+    duration_sec: durationSeconds,
+    duration_seconds: durationSeconds,
+    durationSec: durationSeconds,
+    duration: movie.duration ?? durationSeconds,
+    duration_minutes: durationMinutes,
+    durationMinutes
+  };
+}
+
 function normalizeMovieUpdateAttributes(movie, attributes) {
   const movieUpdates = { ...attributes };
 
@@ -1384,14 +1431,23 @@ export function createContentService({
     },
 
     async searchContent(actor, { q = "" } = {}) {
-      const likeContext = likeContextForActor(actor);
       const adminActor = isAdminActor(actor);
       const resultsById = new Map();
 
-      function addResult(movie) {
-        const resultMovie = parentSeriesForMovie(movie) || movie;
+      function searchResultMovie(movie) {
+        const parentSeries = parentSeriesForMovie(movie);
 
-        if (!canExposeMovieToActor(actor, resultMovie, adminActor) || resultsById.has(resultMovie.id)) {
+        if (parentSeries) {
+          return parentSeries;
+        }
+
+        return normalized(movie.content_type) === "episode" || movie.series_id ? null : movie;
+      }
+
+      function addResult(movie) {
+        const resultMovie = searchResultMovie(movie);
+
+        if (!resultMovie || !canExposeMovieToActor(actor, resultMovie, adminActor) || resultsById.has(resultMovie.id)) {
           return;
         }
 
@@ -1420,10 +1476,11 @@ export function createContentService({
       }
 
       const data = await Promise.all(
-        [...resultsById.values()].map(async (movie) => ({
-          ...await serializeMovie(movie, [], contentTags, contentMovieTags, likeContext),
-          type: filterResultType(movie)
-        }))
+        [...resultsById.values()].map(async (movie) => {
+          const resultType = filterResultType(movie);
+
+          return serializeSearchResultMovie(movie, resultType);
+        })
       );
 
       return { data };

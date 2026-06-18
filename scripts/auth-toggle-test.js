@@ -326,10 +326,17 @@ try {
   });
 
   const xenozSearch = await request(baseUrl, `/v1/search?q=${encodeURIComponent("xenoz")}`);
+  const xenozSearchItem = xenozSearch.data.find((item) => item.id === xenozMovie.movie.id);
   assert.equal(
-    xenozSearch.data.some((item) => item.id === xenozMovie.movie.id && item.type === "movies"),
+    Boolean(xenozSearchItem && xenozSearchItem.type === "movies"),
     true
   );
+  assert.equal(xenozSearchItem.item_type, "movie");
+  assert.equal(Object.hasOwn(xenozSearchItem, "description"), false);
+  assert.equal(Object.hasOwn(xenozSearchItem, "source"), false);
+  assert.equal(Object.hasOwn(xenozSearchItem, "video_url"), false);
+  assert.equal(Object.hasOwn(xenozSearchItem, "media"), false);
+  assert.equal(Object.hasOwn(xenozSearchItem, "playback"), false);
   assert.equal(
     xenozSearch.data.some((item) => item.id === fuzzyDescriptionMovie.movie.id),
     false
@@ -361,10 +368,19 @@ try {
   );
 
   const searchedSeriesItem = await request(baseUrl, `/v1/search?q=${encodeURIComponent("Series Item")}`);
+  const seriesSearchItem = searchedSeriesItem.data.find((item) => item.id === movie.movie.id);
   assert.equal(
-    searchedSeriesItem.data.some((item) => item.id === movie.movie.id && item.type === "series"),
+    Boolean(seriesSearchItem && seriesSearchItem.type === "series"),
     true
   );
+  assert.equal(seriesSearchItem.item_type, "series");
+  assert.equal(seriesSearchItem.target_id, movie.movie.id);
+  assert.equal(Object.hasOwn(seriesSearchItem, "description"), false);
+  assert.equal(Object.hasOwn(seriesSearchItem, "series"), false);
+  assert.equal(Object.hasOwn(seriesSearchItem, "source"), false);
+  assert.equal(Object.hasOwn(seriesSearchItem, "video_url"), false);
+  assert.equal(Object.hasOwn(seriesSearchItem, "media"), false);
+  assert.equal(Object.hasOwn(seriesSearchItem, "playback"), false);
   assert.equal(
     searchedSeriesItem.data.some((item) => item.id === seriesItem.series_item.id),
     false

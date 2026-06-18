@@ -499,6 +499,56 @@ export const openApiDocument = {
           updatedAt: { type: "string", format: "date-time", nullable: true }
         }
       },
+      SearchResultItem: {
+        type: "object",
+        description: "Compact search card. Episode matches are returned as the parent series; video source, media and playback fields are intentionally omitted.",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
+          },
+          item_type: {
+            type: "string",
+            enum: ["movie", "series"],
+            example: "series"
+          },
+          target_type: { type: "string", example: "content" },
+          target_id: {
+            type: "string",
+            format: "uuid",
+            example: "7d13c3a7-07d0-4f99-81a1-fb2efc42d1d8"
+          },
+          type: {
+            type: "string",
+            enum: ["movies", "series"],
+            example: "series"
+          },
+          title: { $ref: "#/components/schemas/LocalizedText" },
+          poster: {
+            type: "object",
+            nullable: true,
+            properties: {
+              url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+              storage_path: { type: "string", nullable: true },
+              original_name: { type: "string", nullable: true, example: "poster.png" },
+              mime_type: { type: "string", nullable: true, example: "image/png" },
+              size: { type: "integer", nullable: true, example: 250000 }
+            }
+          },
+          poster_url: { type: "string", nullable: true, example: "/media/uploads/poster.png" },
+          transcode_status: { type: "string", example: "missing_source" },
+          transcode_error: { type: "string", nullable: true, example: null },
+          error_message: { type: "string", nullable: true, example: null },
+          age_rating: { type: "integer", example: 6 },
+          duration_sec: { type: "integer", example: 1200 },
+          duration_seconds: { type: "integer", example: 1200 },
+          durationSec: { type: "integer", example: 1200 },
+          duration: { type: "integer", example: 1200 },
+          duration_minutes: { type: "integer", example: 20 },
+          durationMinutes: { type: "integer", example: 20 }
+        }
+      },
       ContentMovie: {
         type: "object",
         properties: {
@@ -6124,21 +6174,7 @@ export const openApiDocument = {
                   properties: {
                     data: {
                       type: "array",
-                      items: {
-                        allOf: [
-                          { $ref: "#/components/schemas/ContentMovie" },
-                          {
-                            type: "object",
-                            properties: {
-                              type: {
-                                type: "string",
-                                enum: ["movies", "series"],
-                                example: "movies"
-                              }
-                            }
-                          }
-                        ]
-                      }
+                      items: { $ref: "#/components/schemas/SearchResultItem" }
                     }
                   }
                 }
