@@ -685,6 +685,10 @@ function serializeSearchResultMovie(movie, resultType, targetType = "content") {
     target_id: movie.id,
     type: resultType,
     title: toLocalizedText(movie.title),
+    description: toLocalizedText(movie.description),
+    content_type: resultType === "series" ? "series" : movie.content_type || "movie",
+    category_id: movie.category_id || null,
+    series_id: movie.series_id || null,
     poster: posterMetadata(movie.poster, posterUrl),
     poster_url: posterUrl,
     transcode_status: transcodeStatus,
@@ -1428,11 +1432,47 @@ export function createContentService({
           || movieTagIds.some((tagId) => normalizedTagIds.includes(tagId))
         ))
         .map(({ movie }) => movie);
+      const resultEntriesByKey = new Map();
+
+      for (const movie of filteredMovies) {
+        resultEntriesByKey.set(`content:${movie.id}`, {
+          source: "local",
+          movie
+        });
+      }
+
+      if (contentSearch?.filter) {
+        const persistedResults = await contentSearch.filter({
+          categoryIds,
+          tagIds,
+          includeUnpublished: adminActor,
+          ownerId: adminActor ? null : actorOwnerId(actor),
+          childId: adminActor || actor?.type !== "device" ? null : deviceChildId(actor.device)
+        });
+
+        for (const result of persistedResults) {
+          const resultKey = `${result.targetType}:${result.movie.id}`;
+
+          if (!resultEntriesByKey.has(resultKey)) {
+            resultEntriesByKey.set(resultKey, {
+              source: "postgres",
+              movie: result.movie,
+              resultType: result.resultType,
+              targetType: result.targetType
+            });
+          }
+        }
+      }
+
       const data = await Promise.all(
-        filteredMovies.map(async (movie) => ({
-          ...await serializeMovie(movie, [], contentTags, contentMovieTags, likeContext),
-          type: filterResultType(movie)
-        }))
+        [...resultEntriesByKey.values()].map(async (entry) => (
+          entry.source === "postgres"
+            ? serializeSearchResultMovie(entry.movie, entry.resultType, entry.targetType)
+            : {
+                ...await serializeMovie(entry.movie, [], contentTags, contentMovieTags, likeContext),
+                type: filterResultType(entry.movie)
+              }
+        ))
       );
 
       return { data };

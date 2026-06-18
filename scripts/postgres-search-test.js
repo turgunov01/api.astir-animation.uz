@@ -65,15 +65,48 @@ assert.equal(results[1].movie.title.ru, "Поднятие уровня в оди
 assert.equal(results[1].movie.poster_url, "/api/v1/series/20000000-0000-4000-8000-000000000002/poster");
 assert.equal(results[1].movie.duration_sec, 7200);
 
+calls.splice(0, calls.length);
+const filteredResults = await repository.filter({
+  categoryIds: ["anime"],
+  tagIds: ["adventure"],
+  includeUnpublished: false,
+  ownerId: "30000000-0000-4000-8000-000000000003",
+  childId: "40000000-0000-4000-8000-000000000004"
+});
+
+assert.equal(calls.length, 1);
+assert.match(calls[0].sql, /FROM content c/);
+assert.match(calls[0].sql, /FROM series s/);
+assert.match(calls[0].sql, /content_tags ct/);
+assert.match(calls[0].sql, /child_permissions p/);
+assert.deepEqual(calls[0].params, [
+  false,
+  "30000000-0000-4000-8000-000000000003",
+  "40000000-0000-4000-8000-000000000004",
+  ["anime"],
+  ["adventure"]
+]);
+assert.equal(filteredResults[1].resultType, "series");
+assert.equal(filteredResults[1].targetType, "series");
+
+let filterOptions = null;
 const contentService = createContentService({
   childService: {
     isAnyContentBlacklisted() {
       return false;
     }
   },
-  contentCategories: {},
+  contentCategories: {
+    list() {
+      return [];
+    }
+  },
   contentLikes: {},
-  contentMovieTags: {},
+  contentMovieTags: {
+    async listByMovieId() {
+      return [];
+    }
+  },
   contentMovies: {
     list() {
       return [];
@@ -84,6 +117,10 @@ const contentService = createContentService({
   },
   contentSearch: {
     async search() {
+      return [results[1]];
+    },
+    async filter(options) {
+      filterOptions = options;
       return [results[1]];
     }
   },
@@ -112,4 +149,28 @@ assert.equal(response.data[0].target_id, results[1].movie.id);
 assert.equal(response.data[0].type, "series");
 assert.equal(response.data[0].title.ru, "Поднятие уровня в одиночку");
 
-console.log("PostgreSQL movie and series search test passed");
+const filterResponse = await contentService.filterContent({
+  type: "parent",
+  parent: {
+    id: "30000000-0000-4000-8000-000000000003",
+    role: "parent"
+  }
+}, {
+  categoryIds: ["anime"],
+  tagIds: ["adventure"]
+});
+
+assert.deepEqual(filterOptions, {
+  categoryIds: ["anime"],
+  tagIds: ["adventure"],
+  includeUnpublished: false,
+  ownerId: "30000000-0000-4000-8000-000000000003",
+  childId: null
+});
+assert.equal(filterResponse.data.length, 1);
+assert.equal(filterResponse.data[0].item_type, "series");
+assert.equal(filterResponse.data[0].target_type, "series");
+assert.equal(filterResponse.data[0].target_id, results[1].movie.id);
+assert.equal(filterResponse.data[0].type, "series");
+
+console.log("PostgreSQL movie and series search/filter test passed");
