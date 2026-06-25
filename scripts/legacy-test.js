@@ -1010,6 +1010,7 @@ try {
   ];
   const likeRows = [];
   const dislikeRows = [];
+  const reactionRows = [];
   const likesContentMovies = {
     findById(id) {
       return id === likedMovieId ? likedMovieRow : null;
@@ -1063,6 +1064,48 @@ try {
         ))
           ? { "?column?": 1 }
           : null;
+      }
+
+      if (/SELECT 1 FROM content_reactions WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3 AND reaction = 'like'/.test(sql)) {
+        return reactionRows.some((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+          && row.reaction === "like"
+        ))
+          ? { "?column?": 1 }
+          : null;
+      }
+
+      if (/SELECT 1 FROM content_reactions WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3 AND reaction = 'dislike'/.test(sql)) {
+        return reactionRows.some((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+          && row.reaction === "dislike"
+        ))
+          ? { "?column?": 1 }
+          : null;
+      }
+
+      if (/SELECT COUNT\(\*\)::integer AS count FROM content_reactions WHERE target_type = \$1 AND target_id = \$2 AND reaction = 'like'/.test(sql)) {
+        return {
+          count: reactionRows.filter((row) => (
+            row.target_type === values[0]
+            && row.target_id === values[1]
+            && row.reaction === "like"
+          )).length
+        };
+      }
+
+      if (/SELECT COUNT\(\*\)::integer AS count FROM content_reactions WHERE target_type = \$1 AND target_id = \$2 AND reaction = 'dislike'/.test(sql)) {
+        return {
+          count: reactionRows.filter((row) => (
+            row.target_type === values[0]
+            && row.target_id === values[1]
+            && row.reaction === "dislike"
+          )).length
+        };
       }
 
       if (/SELECT COUNT\(\*\)::integer AS count FROM likes WHERE target_type = \$1 AND target_id = \$2/.test(sql)) {
@@ -1133,6 +1176,30 @@ try {
             content_id: contentId,
             target_type: targetType,
             target_id: targetId,
+            created_at: "2026-06-13T00:00:00.000Z"
+          });
+        }
+        return { rows: [] };
+      }
+
+      if (/INSERT INTO content_reactions/.test(sql)) {
+        const [userId, contentId, targetType, targetId, reaction] = values;
+        const existing = reactionRows.find((row) => (
+          row.user_id === userId
+          && row.target_type === targetType
+          && row.target_id === targetId
+        ));
+
+        if (existing) {
+          existing.content_id = contentId;
+          existing.reaction = reaction;
+        } else {
+          reactionRows.push({
+            user_id: userId,
+            content_id: contentId,
+            target_type: targetType,
+            target_id: targetId,
+            reaction,
             created_at: "2026-06-13T00:00:00.000Z"
           });
         }
@@ -1302,7 +1369,7 @@ try {
 
     assert.equal(initialStatisticsResponse.status, 200);
     assert.deepEqual(initialStatisticsBody, {
-      likes: 1,
+      likes: 0,
       dislikes: 0,
       views: 7
     });
@@ -1318,8 +1385,12 @@ try {
     assert.equal(dislikeBody.disliked, true);
     assert.equal(dislikeBody.likes, 0);
     assert.equal(dislikeBody.dislikes, 1);
-    assert.equal(likeRows.length, 0);
-    assert.equal(dislikeRows.length, 1);
+    assert.equal(likeRows.length, 1);
+    assert.equal(dislikeRows.length, 0);
+    assert.equal(reactionRows.length, 1);
+    assert.equal(reactionRows[0].target_id, likedSeriesId);
+    assert.equal(reactionRows[0].target_type, "series");
+    assert.equal(reactionRows[0].reaction, "dislike");
 
     const analyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${likedSeriesId}`, {
       method: "POST",
@@ -1334,6 +1405,10 @@ try {
     assert.equal(analyticsLikeBody.dislikes, 0);
     assert.equal(likeRows.length, 1);
     assert.equal(dislikeRows.length, 0);
+    assert.equal(reactionRows.length, 1);
+    assert.equal(reactionRows[0].target_id, likedSeriesId);
+    assert.equal(reactionRows[0].target_type, "series");
+    assert.equal(reactionRows[0].reaction, "like");
 
     const analyticsLikeStatusResponse = await fetch(`${likesBaseUrl}/api/like/${likedSeriesId}`, {
       headers: childDeviceHeaders
@@ -1428,6 +1503,8 @@ try {
     assert.equal(deleteLikeResponse.status, 200);
     assert.equal(deleteLikeBody.liked, false);
     assert.equal(likeRows.length, 0);
+    assert.equal(reactionRows.length, 1);
+    assert.equal(reactionRows[0].reaction, "like");
   } finally {
     await closeServer(likesServer);
   }

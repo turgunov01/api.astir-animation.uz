@@ -208,11 +208,11 @@ async function statisticsForTarget(db, target, { contentMovies = null, contentRe
 
   const [likes, dislikes, views] = await Promise.all([
     db.one(
-      "SELECT COUNT(*)::integer AS count FROM likes WHERE target_type = $1 AND target_id = $2",
+      "SELECT COUNT(*)::integer AS count FROM content_reactions WHERE target_type = $1 AND target_id = $2 AND reaction = 'like'",
       [target.type, target.id]
     ),
     db.one(
-      "SELECT COUNT(*)::integer AS count FROM dislikes WHERE target_type = $1 AND target_id = $2",
+      "SELECT COUNT(*)::integer AS count FROM content_reactions WHERE target_type = $1 AND target_id = $2 AND reaction = 'dislike'",
       [target.type, target.id]
     ),
     target.type === "series"
@@ -264,33 +264,17 @@ async function setReaction(db, userId, target, reaction, options = {}) {
       [String(userId), `${target.type}:${target.id}`]
     );
 
-    if (reaction === "like") {
-      await client.query(
-        "DELETE FROM dislikes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
-        [userId, target.type, target.id]
-      );
-      await client.query(
-        `
-          INSERT INTO likes (user_id, content_id, target_type, target_id)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT DO NOTHING
-        `,
-        [userId, target.contentId, target.type, target.id]
-      );
-      return;
-    }
-
-    await client.query(
-      "DELETE FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
-      [userId, target.type, target.id]
-    );
     await client.query(
       `
-        INSERT INTO dislikes (user_id, content_id, target_type, target_id)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT DO NOTHING
+        INSERT INTO content_reactions (user_id, content_id, target_type, target_id, reaction)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, target_type, target_id)
+        DO UPDATE SET
+          content_id = EXCLUDED.content_id,
+          reaction = EXCLUDED.reaction,
+          updated_at = now()
       `,
-      [userId, target.contentId, target.type, target.id]
+      [userId, target.contentId, target.type, target.id, reaction]
     );
   });
 
@@ -316,11 +300,11 @@ async function reactionStatus(db, userId, target, options = {}) {
 
   const [like, dislike, statistics] = await Promise.all([
     db.one(
-      "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      "SELECT 1 FROM content_reactions WHERE user_id = $1 AND target_type = $2 AND target_id = $3 AND reaction = 'like'",
       [userId, target.type, target.id]
     ),
     db.one(
-      "SELECT 1 FROM dislikes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      "SELECT 1 FROM content_reactions WHERE user_id = $1 AND target_type = $2 AND target_id = $3 AND reaction = 'dislike'",
       [userId, target.type, target.id]
     ),
     statisticsForTarget(db, target, options)
