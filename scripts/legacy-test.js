@@ -11,6 +11,7 @@ process.env.JWT_SECRET = "astir-legacy-test-secret";
 const { createServer } = await import("../app/server.js");
 const { openApiDocument } = await import("../app/openapi.js");
 const { requireAdmin, requireParent, requireSuperAdmin } = await import("../app/legacy/auth.js");
+const { createAnalyticsRoutes } = await import("../app/legacy/analyticsRoutes.js");
 const { createLegacyRoutes } = await import("../app/legacy/routes.js");
 const { hashSecret } = await import("../app/lib/security.js");
 
@@ -941,6 +942,7 @@ try {
     }
   ];
   const likeRows = [];
+  const dislikeRows = [];
   const likesContentMovies = {
     findById(id) {
       return id === likedMovieId ? likedMovieRow : null;
@@ -992,6 +994,20 @@ try {
         };
       }
 
+      if (/SELECT COUNT\(\*\)::integer AS count FROM dislikes WHERE target_type = \$1 AND target_id = \$2/.test(sql)) {
+        return {
+          count: dislikeRows.filter((row) => row.target_type === values[0] && row.target_id === values[1]).length
+        };
+      }
+
+      if (/SELECT COALESCE\(SUM\(views_count\), 0\)::integer AS views FROM content WHERE series_id = \$1/.test(sql)) {
+        return { views: values[0] === likedSeriesId ? 7 : 0 };
+      }
+
+      if (/SELECT COALESCE\(views_count, 0\)::integer AS views FROM content WHERE id = \$1/.test(sql)) {
+        return { views: 0 };
+      }
+
       throw new Error(`unexpected likes one query: ${sql}`);
     },
     many(sql, values) {
@@ -1014,6 +1030,10 @@ try {
       throw new Error(`unexpected likes many query: ${sql}`);
     },
     query(sql, values) {
+      if (/pg_advisory_xact_lock/.test(sql)) {
+        return { rows: [] };
+      }
+
       if (/INSERT INTO likes/.test(sql)) {
         const [userId, contentId, targetType, targetId] = values;
         if (!likeRows.some((row) => row.user_id === userId && row.target_type === targetType && row.target_id === targetId)) {
@@ -1028,8 +1048,34 @@ try {
         return { rows: [] };
       }
 
+      if (/INSERT INTO dislikes/.test(sql)) {
+        const [userId, contentId, targetType, targetId] = values;
+        if (!dislikeRows.some((row) => row.user_id === userId && row.target_type === targetType && row.target_id === targetId)) {
+          dislikeRows.push({
+            user_id: userId,
+            content_id: contentId,
+            target_type: targetType,
+            target_id: targetId,
+            created_at: "2026-06-13T00:00:00.000Z"
+          });
+        }
+        return { rows: [] };
+      }
+
       if (/SELECT \* FROM series WHERE id = \$1/.test(sql)) {
         return { rows: values[0] === likedSeriesId ? [{ ...likedSeriesRow }] : [] };
+      }
+
+      if (/DELETE FROM dislikes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
+        const index = dislikeRows.findIndex((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+        ));
+        if (index !== -1) {
+          dislikeRows.splice(index, 1);
+        }
+        return { rows: [] };
       }
 
       if (/DELETE FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
@@ -1045,6 +1091,9 @@ try {
       }
 
       throw new Error(`unexpected likes write: ${sql}`);
+    },
+    transaction(work) {
+      return work(this);
     }
   };
   const likesApp = express();
@@ -1053,6 +1102,7 @@ try {
     request.legacyDb = likesDb;
     next();
   });
+  likesApp.use("/api", createAnalyticsRoutes());
   likesApp.use("/api/v1", createLegacyRoutes({
     config: { maxVideoUploadMb: 1 },
     contentLikes: likesContentLikes,
@@ -1166,6 +1216,44 @@ try {
     assert.equal(v1TokenLikeStatusResponse.status, 200);
     assert.equal(v1TokenLikeStatusBody.liked, true);
     assert.equal(v1TokenLikeStatusBody.target_type, "series");
+
+    const initialStatisticsResponse = await fetch(`${likesBaseUrl}/api/statistics/${likedSeriesId}`);
+    const initialStatisticsBody = await initialStatisticsResponse.json();
+
+    assert.equal(initialStatisticsResponse.status, 200);
+    assert.deepEqual(initialStatisticsBody, {
+      likes: 1,
+      dislikes: 0,
+      views: 7
+    });
+
+    const dislikeResponse = await fetch(`${likesBaseUrl}/api/dislike/${likedSeriesId}`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const dislikeBody = await dislikeResponse.json();
+
+    assert.equal(dislikeResponse.status, 201);
+    assert.equal(dislikeBody.liked, false);
+    assert.equal(dislikeBody.disliked, true);
+    assert.equal(dislikeBody.likes, 0);
+    assert.equal(dislikeBody.dislikes, 1);
+    assert.equal(likeRows.length, 0);
+    assert.equal(dislikeRows.length, 1);
+
+    const analyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${likedSeriesId}`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const analyticsLikeBody = await analyticsLikeResponse.json();
+
+    assert.equal(analyticsLikeResponse.status, 201);
+    assert.equal(analyticsLikeBody.liked, true);
+    assert.equal(analyticsLikeBody.disliked, false);
+    assert.equal(analyticsLikeBody.likes, 1);
+    assert.equal(analyticsLikeBody.dislikes, 0);
+    assert.equal(likeRows.length, 1);
+    assert.equal(dislikeRows.length, 0);
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",

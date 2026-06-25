@@ -4,6 +4,7 @@ import cors from "cors";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
 import { createContainer } from "./bootstrap/createContainer.js";
+import { createAnalyticsRoutes } from "./legacy/analyticsRoutes.js";
 import { createLegacyDb, requireLegacyDb } from "./legacy/db.js";
 import { createLegacyMedia } from "./legacy/media.js";
 import { createLegacyRoutes } from "./legacy/routes.js";
@@ -59,6 +60,7 @@ export function createApp({ container = createContainer() } = {}) {
     media: legacyMedia,
     tariffs: container.repositories.tariffs
   });
+  const analyticsRoutes = createAnalyticsRoutes();
 
   const fullSwaggerOptions = createSwaggerUiOptions({
     document: openApiDocument,
@@ -120,6 +122,12 @@ export function createApp({ container = createContainer() } = {}) {
     "/v1",
     requireLegacyDb(legacyDb),
     legacyRoutes
+  );
+
+  app.use(
+    "/api",
+    requireLegacyDb(legacyDb),
+    analyticsRoutes
   );
 
   app.use(
