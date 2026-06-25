@@ -13,6 +13,7 @@ import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { requestContext } from "./middleware/requestContext.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { openApiDocument } from "./openapi.js";
+import { createBillingRoutes } from "./routes/billingRoutes.js";
 import { createRoutes } from "./routes/index.js";
 import { createSwaggerIndexPage } from "./swagger/indexPage.js";
 import { swaggerScopes } from "./swagger/scopedDocs.js";
@@ -126,6 +127,11 @@ export function createApp({ container = createContainer() } = {}) {
     requireLegacyDb(legacyDb),
     legacyRoutes
   );
+
+  app.use("/api/v1/billing", createBillingRoutes({
+    authMiddleware: container.middleware.auth,
+    billingController: container.controllers.billing
+  }));
 
   app.use(
     "/api",

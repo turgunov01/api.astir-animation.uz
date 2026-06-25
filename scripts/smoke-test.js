@@ -882,6 +882,71 @@ try {
   assert.equal(clickCurrentTariff.tariff.id, "premium");
   assert.equal(clickCurrentTariff.access.can_watch_premium, true);
 
+  const clickAliasCheckout = await request(baseUrl, "/api/v1/billing/click/checkout", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      tariff_id: "premium"
+    }
+  });
+  const clickAliasTransId = "987654322";
+  const clickAliasPaydocId = "555334";
+  const clickAliasPrepareSignTime = "2026-06-09 12:02:00";
+  const clickAliasPrepareBody = {
+    click_trans_id: clickAliasTransId,
+    service_id: process.env.CLICK_SERVICE_ID,
+    click_paydoc_id: clickAliasPaydocId,
+    merchant_trans_id: clickAliasCheckout.transaction.id,
+    amount: clickAmount,
+    action: 0,
+    sign_time: clickAliasPrepareSignTime
+  };
+  clickAliasPrepareBody.sign_string = md5(
+    `${clickAliasPrepareBody.click_trans_id}`
+    + `${clickAliasPrepareBody.service_id}`
+    + `${process.env.CLICK_SECRET_KEY}`
+    + `${clickAliasPrepareBody.merchant_trans_id}`
+    + `${clickAliasPrepareBody.amount}`
+    + `${clickAliasPrepareBody.action}`
+    + `${clickAliasPrepareBody.sign_time}`
+  );
+
+  const clickAliasPrepare = await requestForm(baseUrl, "/api/v1/billing/click/prepare", clickAliasPrepareBody);
+
+  assert.equal(clickAliasPrepare.error, 0);
+  assert.equal(clickAliasPrepare.merchant_trans_id, clickAliasCheckout.transaction.id);
+  assert.ok(clickAliasPrepare.merchant_prepare_id);
+
+  const clickAliasCompleteSignTime = "2026-06-09 12:03:00";
+  const clickAliasCompleteBody = {
+    click_trans_id: clickAliasTransId,
+    service_id: process.env.CLICK_SERVICE_ID,
+    click_paydoc_id: clickAliasPaydocId,
+    merchant_trans_id: clickAliasCheckout.transaction.id,
+    merchant_prepare_id: clickAliasPrepare.merchant_prepare_id,
+    amount: clickAmount,
+    action: 1,
+    error: 0,
+    sign_time: clickAliasCompleteSignTime
+  };
+  clickAliasCompleteBody.sign_string = md5(
+    `${clickAliasCompleteBody.click_trans_id}`
+    + `${clickAliasCompleteBody.service_id}`
+    + `${process.env.CLICK_SECRET_KEY}`
+    + `${clickAliasCompleteBody.merchant_trans_id}`
+    + `${clickAliasCompleteBody.merchant_prepare_id}`
+    + `${clickAliasCompleteBody.amount}`
+    + `${clickAliasCompleteBody.action}`
+    + `${clickAliasCompleteBody.sign_time}`
+  );
+
+  const clickAliasComplete = await requestForm(baseUrl, "/api/v1/billing/click/complete", clickAliasCompleteBody);
+
+  assert.equal(clickAliasComplete.error, 0);
+  assert.equal(clickAliasComplete.subscription.provider, "click");
+  assert.equal(clickAliasComplete.subscription.tariffId, "premium");
+  assert.equal(clickAliasComplete.transaction.status, "succeeded");
+
   const appleSubscriptionId = `apple-sub-${Date.now()}`;
   const applePurchase = await request(baseUrl, "/v1/billing/apple/verify", {
     method: "POST",
