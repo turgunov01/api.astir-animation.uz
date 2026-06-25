@@ -4,6 +4,7 @@ import { createContentCategoryRepository } from "./contentCategoryRepository.js"
 import { createContentLikeRepository } from "./contentLikeRepository.js";
 import { createContentMovieRepository } from "./contentMovieRepository.js";
 import { createContentMovieTagRepository } from "./contentMovieTagRepository.js";
+import { createContentReactionRepository } from "./contentReactionRepository.js";
 import { createContentTagRepository } from "./contentTagRepository.js";
 import { createDeviceRepository } from "./deviceRepository.js";
 import { createFaqRepository } from "./faqRepository.js";
@@ -55,6 +56,7 @@ export function createRepositories(store, {
     children,
     contentCategories: createContentCategoryRepository(store),
     contentLikes: createContentLikeRepository(store),
+    contentReactions: createContentReactionRepository(store),
     contentMovieTags,
     contentMovies: createContentMovieRepository(store),
     contentSearch: searchDb ? createPostgresContentSearchRepository(searchDb) : null,

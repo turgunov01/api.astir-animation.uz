@@ -10,6 +10,7 @@ const emptyData = {
   devices: [],
   contentCategories: [],
   contentLikes: [],
+  contentReactions: [],
   childContentBlacklist: [],
   contentTags: [],
   contentMovies: [],

@@ -60,7 +60,10 @@ export function createApp({ container = createContainer() } = {}) {
     media: legacyMedia,
     tariffs: container.repositories.tariffs
   });
-  const analyticsRoutes = createAnalyticsRoutes();
+  const analyticsRoutes = createAnalyticsRoutes({
+    contentMovies: container.repositories.contentMovies,
+    contentReactions: container.repositories.contentReactions
+  });
 
   const fullSwaggerOptions = createSwaggerUiOptions({
     document: openApiDocument,

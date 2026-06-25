@@ -933,6 +933,66 @@ try {
     createdAt: "2026-06-02T00:00:00.000Z",
     updatedAt: "2026-06-02T00:00:00.000Z"
   };
+  const analyticsStoreMovieId = "8ad0b985-801f-4e4a-904a-31ed5990c81c";
+  const analyticsStoreSeriesId = "2d7f8b2e-2b3b-45fd-9c0a-147dc1f8266d";
+  const analyticsStoreEpisodeId = "76e3c01c-ae2a-4e5c-909a-7a1a3a1b3d97";
+  const analyticsStoreMovies = [
+    {
+      id: analyticsStoreMovieId,
+      title: { en: "Store Movie" },
+      content_type: "movie",
+      views_count: 12,
+      series: []
+    },
+    {
+      id: analyticsStoreSeriesId,
+      title: { en: "Store Series" },
+      content_type: "series",
+      views_count: 0,
+      series: [analyticsStoreEpisodeId]
+    },
+    {
+      id: analyticsStoreEpisodeId,
+      title: { en: "Store Episode" },
+      content_type: "episode",
+      views_count: 4,
+      series: []
+    }
+  ];
+  const analyticsReactionRows = [];
+  const analyticsContentMovies = {
+    findById(id) {
+      return analyticsStoreMovies.find((movie) => movie.id === id) || null;
+    },
+    list() {
+      return analyticsStoreMovies;
+    }
+  };
+  const analyticsContentReactions = {
+    countByTarget(targetId, targetType = "content", reaction = null) {
+      return analyticsReactionRows.filter((row) => (
+        row.targetId === targetId
+        && row.targetType === targetType
+        && (!reaction || row.reaction === reaction)
+      )).length;
+    },
+    setReaction(ownerId, targetId, targetType = "content", reaction = "like") {
+      const existing = analyticsReactionRows.find((row) => (
+        row.ownerId === ownerId
+        && row.targetId === targetId
+        && row.targetType === targetType
+      ));
+
+      if (existing) {
+        existing.reaction = reaction;
+        return existing;
+      }
+
+      const row = { ownerId, targetId, targetType, reaction };
+      analyticsReactionRows.push(row);
+      return row;
+    }
+  };
   const storeLikeRows = [
     {
       ownerId: likeParentId,
@@ -1102,7 +1162,10 @@ try {
     request.legacyDb = likesDb;
     next();
   });
-  likesApp.use("/api", createAnalyticsRoutes());
+  likesApp.use("/api", createAnalyticsRoutes({
+    contentMovies: analyticsContentMovies,
+    contentReactions: analyticsContentReactions
+  }));
   likesApp.use("/api/v1", createLegacyRoutes({
     config: { maxVideoUploadMb: 1 },
     contentLikes: likesContentLikes,
@@ -1254,6 +1317,54 @@ try {
     assert.equal(analyticsLikeBody.dislikes, 0);
     assert.equal(likeRows.length, 1);
     assert.equal(dislikeRows.length, 0);
+
+    const storeAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreMovieId}`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const storeAnalyticsLikeBody = await storeAnalyticsLikeResponse.json();
+
+    assert.equal(storeAnalyticsLikeResponse.status, 201);
+    assert.equal(storeAnalyticsLikeBody.liked, true);
+    assert.equal(storeAnalyticsLikeBody.disliked, false);
+    assert.equal(storeAnalyticsLikeBody.likes, 1);
+    assert.equal(storeAnalyticsLikeBody.dislikes, 0);
+    assert.equal(storeAnalyticsLikeBody.views, 12);
+    assert.equal(analyticsReactionRows.length, 1);
+    assert.equal(analyticsReactionRows[0].targetId, analyticsStoreMovieId);
+    assert.equal(analyticsReactionRows[0].targetType, "content");
+    assert.equal(analyticsReactionRows[0].reaction, "like");
+    assert.equal(storeLikeRows.length, 1);
+    assert.equal(likeRows.length, 1);
+
+    const storeAnalyticsDislikeResponse = await fetch(`${likesBaseUrl}/api/dislike/${analyticsStoreMovieId}`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const storeAnalyticsDislikeBody = await storeAnalyticsDislikeResponse.json();
+
+    assert.equal(storeAnalyticsDislikeResponse.status, 201);
+    assert.equal(storeAnalyticsDislikeBody.liked, false);
+    assert.equal(storeAnalyticsDislikeBody.disliked, true);
+    assert.equal(storeAnalyticsDislikeBody.likes, 0);
+    assert.equal(storeAnalyticsDislikeBody.dislikes, 1);
+    assert.equal(analyticsReactionRows.length, 1);
+    assert.equal(analyticsReactionRows[0].reaction, "dislike");
+
+    const storeSeriesAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreSeriesId}?target_type=series`, {
+      method: "POST",
+      headers: childDeviceHeaders
+    });
+    const storeSeriesAnalyticsLikeBody = await storeSeriesAnalyticsLikeResponse.json();
+
+    assert.equal(storeSeriesAnalyticsLikeResponse.status, 201);
+    assert.equal(storeSeriesAnalyticsLikeBody.liked, true);
+    assert.equal(storeSeriesAnalyticsLikeBody.likes, 1);
+    assert.equal(storeSeriesAnalyticsLikeBody.dislikes, 0);
+    assert.equal(storeSeriesAnalyticsLikeBody.views, 4);
+    assert.equal(analyticsReactionRows.length, 2);
+    assert.equal(analyticsReactionRows[1].targetId, analyticsStoreSeriesId);
+    assert.equal(analyticsReactionRows[1].targetType, "series");
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",
