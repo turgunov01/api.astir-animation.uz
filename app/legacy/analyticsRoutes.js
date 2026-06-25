@@ -301,9 +301,52 @@ async function setReaction(db, userId, target, reaction, options = {}) {
   };
 }
 
+async function reactionStatus(db, userId, target, options = {}) {
+  if (target.source === "store") {
+    const row = options.contentReactions?.findByOwnerAndTarget?.(userId, target.id, target.type);
+    const reaction = row?.reaction === "dislike" ? "dislike" : row?.reaction === "like" ? "like" : null;
+
+    return {
+      liked: reaction === "like",
+      disliked: reaction === "dislike",
+      reaction,
+      ...await statisticsForTarget(db, target, options)
+    };
+  }
+
+  const [like, dislike, statistics] = await Promise.all([
+    db.one(
+      "SELECT 1 FROM likes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [userId, target.type, target.id]
+    ),
+    db.one(
+      "SELECT 1 FROM dislikes WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [userId, target.type, target.id]
+    ),
+    statisticsForTarget(db, target, options)
+  ]);
+
+  return {
+    liked: Boolean(like),
+    disliked: Boolean(dislike),
+    reaction: like ? "like" : dislike ? "dislike" : null,
+    ...statistics
+  };
+}
+
 export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null } = {}) {
   const router = Router();
   const analyticsOptions = { contentMovies, contentReactions };
+
+  async function reactionStatusHandler(request, response) {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
+    const target = await resolveReactionTarget(request.legacyDb, request.params.content_id, requestedTargetType(request), analyticsOptions);
+
+    response.json(await reactionStatus(request.legacyDb, userId, target, analyticsOptions));
+  }
+
+  router.get("/reaction/:content_id", requireActor, asyncHandler(reactionStatusHandler));
+  router.get("/like/:content_id", requireActor, asyncHandler(reactionStatusHandler));
 
   router.post("/like/:content_id", requireActor, asyncHandler(async (request, response) => {
     const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);

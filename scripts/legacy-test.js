@@ -976,6 +976,13 @@ try {
         && (!reaction || row.reaction === reaction)
       )).length;
     },
+    findByOwnerAndTarget(ownerId, targetId, targetType = "content") {
+      return analyticsReactionRows.find((row) => (
+        row.ownerId === ownerId
+        && row.targetId === targetId
+        && row.targetType === targetType
+      )) || null;
+    },
     setReaction(ownerId, targetId, targetType = "content", reaction = "like") {
       const existing = analyticsReactionRows.find((row) => (
         row.ownerId === ownerId
@@ -1040,6 +1047,16 @@ try {
 
       if (/SELECT 1 FROM likes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
         return likeRows.some((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+        ))
+          ? { "?column?": 1 }
+          : null;
+      }
+
+      if (/SELECT 1 FROM dislikes WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
+        return dislikeRows.some((row) => (
           row.user_id === values[0]
           && row.target_type === values[1]
           && row.target_id === values[2]
@@ -1318,6 +1335,18 @@ try {
     assert.equal(likeRows.length, 1);
     assert.equal(dislikeRows.length, 0);
 
+    const analyticsLikeStatusResponse = await fetch(`${likesBaseUrl}/api/like/${likedSeriesId}`, {
+      headers: childDeviceHeaders
+    });
+    const analyticsLikeStatusBody = await analyticsLikeStatusResponse.json();
+
+    assert.equal(analyticsLikeStatusResponse.status, 200);
+    assert.equal(analyticsLikeStatusBody.liked, true);
+    assert.equal(analyticsLikeStatusBody.disliked, false);
+    assert.equal(analyticsLikeStatusBody.reaction, "like");
+    assert.equal(analyticsLikeStatusBody.likes, 1);
+    assert.equal(analyticsLikeStatusBody.dislikes, 0);
+
     const storeAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreMovieId}`, {
       method: "POST",
       headers: childDeviceHeaders
@@ -1337,6 +1366,18 @@ try {
     assert.equal(storeLikeRows.length, 1);
     assert.equal(likeRows.length, 1);
 
+    const storeAnalyticsStatusResponse = await fetch(`${likesBaseUrl}/api/reaction/${analyticsStoreMovieId}`, {
+      headers: childDeviceHeaders
+    });
+    const storeAnalyticsStatusBody = await storeAnalyticsStatusResponse.json();
+
+    assert.equal(storeAnalyticsStatusResponse.status, 200);
+    assert.equal(storeAnalyticsStatusBody.liked, true);
+    assert.equal(storeAnalyticsStatusBody.disliked, false);
+    assert.equal(storeAnalyticsStatusBody.reaction, "like");
+    assert.equal(storeAnalyticsStatusBody.likes, 1);
+    assert.equal(storeAnalyticsStatusBody.dislikes, 0);
+
     const storeAnalyticsDislikeResponse = await fetch(`${likesBaseUrl}/api/dislike/${analyticsStoreMovieId}`, {
       method: "POST",
       headers: childDeviceHeaders
@@ -1350,6 +1391,18 @@ try {
     assert.equal(storeAnalyticsDislikeBody.dislikes, 1);
     assert.equal(analyticsReactionRows.length, 1);
     assert.equal(analyticsReactionRows[0].reaction, "dislike");
+
+    const storeAnalyticsDislikedStatusResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreMovieId}`, {
+      headers: childDeviceHeaders
+    });
+    const storeAnalyticsDislikedStatusBody = await storeAnalyticsDislikedStatusResponse.json();
+
+    assert.equal(storeAnalyticsDislikedStatusResponse.status, 200);
+    assert.equal(storeAnalyticsDislikedStatusBody.liked, false);
+    assert.equal(storeAnalyticsDislikedStatusBody.disliked, true);
+    assert.equal(storeAnalyticsDislikedStatusBody.reaction, "dislike");
+    assert.equal(storeAnalyticsDislikedStatusBody.likes, 0);
+    assert.equal(storeAnalyticsDislikedStatusBody.dislikes, 1);
 
     const storeSeriesAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreSeriesId}?target_type=series`, {
       method: "POST",
