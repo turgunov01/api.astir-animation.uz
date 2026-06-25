@@ -285,6 +285,42 @@ async function setReaction(db, userId, target, reaction, options = {}) {
   };
 }
 
+async function clearReaction(db, userId, target, options = {}) {
+  if (target.source === "store") {
+    if (typeof options.contentReactions?.deleteByOwnerAndTarget !== "function") {
+      throw legacyError(503, "reaction_store_unavailable", "reaction store unavailable");
+    }
+
+    options.contentReactions.deleteByOwnerAndTarget(userId, target.id, target.type);
+
+    return {
+      liked: false,
+      disliked: false,
+      reaction: null,
+      ...await statisticsForTarget(db, target, options)
+    };
+  }
+
+  await runReactionTransaction(db, async (client) => {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      [String(userId), `${target.type}:${target.id}`]
+    );
+
+    await client.query(
+      "DELETE FROM content_reactions WHERE user_id = $1 AND target_type = $2 AND target_id = $3",
+      [userId, target.type, target.id]
+    );
+  });
+
+  return {
+    liked: false,
+    disliked: false,
+    reaction: null,
+    ...await statisticsForTarget(db, target, options)
+  };
+}
+
 async function reactionStatus(db, userId, target, options = {}) {
   if (target.source === "store") {
     const row = options.contentReactions?.findByOwnerAndTarget?.(userId, target.id, target.type);
@@ -344,6 +380,13 @@ export function createAnalyticsRoutes({ contentMovies = null, contentReactions =
     const target = await resolveReactionTarget(request.legacyDb, request.params.content_id, requestedTargetType(request), analyticsOptions);
 
     response.status(201).json(await setReaction(request.legacyDb, userId, target, "dislike", analyticsOptions));
+  }));
+
+  router.delete("/reaction/:content_id", requireActor, asyncHandler(async (request, response) => {
+    const userId = await requireOwnerUserIdForActor(request.legacyDb, request.legacyActor);
+    const target = await resolveReactionTarget(request.legacyDb, request.params.content_id, requestedTargetType(request), analyticsOptions);
+
+    response.json(await clearReaction(request.legacyDb, userId, target, analyticsOptions));
   }));
 
   router.get("/statistics/:content_id", asyncHandler(async (request, response) => {

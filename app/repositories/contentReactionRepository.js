@@ -52,6 +52,12 @@ export function createContentReactionRepository(store) {
       });
     },
 
+    deleteByOwnerAndTarget(ownerId, targetId, targetType = "content") {
+      const reaction = findByOwnerAndTarget(ownerId, targetId, targetType);
+
+      return reaction ? store.delete("contentReactions", reaction.id) : null;
+    },
+
     deleteByTarget(targetId, targetType = "content") {
       const type = normalizedTargetType(targetType);
       const reactions = store.filter(

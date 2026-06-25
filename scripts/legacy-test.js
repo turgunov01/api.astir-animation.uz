@@ -998,6 +998,20 @@ try {
       const row = { ownerId, targetId, targetType, reaction };
       analyticsReactionRows.push(row);
       return row;
+    },
+    deleteByOwnerAndTarget(ownerId, targetId, targetType = "content") {
+      const index = analyticsReactionRows.findIndex((row) => (
+        row.ownerId === ownerId
+        && row.targetId === targetId
+        && row.targetType === targetType
+      ));
+
+      if (index === -1) {
+        return null;
+      }
+
+      const [row] = analyticsReactionRows.splice(index, 1);
+      return row;
     }
   };
   const storeLikeRows = [
@@ -1202,6 +1216,18 @@ try {
             reaction,
             created_at: "2026-06-13T00:00:00.000Z"
           });
+        }
+        return { rows: [] };
+      }
+
+      if (/DELETE FROM content_reactions WHERE user_id = \$1 AND target_type = \$2 AND target_id = \$3/.test(sql)) {
+        const index = reactionRows.findIndex((row) => (
+          row.user_id === values[0]
+          && row.target_type === values[1]
+          && row.target_id === values[2]
+        ));
+        if (index !== -1) {
+          reactionRows.splice(index, 1);
         }
         return { rows: [] };
       }
@@ -1422,6 +1448,22 @@ try {
     assert.equal(analyticsLikeStatusBody.likes, 1);
     assert.equal(analyticsLikeStatusBody.dislikes, 0);
 
+    const clearReactionResponse = await fetch(`${likesBaseUrl}/api/reaction/${likedSeriesId}`, {
+      method: "DELETE",
+      headers: childDeviceHeaders
+    });
+    const clearReactionBody = await clearReactionResponse.json();
+
+    assert.equal(clearReactionResponse.status, 200);
+    assert.equal(clearReactionBody.liked, false);
+    assert.equal(clearReactionBody.disliked, false);
+    assert.equal(clearReactionBody.reaction, null);
+    assert.equal(clearReactionBody.likes, 0);
+    assert.equal(clearReactionBody.dislikes, 0);
+    assert.equal(clearReactionBody.views, 7);
+    assert.equal(reactionRows.length, 0);
+    assert.equal(likeRows.length, 1);
+
     const storeAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreMovieId}`, {
       method: "POST",
       headers: childDeviceHeaders
@@ -1479,6 +1521,21 @@ try {
     assert.equal(storeAnalyticsDislikedStatusBody.likes, 0);
     assert.equal(storeAnalyticsDislikedStatusBody.dislikes, 1);
 
+    const storeClearReactionResponse = await fetch(`${likesBaseUrl}/api/reaction/${analyticsStoreMovieId}`, {
+      method: "DELETE",
+      headers: childDeviceHeaders
+    });
+    const storeClearReactionBody = await storeClearReactionResponse.json();
+
+    assert.equal(storeClearReactionResponse.status, 200);
+    assert.equal(storeClearReactionBody.liked, false);
+    assert.equal(storeClearReactionBody.disliked, false);
+    assert.equal(storeClearReactionBody.reaction, null);
+    assert.equal(storeClearReactionBody.likes, 0);
+    assert.equal(storeClearReactionBody.dislikes, 0);
+    assert.equal(storeClearReactionBody.views, 12);
+    assert.equal(analyticsReactionRows.length, 0);
+
     const storeSeriesAnalyticsLikeResponse = await fetch(`${likesBaseUrl}/api/like/${analyticsStoreSeriesId}?target_type=series`, {
       method: "POST",
       headers: childDeviceHeaders
@@ -1490,9 +1547,9 @@ try {
     assert.equal(storeSeriesAnalyticsLikeBody.likes, 1);
     assert.equal(storeSeriesAnalyticsLikeBody.dislikes, 0);
     assert.equal(storeSeriesAnalyticsLikeBody.views, 4);
-    assert.equal(analyticsReactionRows.length, 2);
-    assert.equal(analyticsReactionRows[1].targetId, analyticsStoreSeriesId);
-    assert.equal(analyticsReactionRows[1].targetType, "series");
+    assert.equal(analyticsReactionRows.length, 1);
+    assert.equal(analyticsReactionRows[0].targetId, analyticsStoreSeriesId);
+    assert.equal(analyticsReactionRows[0].targetType, "series");
 
     const deleteLikeResponse = await fetch(`${likesBaseUrl}/api/v1/content/${likedSeriesId}/like`, {
       method: "DELETE",
@@ -1503,8 +1560,7 @@ try {
     assert.equal(deleteLikeResponse.status, 200);
     assert.equal(deleteLikeBody.liked, false);
     assert.equal(likeRows.length, 0);
-    assert.equal(reactionRows.length, 1);
-    assert.equal(reactionRows[0].reaction, "like");
+    assert.equal(reactionRows.length, 0);
   } finally {
     await closeServer(likesServer);
   }
