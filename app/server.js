@@ -54,6 +54,7 @@ export function createApp({ container = createContainer() } = {}) {
   app.use("/media", express.static(path.resolve(container.config.mediaRoot)));
 
   const legacyRoutes = createLegacyRoutes({
+    childContentBlacklist: container.repositories.childContentBlacklist,
     config: container.config,
     contentCategories: container.repositories.contentCategories,
     contentLikes: container.repositories.contentLikes,

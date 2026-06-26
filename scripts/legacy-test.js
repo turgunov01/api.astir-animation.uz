@@ -670,6 +670,12 @@ try {
     }
   ];
   const visibilityPermissions = [];
+  const externalBlacklistItems = [];
+  const visibilityChildContentBlacklist = {
+    findByChildAndContent(childId, contentId) {
+      return externalBlacklistItems.find((item) => item.childId === childId && item.contentId === contentId) || null;
+    }
+  };
   const visibilityDb = {
     one(sql, values) {
       if (/FROM users WHERE id = \$1 AND active = true/.test(sql)) {
@@ -802,6 +808,7 @@ try {
     next();
   });
   visibilityApp.use("/api/v1", createLegacyRoutes({
+    childContentBlacklist: visibilityChildContentBlacklist,
     config: { maxVideoUploadMb: 1 },
     media: fakeMedia
   }));
@@ -900,6 +907,30 @@ try {
     assert.equal(filteredEpisodesResponse.status, 200);
     assert.equal(filteredEpisodesBody.length, 1);
     assert.equal(filteredEpisodesBody[0].id, visibilityEpisodeTwoId);
+
+    visibilityPermissions.length = 0;
+    externalBlacklistItems.push({
+      childId: visibilityChildId,
+      contentId: visibilityEpisodeOneId
+    });
+
+    const externalFilteredEpisodesResponse = await fetch(
+      `${visibilityBaseUrl}/api/v1/series/${visibilitySeriesId}/episodes`,
+      {
+        headers: {
+          authorization: `Bearer ${v1DeviceToken({
+            id: "dc3a17f7-f7ac-4c93-a327-d0277e06acb6",
+            parent_id: visibilityParentId,
+            child_id: visibilityChildId
+          })}`
+        }
+      }
+    );
+    const externalFilteredEpisodesBody = await externalFilteredEpisodesResponse.json();
+
+    assert.equal(externalFilteredEpisodesResponse.status, 200);
+    assert.equal(externalFilteredEpisodesBody.length, 1);
+    assert.equal(externalFilteredEpisodesBody[0].id, visibilityEpisodeTwoId);
   } finally {
     await closeServer(visibilityServer);
   }

@@ -1104,11 +1104,31 @@ async function assertCanAccessContent(db, actor, contentId) {
 }
 
 function legacyActorChildId(actor) {
-  if (actor.kind === "child_device" || actor.kind === "tv_device") {
+  if (actor?.kind === "child_device" || actor?.kind === "tv_device") {
     return actor.child_id || null;
   }
 
   return null;
+}
+
+function legacyExternalContentDeniedForActor(childContentBlacklist, actor, contentId) {
+  const childId = legacyActorChildId(actor);
+
+  if (!childId || !contentId || !childContentBlacklist?.findByChildAndContent) {
+    return false;
+  }
+
+  return Boolean(childContentBlacklist.findByChildAndContent(childId, contentId));
+}
+
+function legacyExternalVisibleRows(childContentBlacklist, actor, rows) {
+  const childId = legacyActorChildId(actor);
+
+  if (!childId || !childContentBlacklist?.findByChildAndContent) {
+    return rows;
+  }
+
+  return rows.filter((row) => !childContentBlacklist.findByChildAndContent(childId, row.id));
 }
 
 function legacyPermissionApplies(permission, content) {
@@ -1831,7 +1851,15 @@ async function maybeStartTranscode(db, config, content) {
   return job;
 }
 
-export function createLegacyRoutes({ config, contentCategories = null, contentLikes = null, contentMovies = null, media, tariffs = null }) {
+export function createLegacyRoutes({
+  childContentBlacklist = null,
+  config,
+  contentCategories = null,
+  contentLikes = null,
+  contentMovies = null,
+  media,
+  tariffs = null
+}) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
@@ -3183,8 +3211,9 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
       `,
       values
     );
+    const visibleRows = legacyExternalVisibleRows(childContentBlacklist, actor, rows);
     const data = await Promise.all(
-      rows.map(async (row) => localizeRecord(
+      visibleRows.map(async (row) => localizeRecord(
         await serializeSeriesWithLikes(request.legacyDb, row, userId),
         lang
       ))
@@ -3212,7 +3241,10 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
   router.get("/series/:id", asyncHandler(async (request, response) => {
     const actor = await optionalLegacyActor(request);
 
-    if (await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)) {
+    if (
+      await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)
+      || legacyExternalContentDeniedForActor(childContentBlacklist, actor, request.params.id)
+    ) {
       throw legacyError(404, "series_not_found", "series not found");
     }
 
@@ -3252,7 +3284,10 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
     const actor = await optionalLegacyActor(request);
     let rows;
 
-    if (await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)) {
+    if (
+      await legacySeriesDeniedForActor(request.legacyDb, actor, request.params.id)
+      || legacyExternalContentDeniedForActor(childContentBlacklist, actor, request.params.id)
+    ) {
       response.json([]);
       return;
     }
@@ -3285,7 +3320,13 @@ export function createLegacyRoutes({ config, contentCategories = null, contentLi
         values
       );
     }
-    const movieRows = movieEpisodesForSeries(contentMovies, request.params.id);
+    rows = legacyExternalVisibleRows(childContentBlacklist, actor, rows);
+
+    const movieRows = legacyExternalVisibleRows(
+      childContentBlacklist,
+      actor,
+      movieEpisodesForSeries(contentMovies, request.params.id)
+    );
     const data = [...rows.map(serializeContent), ...movieRows];
 
     response.json(data.map((row) => localizeRecord(row, lang)));
