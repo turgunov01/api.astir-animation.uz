@@ -41,6 +41,14 @@ export function createPostgresChildRepository(db) {
         [attributes.parentId || attributes.parent_id, attributes.name, attributes.age ?? attributes.birthYear ?? attributes.birth_year ?? 0, attributes.avatarPath || attributes.avatar_path || null, attributes.avatarUrl || attributes.avatar_url || null, attributes.active !== false]
       );
       return result.rows[0];
+    },
+
+    async clearWatchExtensionById(id) {
+      const result = await db.query(
+        `UPDATE children SET extended_until = NULL, updated_at = now() WHERE id = $1 RETURNING ${selectColumns}`,
+        [id]
+      );
+      return result.rows[0] || null;
     }
   };
 }

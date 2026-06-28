@@ -313,21 +313,29 @@ export function createChildService({ childContentBlacklist, children, contentLik
   function updateLimits(parentId, childId, attributes) {
     const child = getChildForParent(parentId, childId);
 
-    return watchLimits.upsertByChildId(childId, {
+    const limit = watchLimits.upsertByChildId(childId, {
       parentId: childParentId(child),
       childId,
       ...attributes
     });
+
+    children.clearWatchExtensionById?.(childId);
+
+    return limit;
   }
 
   async function updateLimitsAsync(parentId, childId, attributes) {
     const child = await getChildForParentAsync(parentId, childId);
 
-    return watchLimits.upsertByChildId(childId, {
+    const limit = await watchLimits.upsertByChildId(childId, {
       parentId: childParentId(child),
       childId,
       ...attributes
     });
+
+    await children.clearWatchExtensionById?.(childId);
+
+    return limit;
   }
 
   async function resetLimitsAsync(parentId, childId) {
@@ -338,6 +346,8 @@ export function createChildService({ childContentBlacklist, children, contentLik
       childId,
       ...defaultLimit
     });
+
+    await children.clearWatchExtensionById?.(childId);
 
     return {
       deleted: Boolean(deleted),

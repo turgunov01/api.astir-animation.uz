@@ -17,6 +17,14 @@ export function createChildRepository(store) {
 
     create(attributes) {
       return store.insert("children", attributes);
+    },
+
+    clearWatchExtensionById(id) {
+      return store.update("children", id, {
+        extendedUntil: null,
+        extended_until: null,
+        extendeduntil: null
+      });
     }
   };
 }

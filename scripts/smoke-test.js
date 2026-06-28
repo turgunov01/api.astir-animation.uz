@@ -1365,6 +1365,41 @@ try {
     headers: { authorization: `Bearer ${deviceToken}` }
   });
 
+  const limitAfterExtend = await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      dailyMinutes: 1,
+      allowedFrom: "00:00",
+      allowedTo: "23:59",
+      allowedDays: [1, 2, 3, 4, 5, 6, 7],
+      allowedDates: [localDateString()]
+    }
+  });
+
+  assert.deepEqual(limitAfterExtend.limit.allowedDates, [localDateString()]);
+  assert.equal(store.findById("children", childId).extendeduntil, null);
+
+  const extendedResetWatch = await requestWithStatus(baseUrl, "/v1/watch-sessions/start", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` },
+    body: { contentId: movieId }
+  });
+
+  assert.equal(extendedResetWatch.status, 403);
+  assert.equal(extendedResetWatch.body.code, "WATCH_LIMIT_REACHED");
+
+  await request(baseUrl, `/v1/children/${childId}/limits`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      dailyMinutes: 1440,
+      allowedFrom: "00:00",
+      allowedTo: "23:59",
+      allowedDays: [1, 2, 3, 4, 5, 6, 7]
+    }
+  });
+
   const notificationToken = await request(baseUrl, "/v1/notifications/device-token", {
     method: "POST",
     headers: { authorization: `Bearer ${deviceToken}` },
