@@ -12,6 +12,8 @@ process.env.DATABASE_URL = "";
 process.env.JWT_SECRET = "astir-smoke-test-secret";
 process.env.REQUIRE_AUTH = "true";
 process.env.OTP_DEFAULT_CODE = "123456";
+process.env.FIREBASE_SERVER_KEY = "";
+process.env.FIREBASE_API_URL = "https://fcm.googleapis.com/fcm/send";
 process.env.CLICK_PAYMENT_URL = "https://my.click.uz/services/pay";
 process.env.CLICK_MERCHANT_ID = "123";
 process.env.CLICK_MERCHANT_USER_ID = "456";
@@ -1228,6 +1230,50 @@ try {
   });
 
   assert.equal(childDevices.devices.some((device) => device.id === config.device.id), true);
+
+  const parentNotificationToken = await request(baseUrl, "/v1/notifications/device-token", {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}` },
+    body: {
+      token: "smoke-parent-fcm-token",
+      platform: "ios"
+    }
+  });
+
+  assert.equal(parentNotificationToken.token.parentId, parentId);
+  assert.equal(parentNotificationToken.token.childId, null);
+  assert.equal(parentNotificationToken.token.deviceId, null);
+  assert.equal(parentNotificationToken.token.ownerType, "parent");
+
+  const childAppOpen = await request(baseUrl, "/v1/device/app-open", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(childAppOpen.throttled, false);
+  assert.equal(childAppOpen.notification.parentId, parentId);
+  assert.equal(childAppOpen.notification.childId, childId);
+  assert.equal(childAppOpen.notification.channel, "push");
+  assert.equal(childAppOpen.notification.data.type, "child_app_login");
+  assert.equal(childAppOpen.notification.data.childId, childId);
+  assert.equal(childAppOpen.notification.data.deviceId, config.device.id);
+  assert.equal(childAppOpen.result.skipped, true);
+
+  const repeatedChildAppOpen = await request(baseUrl, "/v1/device/app-open", {
+    method: "POST",
+    headers: { authorization: `Bearer ${deviceToken}` }
+  });
+
+  assert.equal(repeatedChildAppOpen.throttled, true);
+  assert.equal(repeatedChildAppOpen.notification.id, childAppOpen.notification.id);
+
+  const parentNotificationsAfterOpen = await request(baseUrl, "/v1/notifications", {
+    headers: { authorization: `Bearer ${parentToken}` }
+  });
+  const childLoginNotifications = parentNotificationsAfterOpen.notifications
+    .filter((notification) => notification.data.type === "child_app_login");
+
+  assert.equal(childLoginNotifications.length, 1);
 
   const revokePairing = await request(baseUrl, "/v1/pairing/sessions", {
     method: "POST",

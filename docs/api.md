@@ -323,6 +323,22 @@ What happens:
 2. The backend returns the child profile.
 3. The backend returns the current watch limits.
 
+### Notify Child App Open
+
+Request:
+
+```text
+POST /v1/device/app-open
+```
+
+This request needs a device token. The child app should call it once when the app is opened or the child logs in.
+
+What happens:
+
+1. The backend checks the device token.
+2. The backend creates a parent notification with `data.type = child_app_login`.
+3. The backend sends a push to parent app notification tokens when Firebase is configured.
+
 ## 13. Update Watch Limits
 
 Request:

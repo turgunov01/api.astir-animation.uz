@@ -5325,6 +5325,45 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/device/app-open": {
+      post: {
+        tags: ["Device"],
+        summary: "Notify parent that a child device opened the app",
+        description: "Child devices call this once when the child app is opened. The backend stores a parent notification and sends a push to registered parent app tokens when Firebase is configured.",
+        security: [{ deviceToken: [] }],
+        responses: {
+          201: {
+            description: "Parent notification created or throttled",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    throttled: { type: "boolean", example: false },
+                    notification: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        parentId: { type: "string" },
+                        childId: { type: "string", nullable: true },
+                        channel: { type: "string", example: "push" },
+                        title: { type: "string" },
+                        body: { type: "string" },
+                        data: { type: "object" },
+                        status: { type: "string", example: "stored" }
+                      }
+                    },
+                    result: { type: "object" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: { $ref: "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/v1/children/{childId}/devices": {
       get: {
         tags: ["Children"],

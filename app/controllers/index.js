@@ -16,7 +16,11 @@ export function createControllers(services) {
     billing: createBillingController({ subscriptionService: services.subscriptions }),
     children: createChildrenController({ childService: services.children }),
     content: createContentController({ contentService: services.content }),
-    device: createDeviceController({ watchService: services.watch }),
+    device: createDeviceController({
+      childService: services.children,
+      notificationService: services.notifications,
+      watchService: services.watch
+    }),
     faqs: createFaqController({ faqService: services.faqs }),
     notifications: createNotificationController({ notificationService: services.notifications }),
     pairing: createPairingController({ pairingService: services.pairing }),

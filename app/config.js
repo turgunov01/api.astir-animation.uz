@@ -50,6 +50,9 @@ export const config = {
     serverKey: process.env.FIREBASE_SERVER_KEY || "",
     apiUrl: process.env.FIREBASE_API_URL || "https://fcm.googleapis.com/fcm/send"
   },
+  notifications: {
+    childAppOpenCooldownSeconds: optionalNumber(process.env.CHILD_APP_OPEN_NOTIFICATION_COOLDOWN_SECONDS, 300)
+  },
   click: {
     paymentUrl: process.env.CLICK_PAYMENT_URL || process.env.CLICK_BASE_URL || "https://my.click.uz/services/pay",
     merchantId: process.env.CLICK_MERCHANT_ID || "",

@@ -5,6 +5,7 @@ export function createDeviceRoutes({ authMiddleware, deviceController }) {
   const router = Router();
 
   router.get("/config", authMiddleware.requireDevice, asyncHandler(deviceController.getConfig));
+  router.post("/app-open", authMiddleware.requireDevice, asyncHandler(deviceController.appOpen));
 
   return router;
 }
