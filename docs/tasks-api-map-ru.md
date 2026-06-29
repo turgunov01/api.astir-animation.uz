@@ -599,8 +599,10 @@ Body:
 Нужные env:
 
 ```text
-FIREBASE_SERVER_KEY=
-FIREBASE_API_URL=https://fcm.googleapis.com/fcm/send
+FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/firebase-service-account.json
+FIREBASE_PROJECT_ID=astiranimation
+FIREBASE_API_URL=https://fcm.googleapis.com/v1/projects/astiranimation/messages:send
+CHILD_APP_OPEN_NOTIFICATION_COOLDOWN_SECONDS=300
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -862,4 +864,3 @@ Mobile cache должен сохранить:
 | `playback` | Данные проигрывания |
 | `cache_key` | Ключ invalidation cache |
 | `updatedAt` | Дата обновления |
-

@@ -135,8 +135,10 @@ SMTP_SECURE=false
 Для Firebase:
 
 ```text
-FIREBASE_SERVER_KEY=
-FIREBASE_API_URL=https://fcm.googleapis.com/fcm/send
+FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/firebase-service-account.json
+FIREBASE_PROJECT_ID=astiranimation
+FIREBASE_API_URL=https://fcm.googleapis.com/v1/projects/astiranimation/messages:send
+CHILD_APP_OPEN_NOTIFICATION_COOLDOWN_SECONDS=300
 ```
 
 Для Click:
@@ -863,7 +865,7 @@ Authorization: Bearer <parentToken>
 }
 ```
 
-Если `FIREBASE_SERVER_KEY` не задан, backend сохранит уведомление и вернет `skipped=true`.
+Если `FIREBASE_PROJECT_ID` или `FIREBASE_SERVICE_ACCOUNT_PATH` не заданы, backend сохранит уведомление и вернет `skipped=true`.
 
 ### 15.4 Отправить email
 
@@ -1177,4 +1179,3 @@ async function startChildPlayback(deviceToken, contentId) {
   }
 }
 ```
-

@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { createFirebaseFcmService } from "./firebaseFcm.js";
 import { badRequest, serviceUnavailable } from "../lib/errors.js";
 
 function firstValue(...values) {
@@ -86,38 +87,27 @@ function recentChildAppLoginNotification(notifications, { deviceId, childId, sin
   }) || null;
 }
 
-export function createNotificationService({ config, notifications }) {
+export function createNotificationService({ config, notifications, fcm = createFirebaseFcmService(config.firebase) }) {
   async function sendFcm(tokens, { title, body, data = {} }) {
-    const firebase = config.firebase || {};
+    try {
+      return await fcm.sendFcmToTokens(tokens, { title, body, data });
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "notification_push_error",
+        message: "Firebase push delivery failed",
+        error: {
+          name: error?.name || "Error",
+          message: error?.message || "Firebase push delivery failed"
+        }
+      }));
 
-    if (!firebase.serverKey) {
       return {
         sent: false,
-        skipped: true,
-        reason: "FIREBASE_SERVER_KEY is not configured"
+        skipped: false,
+        reason: error?.message || "Firebase push delivery failed",
+        providerResponse: null
       };
     }
-
-    const response = await fetch(firebase.apiUrl || "https://fcm.googleapis.com/fcm/send", {
-      method: "POST",
-      headers: {
-        authorization: `key=${firebase.serverKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        registration_ids: tokens,
-        notification: { title, body },
-        data
-      })
-    });
-    const providerResponse = await response.json().catch(() => ({ status: response.status }));
-
-    return {
-      sent: response.ok,
-      skipped: false,
-      status: response.status,
-      providerResponse
-    };
   }
 
   async function sendParentPush(parentId, { title, body, data = {}, childId = "" }) {

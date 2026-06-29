@@ -47,8 +47,9 @@ export const config = {
     from: process.env.SMTP_FROM || ""
   },
   firebase: {
-    serverKey: process.env.FIREBASE_SERVER_KEY || "",
-    apiUrl: process.env.FIREBASE_API_URL || "https://fcm.googleapis.com/fcm/send"
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "",
+    apiUrl: process.env.FIREBASE_API_URL || ""
   },
   notifications: {
     childAppOpenCooldownSeconds: optionalNumber(process.env.CHILD_APP_OPEN_NOTIFICATION_COOLDOWN_SECONDS, 300)
