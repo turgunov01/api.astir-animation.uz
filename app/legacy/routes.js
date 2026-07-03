@@ -1858,6 +1858,7 @@ export function createLegacyRoutes({
   contentLikes = null,
   contentMovies = null,
   media,
+  streaming = null,
   tariffs = null
 }) {
   const router = Router();
@@ -3431,7 +3432,20 @@ export function createLegacyRoutes({
     if (!row) {
       throw legacyError(404, "content_not_found", "content not found");
     }
-    response.json(await contentListItem(request.legacyDb, row, request.legacyActor, requestedLang(request)));
+    const item = await contentListItem(request.legacyDb, row, request.legacyActor, requestedLang(request));
+
+    if (streaming) {
+      const state = await streaming.loadState(request.legacyDb, request.params.id);
+      const streamingView = streaming.serializeState(state, request);
+
+      item.hlsUrl = streamingView.hlsUrl;
+      item.streamingStatus = streamingView.streamingStatus;
+      item.defaultAudioLanguage = streamingView.defaultAudioLanguage;
+      item.audioTracks = streamingView.audioTracks;
+      item.subtitles = streamingView.subtitles;
+    }
+
+    response.json(item);
   }));
 
   router.put("/content/:id", requireAdmin, asyncHandler(async (request, response) => {
@@ -3459,7 +3473,10 @@ export function createLegacyRoutes({
 
   router.delete("/content/:id", requireAdmin, asyncHandler(async (request, response) => {
     cancelLegacyTranscode(request.params.id);
-    await deleteLegacyRecordWithMedia(request.legacyDb, media, "content", request.params.id, ["source_path", "poster_path"], [`hls/${request.params.id}`]);
+    if (streaming) {
+      streaming.cancel(request.params.id);
+    }
+    await deleteLegacyRecordWithMedia(request.legacyDb, media, "content", request.params.id, ["source_path", "poster_path"], [`hls/${request.params.id}`, `streaming/${request.params.id}`]);
     response.json(messageResponse("deleted"));
   }));
 
@@ -3521,6 +3538,46 @@ export function createLegacyRoutes({
   router.get("/content/:id/transcoding", requireActor, asyncHandler(async (request, response) => {
     const job = await request.legacyDb.one("SELECT * FROM transcoding_jobs WHERE content_id = $1 ORDER BY created_at DESC LIMIT 1", [request.params.id]);
     response.json(job || { content_id: request.params.id, status: "missing" });
+  }));
+
+  function ensureStreaming(request, response, next) {
+    if (!streaming) {
+      next(legacyError(503, "streaming_unavailable", "streaming service is not configured"));
+      return;
+    }
+
+    if (!isUuid(request.params.id)) {
+      next(legacyError(404, "content_not_found", "content not found"));
+      return;
+    }
+
+    next();
+  }
+
+  function streamingUpload(request, response, next) {
+    streaming.upload(request, response, (error) => (error ? next(error) : next()));
+  }
+
+  // Multi-audio HLS: upload a main video + per-language audio/subtitle tracks,
+  // then start non-blocking FFmpeg processing. Keyed to content(id).
+  router.post("/content/:id/streaming-assets", requireAdmin, ensureStreaming, streamingUpload, asyncHandler(async (request, response) => {
+    await getById(request.legacyDb, "content", request.params.id);
+    await streaming.ingest(request.legacyDb, request.params.id, request);
+    await streaming.startProcessing(request.legacyDb, request.params.id);
+    const state = await streaming.loadState(request.legacyDb, request.params.id);
+    response.status(202).json(streaming.serializeState(state, request));
+  }));
+
+  router.get("/content/:id/streaming-assets", requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+    const state = await streaming.loadState(request.legacyDb, request.params.id);
+    response.json(streaming.serializeState(state, request));
+  }));
+
+  router.post("/content/:id/streaming-assets/reprocess", requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+    await getById(request.legacyDb, "content", request.params.id);
+    await streaming.startProcessing(request.legacyDb, request.params.id);
+    const state = await streaming.loadState(request.legacyDb, request.params.id);
+    response.status(202).json(streaming.serializeState(state, request));
   }));
 
   router.put("/content/:id/tags", requireAdmin, asyncHandler(async (request, response) => {
