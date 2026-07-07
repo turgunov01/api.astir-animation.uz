@@ -3560,7 +3560,13 @@ export function createLegacyRoutes({
 
   // Multi-audio HLS: upload a main video + per-language audio/subtitle tracks,
   // then start non-blocking FFmpeg processing. Keyed to content(id).
-  router.post("/content/:id/streaming-assets", requireAdmin, ensureStreaming, streamingUpload, asyncHandler(async (request, response) => {
+  // Both path shapes are accepted: the bare `/content/:id/...` (reference
+  // backend) and the `/content/movies/:id/...` prefix the dashboard probes
+  // first, matching the poster/tags sub-resources.
+  const streamingAssetsPaths = ["/content/:id/streaming-assets", "/content/movies/:id/streaming-assets"];
+  const streamingReprocessPaths = ["/content/:id/streaming-assets/reprocess", "/content/movies/:id/streaming-assets/reprocess"];
+
+  router.post(streamingAssetsPaths, requireAdmin, ensureStreaming, streamingUpload, asyncHandler(async (request, response) => {
     await getById(request.legacyDb, "content", request.params.id);
     await streaming.ingest(request.legacyDb, request.params.id, request);
     await streaming.startProcessing(request.legacyDb, request.params.id);
@@ -3568,12 +3574,12 @@ export function createLegacyRoutes({
     response.status(202).json(streaming.serializeState(state, request));
   }));
 
-  router.get("/content/:id/streaming-assets", requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+  router.get(streamingAssetsPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
     const state = await streaming.loadState(request.legacyDb, request.params.id);
     response.json(streaming.serializeState(state, request));
   }));
 
-  router.post("/content/:id/streaming-assets/reprocess", requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+  router.post(streamingReprocessPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
     await getById(request.legacyDb, "content", request.params.id);
     await streaming.startProcessing(request.legacyDb, request.params.id);
     const state = await streaming.loadState(request.legacyDb, request.params.id);
