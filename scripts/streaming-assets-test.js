@@ -10,8 +10,8 @@ import { buildMultiAudioMasterPlaylist } from "../app/lib/hlsProfiles.js";
 import { createLegacyStreaming } from "../app/legacy/streaming.js";
 
 let passed = 0;
-function check(name, fn) {
-  fn();
+async function check(name, fn) {
+  await fn();
   passed += 1;
   console.log(`ok - ${name}`);
 }
@@ -22,7 +22,7 @@ const renditions = [
   { label: "1080p", width: 1920, height: 1080, bandwidth: 5800000, averageBandwidth: 4300000, playlistFile: "video/1080p.m3u8" }
 ];
 
-check("master playlist advertises each external audio track", () => {
+await check("master playlist advertises each external audio track", () => {
   const master = buildMultiAudioMasterPlaylist({
     renditions,
     audioTracks: [
@@ -44,7 +44,7 @@ check("master playlist advertises each external audio track", () => {
   assert.match(master, /CODECS="avc1\.640028,mp4a\.40\.2"/);
 });
 
-check("video-only master (no external audio) omits audio group", () => {
+await check("video-only master (no external audio) omits audio group", () => {
   const master = buildMultiAudioMasterPlaylist({ renditions, audioTracks: [] });
 
   assert.doesNotMatch(master, /#EXT-X-MEDIA/);
@@ -52,7 +52,7 @@ check("video-only master (no external audio) omits audio group", () => {
   assert.match(master, /CODECS="avc1\.64001f"/);
 });
 
-check("first track becomes default when defaultAudioLanguage is unknown", () => {
+await check("first track becomes default when defaultAudioLanguage is unknown", () => {
   const master = buildMultiAudioMasterPlaylist({
     renditions,
     audioTracks: [
@@ -71,7 +71,7 @@ const streaming = createLegacyStreaming({
 
 const fakeRequest = { protocol: "https", get: (header) => (header === "host" ? "api.astir.uz" : "") };
 
-check("serializeState returns the public streaming contract with absolute URLs", () => {
+await check("serializeState returns the public streaming contract with absolute URLs", () => {
   const view = streaming.serializeState({
     asset: {
       status: "ready",
@@ -97,12 +97,47 @@ check("serializeState returns the public streaming contract with absolute URLs",
   assert.equal(view.subtitles[0].url, "https://api.astir.uz/media/legacy/streaming/movie-1/hls/subtitles/uz.vtt");
 });
 
-check("serializeState tolerates content with no streaming assets", () => {
+await check("serializeState tolerates content with no streaming assets", () => {
   const view = streaming.serializeState({ asset: null, audioTracks: [], subtitles: [] }, fakeRequest);
 
   assert.equal(view.streamingStatus, null);
   assert.equal(view.hlsUrl, null);
   assert.deepEqual(view.audioTracks, []);
+});
+
+await check("ingest reuses content source_path when no streaming video file is uploaded", async () => {
+  const contentId = "movie-with-existing-source";
+  const sourcePath = "uploads/source.mp4";
+  const queries = [];
+  const db = {
+    async one(sql, values) {
+      queries.push({ method: "one", sql, values });
+
+      if (/FROM movie_assets/.test(sql)) {
+        return null;
+      }
+
+      if (/SELECT source_path FROM content/.test(sql)) {
+        return { source_path: sourcePath };
+      }
+
+      if (/SELECT 1 FROM movie_audio_tracks/.test(sql)) {
+        return null;
+      }
+
+      throw new Error(`unexpected one query: ${sql}`);
+    },
+    async query(sql, values) {
+      queries.push({ method: "query", sql, values });
+      return { rows: [] };
+    }
+  };
+
+  await streaming.ingest(db, contentId, { files: {}, body: {} });
+
+  const upsertAsset = queries.find((query) => query.method === "query" && /INSERT INTO movie_assets/.test(query.sql));
+  assert.equal(upsertAsset.values[0], contentId);
+  assert.equal(upsertAsset.values[1], sourcePath);
 });
 
 console.log(`\n${passed} checks passed`);

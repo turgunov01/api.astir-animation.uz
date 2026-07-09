@@ -207,12 +207,18 @@ export function createLegacyStreaming({ config }) {
 
     const videoFile = firstFile(files, "video");
     const existingAsset = await db.one("SELECT source_video_path FROM movie_assets WHERE content_id = $1", [contentId]);
+    const content = await db.one("SELECT source_path FROM content WHERE id = $1", [contentId]);
+    const existingContentVideoPath = content?.source_path || null;
 
-    if (!videoFile && !existingAsset?.source_video_path) {
+    if (!videoFile && !existingAsset?.source_video_path && !existingContentVideoPath) {
       throw legacyError(400, "video_required", "a main video file is required");
     }
 
-    const sourceVideoPath = videoFile ? legacyRelative(videoFile.path) : null;
+    const sourceVideoPath = videoFile
+      ? legacyRelative(videoFile.path)
+      : existingAsset?.source_video_path
+        ? null
+        : existingContentVideoPath;
     await upsertAsset(db, contentId, { sourceVideoPath, defaultAudioLanguage });
 
     for (const [field, language] of Object.entries(AUDIO_FIELDS)) {
