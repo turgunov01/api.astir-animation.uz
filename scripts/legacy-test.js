@@ -619,6 +619,135 @@ try {
     await closeServer(commentsServer);
   }
 
+  const streamingMovieId = "35c1c8f7-7ed2-4e96-99d3-67e7f2194c6c";
+  const streamingAdmin = {
+    id: "4995fa78-bdbb-4dbf-8b7f-7e922e025d32",
+    email: "streaming-admin@example.com",
+    name: "Streaming Admin",
+    role: "admin",
+    active: true
+  };
+  const shadowContentRows = new Map();
+  const streamingDb = {
+    one(sql, values) {
+      if (/FROM users WHERE id = \$1 AND active = true/.test(sql)) {
+        return values[0] === streamingAdmin.id ? streamingAdmin : null;
+      }
+
+      if (/SELECT \* FROM content WHERE id = \$1/.test(sql)) {
+        return shadowContentRows.get(values[0]) || null;
+      }
+
+      throw new Error(`unexpected streaming one query: ${sql}`);
+    },
+    query(sql, values) {
+      if (/INSERT INTO content/.test(sql)) {
+        const row = {
+          id: values[0],
+          title: values[1],
+          description: values[2],
+          slug: values[3],
+          source_path: values[4],
+          poster_path: values[5],
+          poster_url: values[6],
+          status: values[7],
+          age_rating: values[8],
+          duration_sec: values[9],
+          season_number: values[10],
+          episode_number: values[11],
+          year: values[12],
+          published: values[13],
+          published_at: values[14]
+        };
+        shadowContentRows.set(row.id, row);
+        return { rows: [row] };
+      }
+
+      throw new Error(`unexpected streaming query: ${sql}`);
+    }
+  };
+  const streamingMovies = {
+    findById(id) {
+      return id === streamingMovieId
+        ? {
+            id,
+            title: { en: "Streaming Test", ru: "Streaming Test RU", uz: "Streaming Test UZ" },
+            description: { en: "Streaming description" },
+            duration_sec: 321,
+            age_rating: 6,
+            published: true,
+            published_at: "2026-07-01T00:00:00.000Z",
+            source: { path: "uploads/streaming-test.mp4" },
+            poster: { path: "uploads/streaming-test.png", url: "/media/uploads/streaming-test.png" },
+            transcode: { status: "queued" }
+          }
+        : null;
+    }
+  };
+  let streamingUploadCalled = false;
+  let streamingIngestCalled = false;
+  const fakeStreaming = {
+    upload(request, response, next) {
+      streamingUploadCalled = true;
+      next();
+    },
+    async ingest(db, contentId) {
+      streamingIngestCalled = true;
+      assert.equal(contentId, streamingMovieId);
+      assert.equal(shadowContentRows.has(contentId), true);
+    },
+    async startProcessing(db, contentId) {
+      assert.equal(contentId, streamingMovieId);
+    },
+    async loadState(db, contentId) {
+      assert.equal(contentId, streamingMovieId);
+      return {
+        asset: { status: "processing", hls_master_url: null, default_audio_language: null, duration_seconds: null, processing_error: null },
+        audioTracks: [],
+        subtitles: []
+      };
+    },
+    serializeState(state) {
+      return { streamingStatus: state.asset.status, audioTracks: state.audioTracks };
+    }
+  };
+  const streamingApp = express();
+  streamingApp.use((request, response, next) => {
+    request.legacyDb = streamingDb;
+    next();
+  });
+  streamingApp.use("/api/v1", createLegacyRoutes({
+    config: { maxVideoUploadMb: 1 },
+    contentMovies: streamingMovies,
+    media: fakeMedia,
+    streaming: fakeStreaming
+  }));
+  const streamingServer = await listenApp(streamingApp);
+
+  try {
+    const streamingBaseUrl = `http://127.0.0.1:${streamingServer.address().port}`;
+    const streamingResponse = await fetch(`${streamingBaseUrl}/api/v1/content/movies/${streamingMovieId}/streaming-assets`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${legacyUserToken(streamingAdmin)}`
+      }
+    });
+    const streamingBody = await streamingResponse.json();
+    const shadowRow = shadowContentRows.get(streamingMovieId);
+
+    assert.equal(streamingResponse.status, 202);
+    assert.equal(streamingBody.streamingStatus, "processing");
+    assert.equal(streamingUploadCalled, true);
+    assert.equal(streamingIngestCalled, true);
+    assert.equal(shadowRow.id, streamingMovieId);
+    assert.equal(shadowRow.slug, `streaming-${streamingMovieId}`);
+    assert.equal(shadowRow.status, "transcoding");
+    assert.equal(shadowRow.duration_sec, 321);
+    assert.equal(shadowRow.published, true);
+  } finally {
+    await closeServer(streamingServer);
+  }
+
   const visibilityParentId = "52a3e7e4-3e8d-4bea-8c35-a6811a102bbc";
   const visibilityChildId = "7447d81f-920c-4245-bc33-afca1c6191eb";
   const visibilityDevice = {

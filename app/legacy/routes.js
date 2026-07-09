@@ -585,6 +585,83 @@ async function getById(db, table, id) {
   return result.rows[0];
 }
 
+function storeMovieStatusForLegacyContent(movie) {
+  const transcodeStatus = String(movie?.transcode?.status || "").toLowerCase();
+
+  if (transcodeStatus === "ready") {
+    return "ready";
+  }
+
+  if (transcodeStatus === "processing" || transcodeStatus === "queued") {
+    return "transcoding";
+  }
+
+  if (transcodeStatus === "failed") {
+    return "failed";
+  }
+
+  return "uploaded";
+}
+
+async function ensureStreamingContentRecord(db, contentMovies, contentId) {
+  const existingContent = await db.one("SELECT * FROM content WHERE id = $1", [contentId]);
+
+  if (existingContent) {
+    return existingContent;
+  }
+
+  const storeMovie = contentMovies?.findById?.(contentId);
+
+  if (!storeMovie) {
+    throw legacyError(404, "not_found", "record not found");
+  }
+
+  const published = Boolean(storeMovie.published);
+  const result = await db.query(
+    `
+      INSERT INTO content (
+        id, title, description, slug, source_path, poster_path, poster_url, status,
+        age_rating, duration_sec, season_number, episode_number, year, published, published_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ON CONFLICT (id) DO UPDATE SET
+        title = EXCLUDED.title,
+        description = EXCLUDED.description,
+        source_path = COALESCE(EXCLUDED.source_path, content.source_path),
+        poster_path = COALESCE(EXCLUDED.poster_path, content.poster_path),
+        poster_url = COALESCE(EXCLUDED.poster_url, content.poster_url),
+        status = EXCLUDED.status,
+        age_rating = EXCLUDED.age_rating,
+        duration_sec = EXCLUDED.duration_sec,
+        season_number = EXCLUDED.season_number,
+        episode_number = EXCLUDED.episode_number,
+        year = EXCLUDED.year,
+        published = EXCLUDED.published,
+        published_at = EXCLUDED.published_at
+      RETURNING *
+    `,
+    [
+      contentId,
+      i18n(storeMovie.title || storeMovie.name || contentId, contentId),
+      i18n(storeMovie.description || "", ""),
+      `streaming-${contentId}`,
+      storeMovie.source?.path || null,
+      storeMovie.poster?.path || null,
+      storeMovie.poster?.url || null,
+      storeMovieStatusForLegacyContent(storeMovie),
+      toInteger(storeMovie.age_rating, 0),
+      toInteger(storeMovie.duration_sec ?? storeMovie.duration_seconds, 0),
+      toInteger(storeMovie.season_number, null),
+      toInteger(storeMovie.episode_number, null),
+      toInteger(storeMovie.year, null),
+      published,
+      storeMovie.published_at || (published ? new Date().toISOString() : null)
+    ]
+  );
+
+  return result.rows[0];
+}
+
 async function findLegacyPlan(db, planId) {
   const normalizedPlanId = String(planId || "").trim();
 
@@ -3558,6 +3635,11 @@ export function createLegacyRoutes({
     streaming.upload(request, response, (error) => (error ? next(error) : next()));
   }
 
+  async function ensureStreamingContent(request, response, next) {
+    request.streamingContent = await ensureStreamingContentRecord(request.legacyDb, contentMovies, request.params.id);
+    next();
+  }
+
   // Multi-audio HLS: upload a main video + per-language audio/subtitle tracks,
   // then start non-blocking FFmpeg processing. Keyed to content(id).
   // Both path shapes are accepted: the bare `/content/:id/...` (reference
@@ -3566,8 +3648,7 @@ export function createLegacyRoutes({
   const streamingAssetsPaths = ["/content/:id/streaming-assets", "/content/movies/:id/streaming-assets"];
   const streamingReprocessPaths = ["/content/:id/streaming-assets/reprocess", "/content/movies/:id/streaming-assets/reprocess"];
 
-  router.post(streamingAssetsPaths, requireAdmin, ensureStreaming, streamingUpload, asyncHandler(async (request, response) => {
-    await getById(request.legacyDb, "content", request.params.id);
+  router.post(streamingAssetsPaths, requireAdmin, ensureStreaming, asyncHandler(ensureStreamingContent), streamingUpload, asyncHandler(async (request, response) => {
     await streaming.ingest(request.legacyDb, request.params.id, request);
     await streaming.startProcessing(request.legacyDb, request.params.id);
     const state = await streaming.loadState(request.legacyDb, request.params.id);
@@ -3579,8 +3660,7 @@ export function createLegacyRoutes({
     response.json(streaming.serializeState(state, request));
   }));
 
-  router.post(streamingReprocessPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
-    await getById(request.legacyDb, "content", request.params.id);
+  router.post(streamingReprocessPaths, requireAdmin, ensureStreaming, asyncHandler(ensureStreamingContent), asyncHandler(async (request, response) => {
     await streaming.startProcessing(request.legacyDb, request.params.id);
     const state = await streaming.loadState(request.legacyDb, request.params.id);
     response.status(202).json(streaming.serializeState(state, request));
