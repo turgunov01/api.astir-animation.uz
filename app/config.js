@@ -31,7 +31,7 @@ export const config = {
   contentStorage: process.env.CONTENT_STORAGE || (process.env.DATABASE_URL ? "postgres" : "json"),
   databaseUrl: process.env.DATABASE_URL || "",
   mediaRoot: process.env.MEDIA_ROOT || "media",
-  maxVideoUploadMb: Number(process.env.MAX_VIDEO_UPLOAD_MB || 2048),
+  maxVideoUploadMb: Number(process.env.MAX_VIDEO_UPLOAD_MB || 8192),
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
   ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
   transcoderEnabled: parseBoolean(process.env.TRANSCODER_ENABLED, true),

@@ -30,7 +30,7 @@ Existing behavior preserved: `POST /content/:id/upload` (single muxed transcode)
 
 - `MEDIA_ROOT` (default `media`) — HLS output lives under `<MEDIA_ROOT>/legacy/streaming/<contentId>/`.
 - `FFMPEG_PATH` / `FFPROBE_PATH` (default `ffmpeg` / `ffprobe`) — must be installed on the host.
-- `MAX_VIDEO_UPLOAD_MB` (default `2048`) — upload size cap.
+- `MAX_VIDEO_UPLOAD_MB` (default `8192`) — per-file upload cap in MB. The nginx `client_max_body_size` on the reverse proxy caps the whole multipart body (video + all audio tracks + subtitles combined) and must be `>=` this value, or oversized uploads are rejected with a `413` that surfaces in the browser as a misleading CORS error.
 - `TRANSCODER_ENABLED` (default `true`) — when `false`, processing is marked `failed` with reason `transcoder disabled`.
 
 ## 3. DB migration
