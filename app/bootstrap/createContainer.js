@@ -8,6 +8,7 @@ import { createAuthService } from "../services/authService.js";
 import { createChildService } from "../services/childService.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
+import { createLegacyStreamingState } from "../services/legacyStreamingState.js";
 import { createNotificationService } from "../services/notificationService.js";
 import { createPairingService } from "../services/pairingService.js";
 import { createRecommendationService } from "../services/recommendationService.js";
@@ -72,6 +73,7 @@ export function createContainer({ store = defaultStore } = {}) {
     contentMovieTags: repositories.contentMovieTags,
     contentMovies: repositories.contentMovies,
     contentSearch: repositories.contentSearch,
+    contentStreaming: createLegacyStreamingState({ db: searchDb }),
     contentTags: repositories.contentTags,
     childService: services.children,
     tariffService: services.tariffs,

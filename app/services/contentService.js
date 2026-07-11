@@ -252,6 +252,63 @@ function createSourceFromFile(file) {
   };
 }
 
+// Overlays multi-audio streaming state (from the legacy movie_assets tables)
+// onto a serialized movie so the primary content API reports real HLS playback
+// instead of the JSON store's `missing_source`. Returns a new object; when
+// there is no streaming signal the movie is returned unchanged.
+function applyStreamingStateToSerialized(serialized, state) {
+  if (!serialized || !state) {
+    return serialized;
+  }
+
+  const hasSignal = Boolean(state.status || state.hlsUrl || state.audioTracks?.length);
+
+  if (!hasSignal) {
+    return serialized;
+  }
+
+  const hlsUrl = state.hlsUrl || serialized.playback?.hls_url || null;
+  const ready = state.status === "ready" && Boolean(hlsUrl);
+  const durationSeconds = state.durationSeconds || serialized.duration_sec || 0;
+  const durationMinutes = durationSeconds > 0 ? Math.ceil(durationSeconds / 60) : serialized.duration_minutes;
+  const existingQualities = serialized.playback?.qualities?.filter((quality) => quality !== "auto") || [];
+
+  return {
+    ...serialized,
+    source: ready ? (serialized.source || hlsUrl) : serialized.source,
+    video_url: ready ? hlsUrl : serialized.video_url,
+    transcode_status: state.status || serialized.transcode_status,
+    transcode_error: state.processingError || serialized.transcode_error,
+    status_error: state.processingError || serialized.status_error,
+    error_message: state.processingError || serialized.error_message,
+    duration_sec: durationSeconds,
+    duration_seconds: durationSeconds,
+    durationSec: durationSeconds,
+    duration: durationSeconds || serialized.duration,
+    duration_minutes: durationMinutes,
+    durationMinutes,
+    streamingStatus: state.status,
+    hls_url: hlsUrl,
+    hlsUrl,
+    defaultAudioLanguage: state.defaultAudioLanguage,
+    audioTracks: state.audioTracks,
+    subtitles: state.subtitles,
+    media: {
+      ...serialized.media,
+      has_source: ready ? true : serialized.media?.has_source
+    },
+    playback: {
+      ...serialized.playback,
+      type: "hls",
+      status: state.status || serialized.playback?.status,
+      hls_url: hlsUrl,
+      auto_url: hlsUrl,
+      qualities: hlsUrl ? ["auto", ...existingQualities] : serialized.playback?.qualities,
+      error: state.processingError || serialized.playback?.error
+    }
+  };
+}
+
 function removeStoredFile(source) {
   if (!source?.path) {
     return;
@@ -780,10 +837,29 @@ export function createContentService({
   contentMovieTags,
   contentMovies,
   contentSearch,
+  contentStreaming,
   contentTags,
   tariffService,
   transcoder
 }) {
+  async function overlayStreaming(serialized) {
+    if (!contentStreaming || !serialized?.id) {
+      return serialized;
+    }
+
+    const state = await contentStreaming.loadForContent(serialized.id);
+    return applyStreamingStateToSerialized(serialized, state);
+  }
+
+  async function overlayStreamingMany(list) {
+    if (!contentStreaming || !Array.isArray(list) || list.length === 0) {
+      return list;
+    }
+
+    const byId = await contentStreaming.loadForContents(list.map((item) => item?.id));
+    return list.map((item) => applyStreamingStateToSerialized(item, item?.id ? byId.get(item.id) : null));
+  }
+
   function ownerIdForActor(actor) {
     const ownerId = actorOwnerId(actor);
 
@@ -1349,7 +1425,7 @@ export function createContentService({
       const likeContext = likeContextForActor(actor);
 
       return {
-        movie: await serializeMovie(
+        movie: await overlayStreaming(await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode)
             .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
@@ -1357,7 +1433,7 @@ export function createContentService({
           contentTags,
           contentMovieTags,
           likeContext
-        )
+        ))
       };
     },
 
@@ -1375,12 +1451,12 @@ export function createContentService({
 
       return {
         movie_id: movie.id,
-        series: await Promise.all(
+        series: await overlayStreamingMany(await Promise.all(
           listSeriesRecords(movie)
             .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
             .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item))
             .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
-        )
+        ))
       };
     },
 
@@ -1597,13 +1673,13 @@ export function createContentService({
       const start = (currentPage - 1) * perPage;
       const paginatedMovies = filteredMovies.slice(start, start + perPage);
 
+      const serializedMovies = await overlayStreamingMany(await Promise.all(
+        paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
+      ));
+
       return {
-        movies: await Promise.all(
-          paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
-        ),
-        series: seriesOnly
-          ? await Promise.all(paginatedMovies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext)))
-          : undefined,
+        movies: serializedMovies,
+        series: seriesOnly ? serializedMovies : undefined,
         pagination: {
           page: currentPage,
           limit: perPage,
@@ -1633,9 +1709,9 @@ export function createContentService({
           - (metricValue(left.watch_time_sec) + metricValue(left.series_watch_time_sec))
         ) || String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
         .slice(0, maxItems);
-      const popular = await Promise.all(
+      const popular = await overlayStreamingMany(await Promise.all(
         movies.map((movie) => serializeMovie(movie, [], contentTags, contentMovieTags, likeContext))
-      );
+      ));
 
       return {
         popular,
@@ -1653,7 +1729,7 @@ export function createContentService({
 
       const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
       const likeContext = likeContextForActor(actor);
-      const serializedMovie = await serializeMovie(movieWithTranscode, [], contentTags, contentMovieTags, likeContext);
+      const serializedMovie = await overlayStreaming(await serializeMovie(movieWithTranscode, [], contentTags, contentMovieTags, likeContext));
       const offline = {
         contentId: serializedMovie.id,
         content_id: serializedMovie.id,
