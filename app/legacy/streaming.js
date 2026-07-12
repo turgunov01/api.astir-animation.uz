@@ -422,7 +422,7 @@ export function createLegacyStreaming({ config }) {
     ).catch(() => {});
   }
 
-  async function runProcessing(db, contentId, job) {
+  async function runProcessing(db, contentId, job, { force = false } = {}) {
     const asset = await db.one("SELECT * FROM movie_assets WHERE content_id = $1", [contentId]);
 
     if (!asset?.source_video_path) {
@@ -482,11 +482,31 @@ export function createLegacyStreaming({ config }) {
     }
 
     const output = outputDir(contentId);
-    fs.rmSync(output, { recursive: true, force: true });
-    fs.mkdirSync(path.join(output, "video"), { recursive: true });
-
-    // Video-only renditions.
+    const videoDir = path.join(output, "video");
     const renditions = selectRenditions(videoInfo.height);
+
+    // Audio/subtitle-only re-uploads must not re-encode the video. Reuse the
+    // existing rendition ladder when the source video is unchanged and every
+    // rendition playlist is still on disk; only audio/subtitles/master rebuild.
+    // `force` (the standalone reprocess endpoint) always re-encodes.
+    const videoUnchanged = Boolean(asset.rendered_video_path)
+      && asset.rendered_video_path === asset.source_video_path;
+    const renditionsOnDisk = renditions.length > 0
+      && renditions.every((profile) => fs.existsSync(path.join(videoDir, `${profile.label}.m3u8`)));
+    const reuseVideo = !force && videoUnchanged && renditionsOnDisk;
+
+    if (reuseVideo) {
+      // Preserve output/video/*; only the audio/subtitle/master parts are rebuilt.
+      fs.rmSync(path.join(output, "audio"), { recursive: true, force: true });
+      fs.rmSync(path.join(output, "subtitles"), { recursive: true, force: true });
+      fs.rmSync(path.join(output, "master.m3u8"), { force: true });
+    } else {
+      fs.rmSync(output, { recursive: true, force: true });
+    }
+
+    fs.mkdirSync(videoDir, { recursive: true });
+
+    // Video-only renditions (encode skipped when reusing an unchanged source video).
     const renditionEntries = [];
 
     for (const profile of renditions) {
@@ -494,17 +514,23 @@ export function createLegacyStreaming({ config }) {
         return;
       }
 
-      const playlistPath = path.join(output, "video", `${profile.label}.m3u8`);
-      const segmentPattern = path.join(output, "video", `${profile.label}_%03d.ts`);
-      await runFfmpeg(job, videoArgs(sourceVideoAbs, profile, playlistPath, segmentPattern));
+      const playlistPath = path.join(videoDir, `${profile.label}.m3u8`);
+      const segmentPattern = path.join(videoDir, `${profile.label}_%03d.ts`);
+
+      if (!reuseVideo) {
+        await runFfmpeg(job, videoArgs(sourceVideoAbs, profile, playlistPath, segmentPattern));
+      }
 
       renditionEntries.push({
+        quality: profile.quality,
         label: profile.label,
         width: profile.width,
         height: profile.height,
+        bitrate: profile.videoBitrate,
         bandwidth: profile.bandwidth,
         averageBandwidth: profile.averageBandwidth,
-        playlistFile: `video/${profile.label}.m3u8`
+        playlistFile: `video/${profile.label}.m3u8`,
+        playlistUrl: publicPath(legacyRelative(playlistPath))
       });
     }
 
@@ -582,15 +608,28 @@ export function createLegacyStreaming({ config }) {
 
     const masterRel = legacyRelative(masterPath);
 
+    // Video quality ladder persisted so the content API can surface
+    // playback.qualities / playback.renditions without parsing master.m3u8.
+    const renditionsForDb = renditionEntries.map((entry) => ({
+      quality: entry.quality,
+      label: entry.label,
+      width: entry.width,
+      height: entry.height,
+      bitrate: entry.bitrate,
+      bandwidth: entry.bandwidth,
+      url: entry.playlistUrl
+    }));
+
     // Persist results.
     await db.query(
       `
         UPDATE movie_assets
         SET status = 'ready', processing_error = NULL,
-            hls_master_path = $2, hls_master_url = $3, duration_seconds = $4
+            hls_master_path = $2, hls_master_url = $3, duration_seconds = $4,
+            renditions = $5, rendered_video_path = $6
         WHERE content_id = $1
       `,
-      [contentId, masterRel, publicPath(masterRel), Math.round(videoInfo.duration)]
+      [contentId, masterRel, publicPath(masterRel), Math.round(videoInfo.duration), JSON.stringify(renditionsForDb), asset.source_video_path]
     );
 
     for (const entry of audioEntries) {
@@ -624,7 +663,7 @@ export function createLegacyStreaming({ config }) {
     runtimeJobs.delete(contentId);
   }
 
-  async function startProcessing(db, contentId) {
+  async function startProcessing(db, contentId, { force = false } = {}) {
     const asset = await db.one("SELECT * FROM movie_assets WHERE content_id = $1", [contentId]);
 
     if (!asset) {
@@ -651,7 +690,7 @@ export function createLegacyStreaming({ config }) {
     runtimeJobs.set(contentId, job);
 
     setImmediate(() => {
-      runProcessing(db, contentId, job)
+      runProcessing(db, contentId, job, { force })
         .catch((error) => {
           if (!job.cancelled) {
             return markFailed(db, contentId, error.message);

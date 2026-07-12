@@ -272,6 +272,13 @@ function applyStreamingStateToSerialized(serialized, state) {
   const durationSeconds = state.durationSeconds || serialized.duration_sec || 0;
   const durationMinutes = durationSeconds > 0 ? Math.ceil(durationSeconds / 60) : serialized.duration_minutes;
   const existingQualities = serialized.playback?.qualities?.filter((quality) => quality !== "auto") || [];
+  const streamingRenditions = serializeRenditions(state.renditions || []);
+  const overlayRenditions = streamingRenditions.length > 0
+    ? streamingRenditions
+    : (serialized.playback?.renditions || []);
+  const overlayQualities = streamingRenditions.length > 0
+    ? streamingRenditions.map((rendition) => rendition.quality).filter(Boolean)
+    : existingQualities;
 
   return {
     ...serialized,
@@ -303,7 +310,8 @@ function applyStreamingStateToSerialized(serialized, state) {
       status: state.status || serialized.playback?.status,
       hls_url: hlsUrl,
       auto_url: hlsUrl,
-      qualities: hlsUrl ? ["auto", ...existingQualities] : serialized.playback?.qualities,
+      qualities: hlsUrl ? ["auto", ...overlayQualities] : serialized.playback?.qualities,
+      renditions: overlayRenditions,
       error: state.processingError || serialized.playback?.error
     }
   };

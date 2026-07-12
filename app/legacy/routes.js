@@ -3661,7 +3661,7 @@ export function createLegacyRoutes({
   }));
 
   router.post(streamingReprocessPaths, requireAdmin, ensureStreaming, asyncHandler(ensureStreamingContent), asyncHandler(async (request, response) => {
-    await streaming.startProcessing(request.legacyDb, request.params.id);
+    await streaming.startProcessing(request.legacyDb, request.params.id, { force: true });
     const state = await streaming.loadState(request.legacyDb, request.params.id);
     response.status(202).json(streaming.serializeState(state, request));
   }));

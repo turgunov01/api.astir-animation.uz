@@ -24,6 +24,20 @@ function normalizeSubtitle(row) {
   };
 }
 
+// The video quality ladder persisted on movie_assets.renditions (jsonb). node-pg
+// returns jsonb already parsed, so `entry` is a plain object. `playlistUrl` is the
+// field serializeRenditions() in contentService reads.
+function normalizeRendition(entry) {
+  return {
+    quality: entry.quality || (entry.height ? String(entry.height) : ""),
+    label: entry.label || (entry.height ? `${entry.height}p` : ""),
+    width: entry.width || null,
+    height: entry.height || null,
+    bitrate: entry.bitrate || null,
+    playlistUrl: entry.url || entry.playlistUrl || null
+  };
+}
+
 function groupByContent(rows, mapper) {
   const byContent = new Map();
 
@@ -96,6 +110,7 @@ export function createLegacyStreamingState({ db } = {}) {
         defaultAudioLanguage: asset.default_audio_language || defaultTrack?.languageCode || null,
         durationSeconds: Number(asset.duration_seconds) || null,
         processingError: asset.processing_error || null,
+        renditions: Array.isArray(asset.renditions) ? asset.renditions.map(normalizeRendition) : [],
         audioTracks,
         subtitles: subtitlesByContent.get(asset.content_id) || []
       });
