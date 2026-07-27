@@ -399,10 +399,29 @@ async function timeseriesForContent(db, contentId, days) {
     [contentId, interval]
   );
 
+  // Audience retention: bucket each viewer by how far (0-100%) they got, using
+  // their furthest saved position vs the content duration.
+  const retentionBuckets = await db.many(
+    `SELECT bucket, COUNT(*)::int AS viewers
+     FROM (
+       SELECT width_bucket(
+         LEAST(GREATEST(wp.position_sec::float / NULLIF(c.duration_sec, 0), 0), 0.9999),
+         0, 1, 10
+       ) AS bucket
+       FROM watch_progress wp
+       JOIN content c ON c.id = wp.content_id
+       WHERE wp.content_id = $1 AND c.duration_sec > 0
+     ) t
+     GROUP BY bucket
+     ORDER BY bucket`,
+    [contentId]
+  );
+
   return {
     views_by_day: viewsByDay,
     comments_by_day: commentsByDay,
-    reactions_by_day: reactionsByDay
+    reactions_by_day: reactionsByDay,
+    retention_buckets: retentionBuckets
   };
 }
 
