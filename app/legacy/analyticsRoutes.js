@@ -354,6 +354,58 @@ async function reactionStatus(db, userId, target, options = {}) {
   };
 }
 
+function clampDays(value) {
+  const days = Math.round(Number(value) || 30);
+  if (!Number.isFinite(days)) {
+    return 30;
+  }
+
+  return Math.min(Math.max(days, 1), 365);
+}
+
+// Daily time-series for one content id, aggregated from the postgres event tables.
+async function timeseriesForContent(db, contentId, days) {
+  const interval = `${days} days`;
+
+  const viewsByDay = await db.many(
+    `SELECT to_char(date_trunc('day', watched_at), 'YYYY-MM-DD') AS day,
+            COUNT(*)::int AS views,
+            COUNT(DISTINCT viewer_id)::int AS viewers
+     FROM watch_history
+     WHERE content_id = $1 AND watched_at >= now() - $2::interval
+     GROUP BY 1
+     ORDER BY 1`,
+    [contentId, interval]
+  );
+
+  const commentsByDay = await db.many(
+    `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+            COUNT(*)::int AS comments
+     FROM comments
+     WHERE content_id = $1 AND created_at >= now() - $2::interval
+     GROUP BY 1
+     ORDER BY 1`,
+    [contentId, interval]
+  );
+
+  const reactionsByDay = await db.many(
+    `SELECT to_char(date_trunc('day', updated_at), 'YYYY-MM-DD') AS day,
+            COUNT(*) FILTER (WHERE reaction = 'like')::int AS likes,
+            COUNT(*) FILTER (WHERE reaction = 'dislike')::int AS dislikes
+     FROM content_reactions
+     WHERE target_id = $1 AND updated_at >= now() - $2::interval
+     GROUP BY 1
+     ORDER BY 1`,
+    [contentId, interval]
+  );
+
+  return {
+    views_by_day: viewsByDay,
+    comments_by_day: commentsByDay,
+    reactions_by_day: reactionsByDay
+  };
+}
+
 export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null } = {}) {
   const router = Router();
   const analyticsOptions = { contentMovies, contentReactions };
@@ -393,6 +445,19 @@ export function createAnalyticsRoutes({ contentMovies = null, contentReactions =
     const target = await resolveReactionTarget(request.legacyDb, request.params.content_id, requestedTargetType(request), analyticsOptions);
 
     response.json(await statisticsForTarget(request.legacyDb, target, analyticsOptions));
+  }));
+
+  router.get("/statistics/:content_id/timeseries", asyncHandler(async (request, response) => {
+    const id = request.params.content_id;
+
+    if (!isUuid(id)) {
+      throw legacyError(404, "content_not_found", "content not found");
+    }
+
+    const days = clampDays(request.query.days);
+    const series = await timeseriesForContent(request.legacyDb, id, days);
+
+    response.json({ range_days: days, ...series });
   }));
 
   router.use(legacyErrorMiddleware);
