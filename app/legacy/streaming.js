@@ -780,7 +780,27 @@ export function createLegacyStreaming({ config }) {
     return asset.hls_master_path;
   }
 
-  async function detachAudioTrack(db, contentId, language, { force = false } = {}) {
+  // Hard-delete every streaming asset of a movie: rows, generated HLS output and
+  // the uploaded sources (video included). Nothing here is recoverable.
+  async function purgeStreamingAssets(db, contentId) {
+    cancel(contentId);
+
+    await db.transaction(async (client) => {
+      await client.query("DELETE FROM movie_audio_tracks WHERE content_id = $1", [contentId]);
+      await client.query("DELETE FROM movie_subtitles WHERE content_id = $1", [contentId]);
+      await client.query("DELETE FROM movie_assets WHERE content_id = $1", [contentId]);
+      // Only clear the pointer when it referenced the tree being deleted; a source
+      // uploaded through the older single-file pipeline stays untouched.
+      await client.query(
+        "UPDATE content SET source_path = NULL WHERE id = $1 AND source_path LIKE $2",
+        [contentId, `streaming/${contentId}/%`]
+      );
+    });
+
+    removeInsideContentDir(contentId, contentDir(contentId));
+  }
+
+  async function detachAudioTrack(db, contentId, language) {
     const languageCode = normalizeLanguage(language);
 
     if (!languageCode) {
@@ -791,12 +811,6 @@ export function createLegacyStreaming({ config }) {
 
     if (!asset) {
       throw legacyError(404, "streaming_assets_not_found", "no streaming assets uploaded for this content");
-    }
-
-    // A running job rewrites master.m3u8 and every audio playlist at the end, so
-    // removing a track underneath it would silently resurrect the track.
-    if (asset.status === "processing" || runtimeJobs.has(contentId)) {
-      throw legacyError(409, "audio_track_processing", "content is still processing; retry once it is ready");
     }
 
     const tracks = await db.many(
@@ -810,13 +824,19 @@ export function createLegacyStreaming({ config }) {
     }
 
     // Video renditions are encoded with -an, so the last audio track is the only
-    // sound left; dropping it silently would be a surprise.
-    if (tracks.length === 1 && !force) {
-      throw legacyError(
-        409,
-        "last_audio_track",
-        "this is the only audio track; playback would be silent — pass force=true to remove it anyway"
-      );
+    // sound left: a movie without it cannot be played. Drop the whole asset set
+    // (video included) instead of leaving a silent leftover behind. Safe mid-flight
+    // too — the purge cancels the running job first.
+    if (tracks.length === 1) {
+      await purgeStreamingAssets(db, contentId);
+
+      return { state: await loadState(db, contentId), wiped: true };
+    }
+
+    // A partial detach cannot race the pipeline: a finishing job rewrites
+    // master.m3u8 and every audio playlist, which would resurrect the track.
+    if (asset.status === "processing" || runtimeJobs.has(contentId)) {
+      throw legacyError(409, "audio_track_processing", "content is still processing; retry once it is ready");
     }
 
     await db.transaction(async (client) => {
@@ -835,7 +855,7 @@ export function createLegacyStreaming({ config }) {
     removeAudioTrackFiles(contentId, track);
     await rebuildMasterPlaylist(db, contentId);
 
-    return await loadState(db, contentId);
+    return { state: await loadState(db, contentId), wiped: false };
   }
 
   async function loadState(db, contentId) {
@@ -881,6 +901,7 @@ export function createLegacyStreaming({ config }) {
     ingest,
     startProcessing,
     detachAudioTrack,
+    purgeStreamingAssets,
     rebuildMasterPlaylist,
     loadState,
     serializeState,

@@ -203,13 +203,33 @@ function createDetachFixture({ status = "ready", tracks } = {}) {
       { id: "track-ru", content_id: contentId, language_code: "ru", label: "Russian", is_default: true, source_audio_path: `streaming/${contentId}/source/audio_ru.mp3` },
       { id: "track-uz", content_id: contentId, language_code: "uz", label: "Uzbek", is_default: false, source_audio_path: `streaming/${contentId}/source/audio_uz.mp3` }
     ],
-    queries: []
+    queries: [],
+    contentSourceCleared: false
   };
 
   function run(sql, values) {
     state.queries.push({ sql, values });
 
-    if (/DELETE FROM movie_audio_tracks/.test(sql)) {
+    if (/DELETE FROM movie_audio_tracks WHERE content_id/.test(sql)) {
+      state.tracks = [];
+      return { rows: [] };
+    }
+
+    if (/DELETE FROM movie_subtitles/.test(sql)) {
+      return { rows: [] };
+    }
+
+    if (/DELETE FROM movie_assets/.test(sql)) {
+      state.asset = null;
+      return { rows: [] };
+    }
+
+    if (/UPDATE content SET source_path = NULL/.test(sql)) {
+      state.contentSourceCleared = true;
+      return { rows: [] };
+    }
+
+    if (/DELETE FROM movie_audio_tracks WHERE id/.test(sql)) {
       state.tracks = state.tracks.filter((track) => track.id !== values[0]);
       return { rows: [] };
     }
@@ -273,8 +293,9 @@ function createDetachFixture({ status = "ready", tracks } = {}) {
 await check("detachAudioTrack removes the row, its files, and rewrites the master playlist", async () => {
   const fixture = createDetachFixture();
 
-  const result = await fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru");
+  const { state: result, wiped } = await fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru");
 
+  assert.equal(wiped, false);
   assert.deepEqual(fixture.state.tracks.map((track) => track.language_code), ["uz"]);
   assert.equal(fs.existsSync(path.join(fixture.hlsRoot, "audio", "ru")), false);
   assert.equal(fs.existsSync(path.join(fixture.contentRoot, "source", "audio_ru.mp3")), false);
@@ -301,26 +322,42 @@ await check("detachAudioTrack rejects an unknown language with 404", async () =>
   );
 });
 
-await check("detachAudioTrack refuses to strip the last track unless forced", async () => {
-  const soleTrack = [
-    { id: "track-ru", content_id: "movie-detach", language_code: "ru", label: "Russian", is_default: true, source_audio_path: "streaming/movie-detach/source/audio_ru.mp3" }
-  ];
+// A movie whose only audio track is gone cannot be played at all (video renditions
+// are encoded with -an), so the whole asset set goes with it — no prompt, no leftovers.
+await check("detaching the last track hard-deletes video and every other asset", async () => {
+  const fixture = createDetachFixture({
+    tracks: [
+      { id: "track-ru", content_id: "movie-detach", language_code: "ru", label: "Russian", is_default: true, source_audio_path: "streaming/movie-detach/source/audio_ru.mp3" }
+    ]
+  });
 
-  const guarded = createDetachFixture({ tracks: soleTrack.map((track) => ({ ...track })) });
-  await assert.rejects(
-    () => guarded.service.detachAudioTrack(guarded.db, guarded.contentId, "ru"),
-    (error) => error.statusCode === 409 && error.error === "last_audio_track"
-  );
-  assert.equal(guarded.state.tracks.length, 1);
+  const { state: result, wiped } = await fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru");
 
-  // Video renditions carry no audio (-an), so force leaves silent playback on purpose.
-  const forced = createDetachFixture({ tracks: soleTrack.map((track) => ({ ...track })) });
-  const result = await forced.service.detachAudioTrack(forced.db, forced.contentId, "ru", { force: true });
+  assert.equal(wiped, true);
+  assert.equal(fixture.state.tracks.length, 0);
+  assert.equal(fixture.state.asset, null);
+  assert.equal(fixture.state.contentSourceCleared, true);
+  // Video source, audio sources and the generated HLS tree are all gone.
+  assert.equal(fs.existsSync(fixture.contentRoot), false);
   assert.equal(result.audioTracks.length, 0);
-  assert.doesNotMatch(fs.readFileSync(path.join(forced.hlsRoot, "master.m3u8"), "utf8"), /#EXT-X-MEDIA/);
+  assert.equal(result.asset, null);
 });
 
-await check("detachAudioTrack refuses to run while the content is processing", async () => {
+await check("purgeStreamingAssets drops every row and the whole media directory", async () => {
+  const fixture = createDetachFixture();
+
+  await fixture.service.purgeStreamingAssets(fixture.db, fixture.contentId);
+
+  assert.equal(fixture.state.tracks.length, 0);
+  assert.equal(fixture.state.asset, null);
+  assert.equal(fs.existsSync(fixture.contentRoot), false);
+
+  const purgeQueries = fixture.state.queries.map((query) => query.sql).join("\n");
+  assert.match(purgeQueries, /DELETE FROM movie_subtitles WHERE content_id/);
+  assert.match(purgeQueries, /DELETE FROM movie_assets WHERE content_id/);
+});
+
+await check("a partial detach still refuses to race a running job", async () => {
   const fixture = createDetachFixture({ status: "processing" });
 
   await assert.rejects(
@@ -328,6 +365,21 @@ await check("detachAudioTrack refuses to run while the content is processing", a
     (error) => error.statusCode === 409 && error.error === "audio_track_processing"
   );
   assert.equal(fixture.state.tracks.length, 2);
+});
+
+// The purge cancels the job first, so wiping everything never has to wait.
+await check("wiping the last track works even while processing", async () => {
+  const fixture = createDetachFixture({
+    status: "processing",
+    tracks: [
+      { id: "track-ru", content_id: "movie-detach", language_code: "ru", label: "Russian", is_default: true, source_audio_path: "streaming/movie-detach/source/audio_ru.mp3" }
+    ]
+  });
+
+  const { wiped } = await fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru");
+
+  assert.equal(wiped, true);
+  assert.equal(fs.existsSync(fixture.contentRoot), false);
 });
 
 console.log(`\n${passed} checks passed`);

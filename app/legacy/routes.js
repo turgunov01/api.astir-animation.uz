@@ -3665,17 +3665,31 @@ export function createLegacyRoutes({
   }));
 
   // Detach one language from an already ingested movie. The master playlist is
-  // rewritten in place, so no re-encoding is triggered.
+  // rewritten in place, so no re-encoding is triggered. Removing the last track
+  // hard-deletes the whole asset set (video included) — see detachAudioTrack.
   router.delete(streamingAudioPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
-    const force = String(firstQueryValue(request.query.force) || "").toLowerCase() === "true";
-    const state = await streaming.detachAudioTrack(
+    const result = await streaming.detachAudioTrack(
       request.legacyDb,
       request.params.id,
-      request.params.language,
-      { force }
+      request.params.language
     );
 
-    response.json(streaming.serializeState(state, request));
+    response.json({
+      ...streaming.serializeState(result.state, request),
+      wiped: result.wiped
+    });
+  }));
+
+  // Hard-delete every streaming asset at once: video, audio tracks, subtitles,
+  // generated HLS output and the DB rows.
+  router.delete(streamingAssetsPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+    cancelLegacyTranscode(request.params.id);
+    await streaming.purgeStreamingAssets(request.legacyDb, request.params.id);
+
+    response.json({
+      ...streaming.serializeState(await streaming.loadState(request.legacyDb, request.params.id), request),
+      wiped: true
+    });
   }));
 
   router.post(streamingReprocessPaths, requireAdmin, ensureStreaming, asyncHandler(ensureStreamingContent), asyncHandler(async (request, response) => {

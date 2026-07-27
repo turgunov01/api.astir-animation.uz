@@ -79,18 +79,27 @@ Returns `streamingStatus`, `hlsUrl`, `defaultAudioLanguage`, `audioTracks[]`,
 ### `POST /api/v1/content/:id/streaming-assets/reprocess`
 Re-runs processing from the stored source files.
 
-### `DELETE /api/v1/content/:id/streaming-assets/audio/:language` — detach one track
+### `DELETE /api/v1/content/:id/streaming-assets/audio/:language` — delete one track
 Removes the `movie_audio_tracks` row, its uploaded source, and its generated HLS
 playlist, then rewrites `master.m3u8` **without FFmpeg** — the rendition ladder is
 read back from `movie_assets.renditions` and the video playlists are left untouched.
-Returns **`200`** with the same body as `GET …/streaming-assets`.
+Returns **`200`** with the same body as `GET …/streaming-assets` plus `wiped`.
 
-- Removing the default track promotes the oldest survivor to default.
+- Removing the default track promotes the oldest survivor to default (`wiped: false`).
+- **Removing the last track deletes everything** (`wiped: true`): video renditions are
+  encoded with `-an`, so a movie without audio cannot be played. The whole asset set is
+  hard-deleted — same effect as the purge endpoint below. No confirmation, no `force`.
 - `404 audio_track_not_found` — the content has no such language.
-- `409 audio_track_processing` — processing is running; a finishing job would
-  rewrite the manifest and resurrect the track. Retry once status is `ready`.
-- `409 last_audio_track` — the only remaining track. Video renditions are encoded
-  with `-an`, so removing it leaves silent playback; pass `?force=true` to confirm.
+- `409 audio_track_processing` — a **partial** delete cannot race the pipeline: a
+  finishing job rewrites the manifest and would resurrect the track. Retry once the
+  status is `ready`. A full wipe is always allowed — it cancels the job first.
+
+### `DELETE /api/v1/content/:id/streaming-assets` — hard-delete every asset
+Cancels any running job, deletes the `movie_assets`, `movie_audio_tracks` and
+`movie_subtitles` rows, removes `media/legacy/streaming/<id>/` in full (uploaded video,
+audio sources, generated HLS), and clears `content.source_path` when it pointed inside
+that tree. Returns **`200`** with an empty state and `wiped: true`. Not recoverable —
+re-uploading is the only way back. `content.status` and the poster are left untouched.
 
 ### Public: `GET /api/v1/content/:id` (existing endpoint, extended)
 Now also includes:
@@ -166,11 +175,17 @@ curl "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets" \
 curl -X POST "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets/reprocess" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 
-# 6. Detach one audio track (master.m3u8 is rewritten immediately, no re-encode)
+# 6. Delete one audio track (master.m3u8 is rewritten immediately, no re-encode)
 curl -X DELETE "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets/audio/en" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
-# -> 200 with the remaining audioTracks[]
-# 409 last_audio_track when it is the only track; repeat with ?force=true to accept silent video
+# -> 200 {"wiped": false, "audioTracks": [...остальные]}
+# -> 200 {"wiped": true, "audioTracks": []} when it was the last track: video and
+#    every other asset are hard-deleted with it
+
+# 7. Hard-delete everything at once
+curl -X DELETE "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# -> 200 {"wiped": true, "streamingStatus": null}
 ```
 
 ## 8. Verify the generated HLS
