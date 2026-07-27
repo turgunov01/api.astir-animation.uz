@@ -10,6 +10,7 @@ import { createContainer } from "./bootstrap/createContainer.js";
 import { createAnalyticsRoutes } from "./legacy/analyticsRoutes.js";
 import { createLegacyDb, requireLegacyDb } from "./legacy/db.js";
 import { createLegacyMedia } from "./legacy/media.js";
+import { createMediaThumbnailHandler } from "./legacy/mediaThumbnails.js";
 import { createLegacyRoutes } from "./legacy/routes.js";
 import { createLegacyStreaming } from "./legacy/streaming.js";
 import { createLegacySwaggerForRequest } from "./legacy/swagger.js";
@@ -97,6 +98,13 @@ export function createApp({ container = createContainer() } = {}) {
   app.use("/media", express.static(path.resolve(container.config.mediaRoot), {
     dotfiles: "deny",
     index: false
+  }));
+
+  // On-demand cached thumbnails for /media images (posters) so list views load
+  // small images instead of full-resolution originals.
+  app.use("/media-thumb", createMediaThumbnailHandler({
+    mediaRoot: container.config.mediaRoot,
+    ffmpegPath: container.config.ffmpegPath
   }));
 
   const legacyRoutes = createLegacyRoutes({
