@@ -76,7 +76,9 @@ export function createMediaThumbnailHandler({ mediaRoot, ffmpegPath = "ffmpeg" }
       const width = clampWidth(request.query.w);
       const cachePath = path.join(cacheRoot, String(width), `${relativePath}.jpg`);
 
-      response.setHeader("Cache-Control", "public, max-age=86400");
+      // Thumbnails are derived from immutable source paths, so cache hard: repeat
+      // views and pagination become instant with no revalidation.
+      response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
 
       if (!fs.existsSync(cachePath)) {
         if (!fs.existsSync(source)) {
