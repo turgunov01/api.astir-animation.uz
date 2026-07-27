@@ -31,17 +31,6 @@ function isLegacySuperAdminPayload(payload) {
   return payload.kind === "user" && payload.role === superAdminRole && Boolean(payload.user_id || payload.sub);
 }
 
-function legacySuperAdminParent(payload) {
-  return {
-    id: payload.user_id || payload.sub,
-    name: payload.name || "Super Admin",
-    email: payload.email || "",
-    role: superAdminRole,
-    tariff: "premium",
-    active: true
-  };
-}
-
 export function createAuthMiddleware({ children, config, devices, parents, watchLimits }) {
   let localContext = null;
 
@@ -67,6 +56,23 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
 
   function isLegacyParentPayload(payload) {
     return payload.kind === "user" && payload.role === "parent" && Boolean(legacyUserId(payload));
+  }
+
+  // A super_admin claim in the token is never trusted on its own. Resolve the
+  // account from the database and confirm its persisted role/active flag before
+  // granting admin privileges. Returns null when the claim cannot be verified.
+  async function resolveVerifiedSuperAdmin(payload) {
+    const id = firstValue(payload.user_id, payload.sub);
+    if (!id) {
+      return null;
+    }
+
+    const parent = await parents.findById(id);
+    if (!parent || parent.role !== superAdminRole || parent.active === false) {
+      return null;
+    }
+
+    return { ...parent, role: superAdminRole, tariff: parent.tariff || "premium" };
   }
 
   async function normalizeDevice(device, payload = {}) {
@@ -220,7 +226,13 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       const { payload } = verifyRequestToken(request);
 
       if (isLegacySuperAdminPayload(payload)) {
-        request.parent = legacySuperAdminParent(payload);
+        const superAdmin = await resolveVerifiedSuperAdmin(payload);
+
+        if (!superAdmin) {
+          throw unauthorized("Super admin account is not valid");
+        }
+
+        request.parent = superAdmin;
         next();
         return;
       }
@@ -321,7 +333,11 @@ export function createAuthMiddleware({ children, config, devices, parents, watch
       }
 
       if (isLegacySuperAdminPayload(payload)) {
-        const parent = legacySuperAdminParent(payload);
+        const parent = await resolveVerifiedSuperAdmin(payload);
+
+        if (!parent) {
+          throw unauthorized("Super admin account is not valid");
+        }
 
         request.parent = parent;
         request.actor = { type: "parent", parent };

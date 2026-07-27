@@ -9,7 +9,7 @@ export function signParentToken(parent) {
       parentId: parent.id
     },
     config.jwtSecret,
-    { expiresIn: config.parentTokenTtl }
+    { expiresIn: config.parentTokenTtl, algorithm: "HS256" }
   );
 }
 
@@ -26,10 +26,10 @@ export function signDeviceToken(device) {
       childId
     },
     config.jwtSecret,
-    { expiresIn: config.deviceTokenTtl }
+    { expiresIn: config.deviceTokenTtl, algorithm: "HS256" }
   );
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, config.jwtSecret);
+  return jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] });
 }

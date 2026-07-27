@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 
+// Hard cap on how many items any content-list request may return in one page.
+// Stops a client from pulling the whole catalog in a single heavy response;
+// callers must page through with page/limit instead.
+const MAX_PAGE_LIMIT = 100;
+
 const catalog = [
   {
     id: "bluey-001",
@@ -1656,7 +1661,7 @@ export function createContentService({
       const categoryValues = categoryFilterValues(contentCategories, category);
       const filterTagIds = await tagFilterIds(contentTags, tags);
       const currentPage = Math.max(Number(page) || 1, 1);
-      const perPage = Math.max(Number(limit) || 20, 1);
+      const perPage = Math.min(Math.max(Number(limit) || 20, 1), MAX_PAGE_LIMIT);
       const seriesOnly = normalized(kind) === "series";
 
       const movieRows = await Promise.all(
@@ -1704,7 +1709,7 @@ export function createContentService({
 
       const likeContext = likeContextForActor(actor);
       const adminActor = isAdminActor(actor);
-      const maxItems = Math.max(Number(limit) || 20, 1);
+      const maxItems = Math.min(Math.max(Number(limit) || 20, 1), MAX_PAGE_LIMIT);
       const movies = contentMovies.list()
         .filter((movie) => !isSeriesMovie(movie))
         .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))

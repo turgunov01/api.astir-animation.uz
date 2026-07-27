@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import { config } from "../config.js";
 import { hashSecret, verifySecret } from "../lib/security.js";
 import {
   legacyError,
@@ -15,7 +16,8 @@ const refreshTtlSeconds = 30 * 24 * 60 * 60;
 const deviceTtlSeconds = 365 * 24 * 60 * 60;
 
 function jwtSecret() {
-  return process.env.JWT_SECRET || "astir-local-development-secret";
+  // Single source of truth. config.js validates strength / fails fast in production.
+  return config.jwtSecret;
 }
 
 function envList(...names) {
@@ -216,7 +218,8 @@ export async function createOtp(db, email, purpose = "login") {
   return {
     email,
     expires_at: expiresAt,
-    debug_code: process.env.LEGACY_OTP_DEBUG === "true" ? code : ""
+    // Never leak the OTP in a response in production, regardless of this flag.
+    debug_code: (!config.isProduction && process.env.LEGACY_OTP_DEBUG === "true") ? code : ""
   };
 }
 
@@ -247,7 +250,7 @@ export async function authenticateRequest(request) {
   let payload;
 
   try {
-    payload = jwt.verify(token, jwtSecret());
+    payload = jwt.verify(token, jwtSecret(), { algorithms: ["HS256"] });
   } catch {
     throw legacyError(401, "unauthorized", "invalid or expired token");
   }
@@ -424,7 +427,7 @@ export async function refreshTokenPair(db, refreshToken) {
   let payload;
 
   try {
-    payload = jwt.verify(refreshToken, jwtSecret());
+    payload = jwt.verify(refreshToken, jwtSecret(), { algorithms: ["HS256"] });
   } catch {
     throw legacyError(401, "invalid credentials", "invalid credentials");
   }

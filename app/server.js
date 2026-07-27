@@ -2,7 +2,10 @@ import http from "node:http";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
+import { assertSecureConfig } from "./config.js";
 import { createContainer } from "./bootstrap/createContainer.js";
 import { createAnalyticsRoutes } from "./legacy/analyticsRoutes.js";
 import { createLegacyDb, requireLegacyDb } from "./legacy/db.js";
@@ -20,13 +23,48 @@ import { createSwaggerIndexPage } from "./swagger/indexPage.js";
 import { swaggerScopes } from "./swagger/scopedDocs.js";
 import { createSwaggerUiOptions } from "./swagger/uiTheme.js";
 
+function buildCors(appConfig) {
+  const allowList = appConfig.cors?.origins || [];
+
+  if (allowList.length === 0) {
+    // No allow-list configured: keep the previous permissive behaviour so nothing
+    // breaks in dev. assertSecureConfig() warns about this in production.
+    return cors();
+  }
+
+  return cors({
+    origin(origin, callback) {
+      // Allow non-browser clients (no Origin header) and allow-listed origins only.
+      if (!origin || allowList.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Origin not allowed by CORS"));
+    },
+    credentials: true
+  });
+}
+
 export function createApp({ container = createContainer() } = {}) {
+  // Fail fast on an insecure production configuration before serving anything.
+  assertSecureConfig();
+
   const app = express();
 
+  // Trust the nginx reverse proxy so req.ip is the real client (needed for
+  // correct per-client rate limiting and TLS awareness).
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use(requestContext);
   app.use(requestLogger);
-  app.use(cors());
+  app.use(helmet({
+    // Swagger UI (inline assets) and cross-origin media need these relaxed;
+    // the other helmet defaults (HSTS, nosniff, frameguard, etc.) stay enabled.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false
+  }));
+  app.use(buildCors(container.config));
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: false }));
 
@@ -52,7 +90,14 @@ export function createApp({ container = createContainer() } = {}) {
     response.json(createLegacySwaggerForRequest(request));
   });
 
-  app.use("/media", express.static(path.resolve(container.config.mediaRoot)));
+  // NOTE: this serves the whole media root as open static. The HMAC signed-URL
+  // scheme in legacy/media.js is not enforced here yet — enabling that is a
+  // follow-up that requires coordinated client changes (see security/findings.md #4).
+  // Hardening applied now: no dotfiles, no directory index.
+  app.use("/media", express.static(path.resolve(container.config.mediaRoot), {
+    dotfiles: "deny",
+    index: false
+  }));
 
   const legacyRoutes = createLegacyRoutes({
     childContentBlacklist: container.repositories.childContentBlacklist,
@@ -119,6 +164,24 @@ export function createApp({ container = createContainer() } = {}) {
       swaggerUi.setup(scope.document, scopedSwaggerOptions)
     );
   }
+
+  // Brute-force / abuse protection on the sensitive auth surfaces. Payment
+  // callbacks are intentionally NOT limited (provider retries must get through).
+  const authRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const otpRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+
+  app.use(["/v1/auth/otp", "/api/v1/auth/otp"], otpRateLimiter);
+  app.use(["/v1/auth", "/api/v1/auth"], authRateLimiter);
 
   app.use("/v1", createRoutes({
     controllers: container.controllers,
