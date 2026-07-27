@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
 import { buildMultiAudioMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles.js";
+import { buildMasterPlaylistFromState } from "../lib/masterPlaylist.js";
 import { legacyError } from "./utils.js";
 
 const LANGUAGES = ["uz", "ru", "en"];
@@ -704,6 +705,139 @@ export function createLegacyStreaming({ config }) {
     });
   }
 
+  // ---- Detaching an audio track -------------------------------------------
+
+  function audioFieldForLanguage(language) {
+    return Object.keys(AUDIO_FIELDS).find((field) => AUDIO_FIELDS[field] === language) || null;
+  }
+
+  // Deletion stays inside the content's own directory even if a stored path is
+  // stale or absolute.
+  function removeInsideContentDir(contentId, targetPath) {
+    const root = path.resolve(contentDir(contentId));
+    const target = path.resolve(targetPath);
+
+    if (target !== root && !target.startsWith(root + path.sep)) {
+      return false;
+    }
+
+    fs.rmSync(target, { recursive: true, force: true });
+    return true;
+  }
+
+  function removeAudioTrackFiles(contentId, track) {
+    removeInsideContentDir(contentId, path.join(outputDir(contentId), "audio", track.language_code));
+
+    if (track.source_audio_path) {
+      removeInsideContentDir(contentId, path.resolve(legacyRoot, track.source_audio_path));
+      return;
+    }
+
+    // No stored path: fall back to the deterministic upload name, extension unknown.
+    const field = audioFieldForLanguage(track.language_code);
+
+    if (!field) {
+      return;
+    }
+
+    for (const extension of AUDIO_EXTENSIONS) {
+      removeInsideContentDir(contentId, path.join(sourceDir(contentId), `${field}${extension}`));
+    }
+  }
+
+  // Rewrites master.m3u8 from persisted state — no FFmpeg, the video ladder and
+  // the surviving audio playlists are already on disk.
+  async function rebuildMasterPlaylist(db, contentId) {
+    const asset = await db.one("SELECT * FROM movie_assets WHERE content_id = $1", [contentId]);
+
+    if (!asset?.hls_master_path) {
+      return null;
+    }
+
+    const tracks = await db.many(
+      "SELECT * FROM movie_audio_tracks WHERE content_id = $1 ORDER BY created_at, language_code",
+      [contentId]
+    );
+    const master = buildMasterPlaylistFromState({
+      renditions: asset.renditions,
+      audioTracks: tracks,
+      defaultAudioLanguage: asset.default_audio_language
+        || tracks.find((track) => track.is_default)?.language_code
+        || ""
+    });
+
+    if (!master) {
+      return null;
+    }
+
+    const masterAbs = path.resolve(legacyRoot, asset.hls_master_path);
+
+    if (!fs.existsSync(path.dirname(masterAbs))) {
+      return null;
+    }
+
+    fs.writeFileSync(masterAbs, master);
+    return asset.hls_master_path;
+  }
+
+  async function detachAudioTrack(db, contentId, language, { force = false } = {}) {
+    const languageCode = normalizeLanguage(language);
+
+    if (!languageCode) {
+      throw legacyError(404, "audio_track_not_found", "unknown audio language");
+    }
+
+    const asset = await db.one("SELECT * FROM movie_assets WHERE content_id = $1", [contentId]);
+
+    if (!asset) {
+      throw legacyError(404, "streaming_assets_not_found", "no streaming assets uploaded for this content");
+    }
+
+    // A running job rewrites master.m3u8 and every audio playlist at the end, so
+    // removing a track underneath it would silently resurrect the track.
+    if (asset.status === "processing" || runtimeJobs.has(contentId)) {
+      throw legacyError(409, "audio_track_processing", "content is still processing; retry once it is ready");
+    }
+
+    const tracks = await db.many(
+      "SELECT * FROM movie_audio_tracks WHERE content_id = $1 ORDER BY created_at, language_code",
+      [contentId]
+    );
+    const track = tracks.find((item) => item.language_code === languageCode);
+
+    if (!track) {
+      throw legacyError(404, "audio_track_not_found", `content has no "${languageCode}" audio track`);
+    }
+
+    // Video renditions are encoded with -an, so the last audio track is the only
+    // sound left; dropping it silently would be a surprise.
+    if (tracks.length === 1 && !force) {
+      throw legacyError(
+        409,
+        "last_audio_track",
+        "this is the only audio track; playback would be silent — pass force=true to remove it anyway"
+      );
+    }
+
+    await db.transaction(async (client) => {
+      await client.query("DELETE FROM movie_audio_tracks WHERE id = $1", [track.id]);
+
+      if (asset.default_audio_language === languageCode) {
+        await client.query(
+          "UPDATE movie_assets SET default_audio_language = NULL WHERE content_id = $1",
+          [contentId]
+        );
+      }
+    });
+
+    // Promotes the oldest survivor when the removed track was the default.
+    await applyDefaultAudioLanguage(db, contentId, null);
+    removeAudioTrackFiles(contentId, track);
+    await rebuildMasterPlaylist(db, contentId);
+
+    return await loadState(db, contentId);
+  }
+
   async function loadState(db, contentId) {
     const asset = await db.one("SELECT * FROM movie_assets WHERE content_id = $1", [contentId]);
     const audioTracks = await db.many(
@@ -746,6 +880,8 @@ export function createLegacyStreaming({ config }) {
     upload,
     ingest,
     startProcessing,
+    detachAudioTrack,
+    rebuildMasterPlaylist,
     loadState,
     serializeState,
     cancel

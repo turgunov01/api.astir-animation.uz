@@ -17,7 +17,8 @@ The player receives one `master.m3u8` whose variants share an audio group
 | `migrations/012_streaming_multi_audio.sql` | **New.** `movie_assets`, `movie_audio_tracks`, `movie_subtitles` (FK → `content(id)`) + triggers |
 | `app/lib/hlsProfiles.js` | **Added** `buildMultiAudioMasterPlaylist()` and `avcCodecForHeight()`. Existing `buildHlsMasterPlaylist` untouched |
 | `app/legacy/streaming.js` | **New.** Upload middleware, DB upserts, FFprobe validation, FFmpeg workers, non-blocking job runner, serializers |
-| `app/legacy/routes.js` | **Added** 3 admin endpoints; enriched `GET /content/:id`; delete-time cleanup; `streaming` dependency |
+| `app/legacy/routes.js` | **Added** 4 admin endpoints (upload, status, reprocess, detach audio); enriched `GET /content/:id`; delete-time cleanup; `streaming` dependency |
+| `app/lib/masterPlaylist.js` | **New.** Rebuilds `master.m3u8` from persisted state (no FFmpeg) — used when detaching an audio track |
 | `app/server.js` | Instantiates `createLegacyStreaming` and injects it into `createLegacyRoutes` |
 | `scripts/streaming-assets-test.js` | **New.** Unit smoke test (no DB/FFmpeg needed) |
 
@@ -77,6 +78,19 @@ Returns `streamingStatus`, `hlsUrl`, `defaultAudioLanguage`, `audioTracks[]`,
 
 ### `POST /api/v1/content/:id/streaming-assets/reprocess`
 Re-runs processing from the stored source files.
+
+### `DELETE /api/v1/content/:id/streaming-assets/audio/:language` — detach one track
+Removes the `movie_audio_tracks` row, its uploaded source, and its generated HLS
+playlist, then rewrites `master.m3u8` **without FFmpeg** — the rendition ladder is
+read back from `movie_assets.renditions` and the video playlists are left untouched.
+Returns **`200`** with the same body as `GET …/streaming-assets`.
+
+- Removing the default track promotes the oldest survivor to default.
+- `404 audio_track_not_found` — the content has no such language.
+- `409 audio_track_processing` — processing is running; a finishing job would
+  rewrite the manifest and resurrect the track. Retry once status is `ready`.
+- `409 last_audio_track` — the only remaining track. Video renditions are encoded
+  with `-an`, so removing it leaves silent playback; pass `?force=true` to confirm.
 
 ### Public: `GET /api/v1/content/:id` (existing endpoint, extended)
 Now also includes:
@@ -151,6 +165,12 @@ curl "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets" \
 # 5. Reprocess if needed
 curl -X POST "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets/reprocess" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 6. Detach one audio track (master.m3u8 is rewritten immediately, no re-encode)
+curl -X DELETE "http://127.0.0.1:2048/api/v1/content/$CONTENT_ID/streaming-assets/audio/en" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# -> 200 with the remaining audioTracks[]
+# 409 last_audio_track when it is the only track; repeat with ?force=true to accept silent video
 ```
 
 ## 8. Verify the generated HLS

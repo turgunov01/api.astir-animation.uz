@@ -6,7 +6,11 @@
 //   node scripts/streaming-assets-test.js
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { buildMultiAudioMasterPlaylist } from "../app/lib/hlsProfiles.js";
+import { buildMasterPlaylistFromState } from "../app/lib/masterPlaylist.js";
 import { createLegacyStreaming } from "../app/legacy/streaming.js";
 
 let passed = 0;
@@ -138,6 +142,192 @@ await check("ingest reuses content source_path when no streaming video file is u
   const upsertAsset = queries.find((query) => query.method === "query" && /INSERT INTO movie_assets/.test(query.sql));
   assert.equal(upsertAsset.values[0], contentId);
   assert.equal(upsertAsset.values[1], sourcePath);
+});
+
+// ---- Detaching an audio track -------------------------------------------
+// Rebuilding the master playlist must not need FFmpeg: the rendition ladder is
+// already persisted on movie_assets.renditions and the video playlists stay on disk.
+
+await check("master playlist rebuilds from the persisted rendition ladder", () => {
+  const master = buildMasterPlaylistFromState({
+    renditions: [
+      { quality: "480", label: "480p", width: 854, height: 480, bandwidth: 1700000 },
+      { quality: "720", label: "720p", width: 1280, height: 720, bandwidth: 3300000 }
+    ],
+    audioTracks: [
+      { language_code: "uz", label: "Uzbek", is_default: false },
+      { language_code: "en", label: "English", is_default: true }
+    ],
+    defaultAudioLanguage: "en"
+  });
+
+  assert.equal((master.match(/#EXT-X-MEDIA:TYPE=AUDIO/g) || []).length, 2);
+  assert.doesNotMatch(master, /LANGUAGE="ru"/);
+  assert.match(master, /NAME="English",DEFAULT=YES/);
+  // Variant order and the video playlist references survive the rebuild.
+  assert.match(master, /video\/480p\.m3u8[\s\S]*video\/720p\.m3u8/);
+  // AVERAGE-BANDWIDTH is not persisted per rendition; it comes back from the profile table.
+  assert.match(master, /AVERAGE-BANDWIDTH=2400000/);
+});
+
+await check("master playlist rebuild is skipped when no ladder was rendered yet", () => {
+  assert.equal(buildMasterPlaylistFromState({ renditions: [], audioTracks: [] }), null);
+  assert.equal(buildMasterPlaylistFromState({ renditions: "[]", audioTracks: [] }), null);
+});
+
+function createDetachFixture({ status = "ready", tracks } = {}) {
+  const contentId = "movie-detach";
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "astir-streaming-"));
+  const contentRoot = path.join(root, "legacy", "streaming", contentId);
+  const hlsRoot = path.join(contentRoot, "hls");
+
+  fs.mkdirSync(path.join(hlsRoot, "video"), { recursive: true });
+  fs.mkdirSync(path.join(hlsRoot, "audio", "ru"), { recursive: true });
+  fs.mkdirSync(path.join(hlsRoot, "audio", "uz"), { recursive: true });
+  fs.mkdirSync(path.join(contentRoot, "source"), { recursive: true });
+  fs.writeFileSync(path.join(hlsRoot, "video", "720p.m3u8"), "#EXTM3U\n");
+  fs.writeFileSync(path.join(hlsRoot, "audio", "ru", "index.m3u8"), "#EXTM3U\n");
+  fs.writeFileSync(path.join(hlsRoot, "audio", "uz", "index.m3u8"), "#EXTM3U\n");
+  fs.writeFileSync(path.join(contentRoot, "source", "audio_ru.mp3"), "fake-audio");
+  fs.writeFileSync(path.join(hlsRoot, "master.m3u8"), '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE="ru"\n');
+
+  const state = {
+    asset: {
+      content_id: contentId,
+      status,
+      hls_master_path: `streaming/${contentId}/hls/master.m3u8`,
+      default_audio_language: "ru",
+      renditions: [{ quality: "720", label: "720p", width: 1280, height: 720, bandwidth: 3300000 }]
+    },
+    tracks: tracks || [
+      { id: "track-ru", content_id: contentId, language_code: "ru", label: "Russian", is_default: true, source_audio_path: `streaming/${contentId}/source/audio_ru.mp3` },
+      { id: "track-uz", content_id: contentId, language_code: "uz", label: "Uzbek", is_default: false, source_audio_path: `streaming/${contentId}/source/audio_uz.mp3` }
+    ],
+    queries: []
+  };
+
+  function run(sql, values) {
+    state.queries.push({ sql, values });
+
+    if (/DELETE FROM movie_audio_tracks/.test(sql)) {
+      state.tracks = state.tracks.filter((track) => track.id !== values[0]);
+      return { rows: [] };
+    }
+
+    if (/UPDATE movie_assets SET default_audio_language = NULL/.test(sql)) {
+      state.asset.default_audio_language = null;
+      return { rows: [] };
+    }
+
+    if (/UPDATE movie_audio_tracks SET is_default = true/.test(sql)) {
+      const [first] = state.tracks;
+      if (first) first.is_default = true;
+      return { rows: [] };
+    }
+
+    throw new Error(`unexpected query: ${sql}`);
+  }
+
+  const db = {
+    async one(sql, values) {
+      state.queries.push({ sql, values });
+
+      if (/SELECT 1 FROM movie_audio_tracks/.test(sql)) {
+        return state.tracks.some((track) => track.is_default) ? { exists: 1 } : null;
+      }
+
+      if (/FROM movie_assets/.test(sql)) {
+        return state.asset;
+      }
+
+      throw new Error(`unexpected one query: ${sql}`);
+    },
+    async many(sql, values) {
+      state.queries.push({ sql, values });
+
+      if (/FROM movie_audio_tracks/.test(sql)) {
+        return state.tracks;
+      }
+
+      if (/FROM movie_subtitles/.test(sql)) {
+        return [];
+      }
+
+      throw new Error(`unexpected many query: ${sql}`);
+    },
+    async query(sql, values) {
+      return run(sql, values);
+    },
+    async transaction(work) {
+      return work({ query: async (sql, values) => run(sql, values) });
+    }
+  };
+
+  const service = createLegacyStreaming({
+    config: { mediaRoot: root, maxVideoUploadMb: 2048, ffmpegPath: "ffmpeg", ffprobePath: "ffprobe", transcoderEnabled: true }
+  });
+
+  return { contentId, root, contentRoot, hlsRoot, state, db, service };
+}
+
+await check("detachAudioTrack removes the row, its files, and rewrites the master playlist", async () => {
+  const fixture = createDetachFixture();
+
+  const result = await fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru");
+
+  assert.deepEqual(fixture.state.tracks.map((track) => track.language_code), ["uz"]);
+  assert.equal(fs.existsSync(path.join(fixture.hlsRoot, "audio", "ru")), false);
+  assert.equal(fs.existsSync(path.join(fixture.contentRoot, "source", "audio_ru.mp3")), false);
+  // Untouched neighbours stay in place.
+  assert.equal(fs.existsSync(path.join(fixture.hlsRoot, "audio", "uz", "index.m3u8")), true);
+  assert.equal(fs.existsSync(path.join(fixture.hlsRoot, "video", "720p.m3u8")), true);
+
+  const master = fs.readFileSync(path.join(fixture.hlsRoot, "master.m3u8"), "utf8");
+  assert.doesNotMatch(master, /LANGUAGE="ru"/);
+  assert.match(master, /LANGUAGE="uz"/);
+  assert.match(master, /NAME="Uzbek",DEFAULT=YES/);
+
+  // The removed track was the default, so the survivor is promoted.
+  assert.equal(result.audioTracks[0].language_code, "uz");
+  assert.equal(result.audioTracks[0].is_default, true);
+});
+
+await check("detachAudioTrack rejects an unknown language with 404", async () => {
+  const fixture = createDetachFixture();
+
+  await assert.rejects(
+    () => fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "fr"),
+    (error) => error.statusCode === 404 && error.error === "audio_track_not_found"
+  );
+});
+
+await check("detachAudioTrack refuses to strip the last track unless forced", async () => {
+  const soleTrack = [
+    { id: "track-ru", content_id: "movie-detach", language_code: "ru", label: "Russian", is_default: true, source_audio_path: "streaming/movie-detach/source/audio_ru.mp3" }
+  ];
+
+  const guarded = createDetachFixture({ tracks: soleTrack.map((track) => ({ ...track })) });
+  await assert.rejects(
+    () => guarded.service.detachAudioTrack(guarded.db, guarded.contentId, "ru"),
+    (error) => error.statusCode === 409 && error.error === "last_audio_track"
+  );
+  assert.equal(guarded.state.tracks.length, 1);
+
+  // Video renditions carry no audio (-an), so force leaves silent playback on purpose.
+  const forced = createDetachFixture({ tracks: soleTrack.map((track) => ({ ...track })) });
+  const result = await forced.service.detachAudioTrack(forced.db, forced.contentId, "ru", { force: true });
+  assert.equal(result.audioTracks.length, 0);
+  assert.doesNotMatch(fs.readFileSync(path.join(forced.hlsRoot, "master.m3u8"), "utf8"), /#EXT-X-MEDIA/);
+});
+
+await check("detachAudioTrack refuses to run while the content is processing", async () => {
+  const fixture = createDetachFixture({ status: "processing" });
+
+  await assert.rejects(
+    () => fixture.service.detachAudioTrack(fixture.db, fixture.contentId, "ru"),
+    (error) => error.statusCode === 409 && error.error === "audio_track_processing"
+  );
+  assert.equal(fixture.state.tracks.length, 2);
 });
 
 console.log(`\n${passed} checks passed`);

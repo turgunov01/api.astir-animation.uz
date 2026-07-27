@@ -3647,6 +3647,10 @@ export function createLegacyRoutes({
   // first, matching the poster/tags sub-resources.
   const streamingAssetsPaths = ["/content/:id/streaming-assets", "/content/movies/:id/streaming-assets"];
   const streamingReprocessPaths = ["/content/:id/streaming-assets/reprocess", "/content/movies/:id/streaming-assets/reprocess"];
+  const streamingAudioPaths = [
+    "/content/:id/streaming-assets/audio/:language",
+    "/content/movies/:id/streaming-assets/audio/:language"
+  ];
 
   router.post(streamingAssetsPaths, requireAdmin, ensureStreaming, asyncHandler(ensureStreamingContent), streamingUpload, asyncHandler(async (request, response) => {
     await streaming.ingest(request.legacyDb, request.params.id, request);
@@ -3657,6 +3661,20 @@ export function createLegacyRoutes({
 
   router.get(streamingAssetsPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
     const state = await streaming.loadState(request.legacyDb, request.params.id);
+    response.json(streaming.serializeState(state, request));
+  }));
+
+  // Detach one language from an already ingested movie. The master playlist is
+  // rewritten in place, so no re-encoding is triggered.
+  router.delete(streamingAudioPaths, requireAdmin, ensureStreaming, asyncHandler(async (request, response) => {
+    const force = String(firstQueryValue(request.query.force) || "").toLowerCase() === "true";
+    const state = await streaming.detachAudioTrack(
+      request.legacyDb,
+      request.params.id,
+      request.params.language,
+      { force }
+    );
+
     response.json(streaming.serializeState(state, request));
   }));
 
