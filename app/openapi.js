@@ -5793,21 +5793,12 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
-                description: "snake_case and camelCase field names are both accepted.",
-                required: ["tariff_id", "receipt", "provider_subscription_id"],
+                description: "StoreKit 2. Only the transaction is read from the client; product, tariff and expiry are fetched from the App Store Server API. snake_case and camelCase are both accepted.",
                 properties: {
-                  tariff_id: { type: "string", example: "premium" },
-                  tariffId: { type: "string", description: "Alias for tariff_id.", example: "premium" },
-                  receipt: { type: "string", example: "apple-receipt-data" },
-                  receiptData: { type: "string", description: "Alias for receipt.", example: "apple-receipt-data" },
-                  provider_subscription_id: { type: "string", example: "1000001234567890" },
-                  providerSubscriptionId: { type: "string", description: "Alias for provider_subscription_id.", example: "1000001234567890" },
-                  original_transaction_id: { type: "string", example: "1000001234567890" },
-                  originalTransactionId: { type: "string", description: "Alias for original_transaction_id.", example: "1000001234567890" },
-                  transaction_id: { type: "string", example: "1000001234567891" },
-                  transactionId: { type: "string", description: "Alias for transaction_id.", example: "1000001234567891" },
-                  expires_at: { type: "string", format: "date-time" },
-                  expiresAt: { type: "string", format: "date-time", description: "Alias for expires_at." }
+                  transaction_id: { type: "string", example: "2000000123456789" },
+                  transactionId: { type: "string", description: "Alias for transaction_id." },
+                  signed_transaction: { type: "string", description: "Transaction.jwsRepresentation from StoreKit 2 (used only to read transactionId)." },
+                  signedTransaction: { type: "string", description: "Alias for signed_transaction." }
                 }
               }
             }
@@ -5824,7 +5815,9 @@ export const openApiDocument = {
           },
           400: { $ref: "#/components/responses/BadRequest" },
           401: { $ref: "#/components/responses/Unauthorized" },
-          404: { $ref: "#/components/responses/NotFound" }
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: { $ref: "#/components/responses/Conflict" },
+          503: { description: "Store verification is not configured" }
         }
       }
     },
@@ -5839,19 +5832,13 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
-                description: "snake_case and camelCase field names are both accepted.",
-                required: ["tariff_id", "purchase_token"],
+                description: "Verified against the Google Play Developer API (subscriptionsv2). Tariff and expiry come from Google. snake_case and camelCase are both accepted.",
+                required: ["purchase_token"],
                 properties: {
-                  tariff_id: { type: "string", example: "premium" },
-                  tariffId: { type: "string", description: "Alias for tariff_id.", example: "premium" },
                   purchase_token: { type: "string", example: "google-purchase-token" },
-                  purchaseToken: { type: "string", description: "Alias for purchase_token.", example: "google-purchase-token" },
-                  product_id: { type: "string", example: "astir_premium_monthly" },
-                  productId: { type: "string", description: "Alias for product_id.", example: "astir_premium_monthly" },
-                  provider_subscription_id: { type: "string", example: "google-subscription-id" },
-                  providerSubscriptionId: { type: "string", description: "Alias for provider_subscription_id.", example: "google-subscription-id" },
-                  expires_at: { type: "string", format: "date-time" },
-                  expiresAt: { type: "string", format: "date-time", description: "Alias for expires_at." }
+                  purchaseToken: { type: "string", description: "Alias for purchase_token." },
+                  product_id: { type: "string", example: "astir.premium.monthly" },
+                  productId: { type: "string", description: "Alias for product_id." }
                 }
               }
             }
@@ -5868,7 +5855,9 @@ export const openApiDocument = {
           },
           400: { $ref: "#/components/responses/BadRequest" },
           401: { $ref: "#/components/responses/Unauthorized" },
-          404: { $ref: "#/components/responses/NotFound" }
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: { $ref: "#/components/responses/Conflict" },
+          503: { description: "Store verification is not configured" }
         }
       }
     },
@@ -5882,15 +5871,10 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
+                description: "App Store Server Notifications V2. The subscription state is re-fetched from Apple.",
+                required: ["signedPayload"],
                 properties: {
-                  subscription_id: { type: "string" },
-                  provider_subscription_id: { type: "string", example: "1000001234567890" },
-                  status: {
-                    type: "string",
-                    enum: ["active", "grace_period", "expired", "cancelled"],
-                    example: "expired"
-                  },
-                  expires_at: { type: "string", format: "date-time" }
+                  signedPayload: { type: "string" }
                 }
               }
             }
@@ -5928,16 +5912,12 @@ export const openApiDocument = {
             "application/json": {
               schema: {
                 type: "object",
+                description: "Google Play Real-time Developer Notification (Pub/Sub push). The purchase is re-fetched from Google.",
                 properties: {
-                  subscription_id: { type: "string" },
-                  provider_subscription_id: { type: "string", example: "google-subscription-id" },
-                  purchase_token: { type: "string", example: "google-purchase-token" },
-                  status: {
-                    type: "string",
-                    enum: ["active", "grace_period", "expired", "cancelled"],
-                    example: "cancelled"
-                  },
-                  expires_at: { type: "string", format: "date-time" }
+                  message: {
+                    type: "object",
+                    properties: { data: { type: "string", description: "Base64 DeveloperNotification JSON." } }
+                  }
                 }
               }
             }

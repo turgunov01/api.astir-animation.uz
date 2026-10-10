@@ -21,6 +21,8 @@ process.env.CLICK_MERCHANT_USER_ID = "456";
 process.env.CLICK_SERVICE_ID = "789";
 process.env.CLICK_SECRET_KEY = "click-smoke-secret";
 process.env.CLICK_RETURN_URL = "https://astir.example/payments/return";
+process.env.APPLE_IAP_KEY_ID = "";
+process.env.GOOGLE_PLAY_PACKAGE_NAME = "";
 
 const { createServer } = await import("../app/server.js");
 const { createTariffService } = await import("../app/services/tariffService.js");
@@ -950,49 +952,51 @@ try {
   assert.equal(clickAliasComplete.subscription.tariffId, "premium");
   assert.equal(clickAliasComplete.transaction.status, "succeeded");
 
-  const appleSubscriptionId = `apple-sub-${Date.now()}`;
-  const applePurchase = await request(baseUrl, "/v1/billing/apple/verify", {
+  // Forged store purchases must never grant access: the client-supplied tariff
+  // and expiry are ignored and, without store credentials, verification is off.
+  const forgedApplePurchase = await fetch(`${baseUrl}/v1/billing/apple/verify`, {
     method: "POST",
-    headers: { authorization: `Bearer ${parentToken}` },
-    body: {
+    headers: { authorization: `Bearer ${parentToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
       tariff_id: "premium",
       receipt: "local-apple-receipt",
-      provider_subscription_id: appleSubscriptionId,
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-    }
+      transaction_id: "forged-transaction",
+      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    })
   });
 
-  assert.equal(applePurchase.subscription.provider, "apple");
-  assert.equal(applePurchase.subscription.providerSubscriptionId, appleSubscriptionId);
-  assert.equal(applePurchase.subscription.status, "active");
-  assert.equal(applePurchase.tariff.id, "premium");
-  assert.equal(applePurchase.access.can_watch_premium, true);
+  assert.equal(forgedApplePurchase.status, 503);
+  assert.equal((await forgedApplePurchase.json()).code, "APPLE_IAP_NOT_CONFIGURED");
+
+  const forgedGooglePurchase = await fetch(`${baseUrl}/v1/billing/google/verify`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${parentToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ tariff_id: "premium", purchase_token: "forged-token" })
+  });
+
+  assert.equal(forgedGooglePurchase.status, 503);
+
+  const forgedAppleWebhook = await fetch(`${baseUrl}/v1/billing/webhook/apple`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider_subscription_id: "forged", status: "active" })
+  });
+
+  assert.equal(forgedAppleWebhook.status, 400);
 
   const currentSubscription = await request(baseUrl, "/v1/billing/subscription/current", {
     headers: { authorization: `Bearer ${parentToken}` }
   });
 
-  assert.equal(currentSubscription.subscription.id, applePurchase.subscription.id);
+  assert.equal(currentSubscription.subscription.provider, "click");
 
   const billingTariff = await request(baseUrl, "/v1/tariffs/current", {
     headers: { authorization: `Bearer ${parentToken}` }
   });
 
   assert.equal(billingTariff.tariff.id, "premium");
-  assert.equal(billingTariff.subscription.id, applePurchase.subscription.id);
+  assert.equal(billingTariff.subscription.id, currentSubscription.subscription.id);
   assert.equal(billingTariff.access.can_watch_premium, true);
-
-  const appleWebhook = await request(baseUrl, "/v1/billing/webhook/apple", {
-    method: "POST",
-    body: {
-      provider_subscription_id: appleSubscriptionId,
-      status: "active",
-      expires_at: applePurchase.subscription.expiresAt
-    }
-  });
-
-  assert.equal(appleWebhook.accepted, true);
-  assert.equal(appleWebhook.subscription.id, applePurchase.subscription.id);
 
   const premiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
     headers: { authorization: `Bearer ${parentToken}` }

@@ -24,32 +24,22 @@ function firstValue(body, ...fields) {
   return null;
 }
 
-function purchasePayload(body, requiredPurchaseField) {
-  const normalized = {
-    tariff_id: firstString(body, "tariff_id", "tariffId"),
-    expires_at: firstString(body, "expires_at", "expiresAt"),
-    provider_subscription_id: firstString(body, "provider_subscription_id", "providerSubscriptionId", "subscription_id", "subscriptionId"),
-    original_transaction_id: firstString(body, "original_transaction_id", "originalTransactionId"),
-    transaction_id: firstString(body, "transaction_id", "transactionId"),
-    product_id: firstString(body, "product_id", "productId"),
-    purchase_token: firstString(body, "purchase_token", "purchaseToken"),
-    receipt: firstString(body, "receipt", "receipt_data", "receiptData")
+// Only identifiers are read from the client. Tariff, expiry and status come
+// from the store API (see subscriptionService.verify*Purchase).
+function applePurchasePayload(body = {}) {
+  return {
+    transactionId: firstString(body, "transaction_id", "transactionId"),
+    signedTransaction: firstString(body, "signed_transaction", "signedTransaction", "jws_representation", "jwsRepresentation")
   };
+}
 
-  const payload = {
-    tariff_id: requiredString(normalized, "tariff_id"),
-    expires_at: normalized.expires_at,
-    provider_subscription_id: normalized.provider_subscription_id,
-    original_transaction_id: normalized.original_transaction_id,
-    transaction_id: normalized.transaction_id,
-    product_id: normalized.product_id,
-    purchase_token: normalized.purchase_token,
-    receipt: normalized.receipt
+function googlePurchasePayload(body = {}) {
+  return {
+    productId: firstString(body, "product_id", "productId"),
+    purchaseToken: requiredString({
+      purchase_token: firstString(body, "purchase_token", "purchaseToken")
+    }, "purchase_token")
   };
-
-  payload[requiredPurchaseField] = requiredString(normalized, requiredPurchaseField);
-
-  return payload;
 }
 
 export function createBillingController({ subscriptionService }) {
@@ -83,25 +73,25 @@ export function createBillingController({ subscriptionService }) {
     },
 
     async googleWebhook(request, response) {
-      response.json(await subscriptionService.applyWebhook("google", request.body || {}));
+      response.json(await subscriptionService.applyGoogleNotification(request.body || {}));
     },
 
     async verifyApple(request, response) {
       response.status(201).json(await subscriptionService.verifyApplePurchase(
         request.parent,
-        purchasePayload(request.body, "receipt")
+        applePurchasePayload(request.body)
       ));
     },
 
     async verifyGoogle(request, response) {
       response.status(201).json(await subscriptionService.verifyGooglePurchase(
         request.parent,
-        purchasePayload(request.body, "purchase_token")
+        googlePurchasePayload(request.body)
       ));
     },
 
     async appleWebhook(request, response) {
-      response.json(await subscriptionService.applyWebhook("apple", request.body || {}));
+      response.json(await subscriptionService.applyAppleNotification(request.body || {}));
     }
   };
 }

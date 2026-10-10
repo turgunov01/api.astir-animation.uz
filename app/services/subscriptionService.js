@@ -1,8 +1,25 @@
 import { createHash } from "node:crypto";
-import { badRequest, forbidden, notFound } from "../lib/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
+import { decodeStorePayload } from "./storeVerifiers.js";
 
 const activeStatuses = new Set(["active", "grace_period"]);
-const allowedWebhookStatuses = new Set(["active", "grace_period", "expired", "cancelled"]);
+// App Store Server API subscription status codes.
+const appleSubscriptionStatuses = {
+  1: "active",
+  2: "expired",
+  3: "expired", // billing retry: no access until Apple recovers the payment
+  4: "grace_period",
+  5: "cancelled" // revoked (refund / family sharing removed)
+};
+const googleSubscriptionStates = {
+  SUBSCRIPTION_STATE_ACTIVE: "active",
+  SUBSCRIPTION_STATE_IN_GRACE_PERIOD: "grace_period",
+  // Auto-renew turned off; the user keeps access until expiryTime.
+  SUBSCRIPTION_STATE_CANCELED: "active",
+  SUBSCRIPTION_STATE_ON_HOLD: "expired",
+  SUBSCRIPTION_STATE_PAUSED: "expired",
+  SUBSCRIPTION_STATE_EXPIRED: "expired"
+};
 const clickSuccess = { error: 0, error_note: "Success" };
 const clickErrors = {
   signFailed: { error: -1, error_note: "SIGN CHECK FAILED!" },
@@ -210,7 +227,16 @@ function nextClickLocalId() {
   return Number(`${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(-9));
 }
 
-export function createSubscriptionService({ config, notificationService = null, parents, subscriptions, tariffs, transactions }) {
+export function createSubscriptionService({
+  appStore = null,
+  config,
+  googlePlay = null,
+  notificationService = null,
+  parents,
+  subscriptions,
+  tariffs,
+  transactions
+}) {
   async function parentFromActor(actor) {
     if (actor?.type === "parent" && actor.parent) {
       return await parents.findById(actor.parent.id) || actor.parent;
@@ -250,6 +276,7 @@ export function createSubscriptionService({ config, notificationService = null, 
     provider,
     providerPayload,
     providerSubscriptionId,
+    status = "active",
     tariffId
   }) {
     getTariff(tariffId);
@@ -260,7 +287,7 @@ export function createSubscriptionService({ config, notificationService = null, 
       tariffId,
       provider,
       providerSubscriptionId,
-      status: "active",
+      status,
       startedAt: now,
       expiresAt: assertDate(expiresAt, "expires_at"),
       providerPayload
@@ -388,57 +415,156 @@ export function createSubscriptionService({ config, notificationService = null, 
     };
   }
 
-  async function findWebhookSubscription(provider, body) {
-    if (body.subscription_id) {
-      return await subscriptions.findById(body.subscription_id);
+  function requireStore(client, provider) {
+    if (!client) {
+      throw badRequest(`${provider} purchase verification is not available`, "STORE_NOT_CONFIGURED");
     }
 
-    const providerSubscriptionId = body.provider_subscription_id
-      || body.original_transaction_id
-      || body.transaction_id
-      || body.purchase_token;
-
-    if (!providerSubscriptionId) {
-      throw badRequest("provider_subscription_id is required", "VALIDATION_ERROR");
-    }
-
-    return await subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
+    return client;
   }
 
-  async function verifyPurchase(parent, provider, body) {
-    const providerSubscriptionId = body.provider_subscription_id
-      || body.original_transaction_id
-      || body.transaction_id
-      || body.purchase_token;
+  function tariffForProduct(provider, productId) {
+    const products = (provider === "apple" ? config?.appleIap?.products : config?.googlePlay?.products) || {};
+    const tariffId = products[productId];
 
-    if (!providerSubscriptionId) {
-      throw badRequest("provider_subscription_id is required", "VALIDATION_ERROR");
+    if (!tariffId) {
+      throw badRequest(`Unknown ${provider} product: ${productId}`, "UNKNOWN_STORE_PRODUCT");
     }
 
+    return tariffId;
+  }
+
+  // A store purchase is bound to the first account that redeems it.
+  async function assertPurchaseOwner(parent, provider, providerSubscriptionId) {
+    const existing = await subscriptions.findByProviderSubscriptionId(provider, providerSubscriptionId);
+
+    if (existing && existing.parentId !== parent.id) {
+      throw conflict("This purchase is already linked to another account", "PURCHASE_BELONGS_TO_ANOTHER_ACCOUNT");
+    }
+  }
+
+  function assertAccountToken(parent, token) {
+    if (token && String(token).toLowerCase() !== String(parent.id).toLowerCase()) {
+      throw forbidden("Purchase was made for another account", "PURCHASE_ACCOUNT_MISMATCH");
+    }
+  }
+
+  async function activateStorePurchase(parent, { expiresAt, provider, providerPayload, providerSubscriptionId, status, tariffId }) {
     const subscription = await upsertVerifiedSubscription(parent, {
-      expiresAt: body.expires_at,
+      expiresAt,
       provider,
-      providerPayload: body.provider_payload || null,
+      providerPayload,
       providerSubscriptionId,
-      tariffId: body.tariff_id
+      status,
+      tariffId
     });
-    await parents.update?.(parent.id, { tariff: subscription.tariffId });
     const tariff = getTariff(subscription.tariffId);
 
-    await notifyPaymentActivated(parent, {
-      provider,
-      subscription,
-      tariff,
-      transaction: null
-    });
+    if (isSubscriptionActive(subscription)) {
+      await parents.update?.(parent.id, { tariff: subscription.tariffId });
+      await notifyPaymentActivated(parent, { provider, subscription, tariff, transaction: null });
+    }
 
     return {
       subscription: serializeSubscription(subscription),
       tariff: serializeTariff(tariff),
       access: {
-        can_watch_premium: Boolean(tariff.can_watch_premium)
+        can_watch_premium: isSubscriptionActive(subscription) && Boolean(tariff.can_watch_premium)
       }
     };
+  }
+
+  function appleExpiry(transaction, tariffId) {
+    if (transaction.expiresDate) {
+      return new Date(Number(transaction.expiresDate)).toISOString();
+    }
+
+    // Non-renewing purchase: grant the tariff duration from the purchase date.
+    const days = Number(getTariff(tariffId).duration_days) || 30;
+
+    return new Date(Number(transaction.purchaseDate) + days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  function appleStatus(transaction, expiresAt) {
+    if (transaction.revocationDate) {
+      return "cancelled";
+    }
+
+    return new Date(expiresAt).getTime() > Date.now() ? "active" : "expired";
+  }
+
+  function applePayload(transaction) {
+    return {
+      transaction_id: transaction.transactionId,
+      original_transaction_id: transaction.originalTransactionId,
+      product_id: transaction.productId,
+      environment: transaction.environment || null
+    };
+  }
+
+  function assertAppleBundle(transaction) {
+    if (transaction.bundleId !== config?.appleIap?.bundleId) {
+      throw badRequest("Transaction belongs to another app", "APPLE_BUNDLE_MISMATCH");
+    }
+  }
+
+  function googleExpiry(purchase, productId) {
+    const lineItem = (purchase.lineItems || []).find((item) => item.productId === productId)
+      || (purchase.lineItems || [])[0];
+
+    if (!lineItem?.expiryTime) {
+      throw badRequest("Google Play purchase has no expiry time", "GOOGLE_PURCHASE_INVALID");
+    }
+
+    return new Date(lineItem.expiryTime).toISOString();
+  }
+
+  function googleStatus(purchase, expiresAt) {
+    const status = googleSubscriptionStates[purchase.subscriptionState] || "expired";
+
+    return status === "active" && new Date(expiresAt).getTime() <= Date.now() ? "expired" : status;
+  }
+
+  async function refreshAppleSubscription(originalTransactionId) {
+    const subscription = await subscriptions.findByProviderSubscriptionId("apple", originalTransactionId);
+
+    if (!subscription) {
+      return null;
+    }
+
+    const statuses = await requireStore(appStore, "Apple").getSubscriptionStatuses(originalTransactionId);
+    const latest = statuses.find((item) => item.transaction.originalTransactionId === originalTransactionId)
+      || statuses[0];
+
+    if (!latest) {
+      return subscription;
+    }
+
+    assertAppleBundle(latest.transaction);
+    const expiresAt = appleExpiry(latest.transaction, subscription.tariffId);
+
+    return await subscriptions.update(subscription.id, {
+      status: appleSubscriptionStatuses[latest.status] || appleStatus(latest.transaction, expiresAt),
+      expiresAt,
+      providerPayload: applePayload({ ...latest.transaction, environment: latest.environment })
+    });
+  }
+
+  async function refreshGoogleSubscription(purchaseToken) {
+    const subscription = await subscriptions.findByProviderSubscriptionId("google", purchaseToken);
+
+    if (!subscription) {
+      return null;
+    }
+
+    const purchase = await requireStore(googlePlay, "Google Play").getSubscription(purchaseToken);
+    const productId = subscription.providerPayload?.product_id;
+    const expiresAt = googleExpiry(purchase, productId);
+
+    return await subscriptions.update(subscription.id, {
+      status: googleStatus(purchase, expiresAt),
+      expiresAt
+    });
   }
 
   async function notifyPaymentActivated(parent, {
@@ -654,31 +780,50 @@ export function createSubscriptionService({ config, notificationService = null, 
       });
     },
 
-    async applyWebhook(provider, body) {
-      const subscription = await findWebhookSubscription(provider, body);
-
-      if (!subscription) {
-        return {
-          accepted: true,
-          subscription: null
-        };
+    // App Store Server Notifications V2. The notification is only used to learn
+    // WHICH subscription changed; its state is re-fetched from Apple.
+    async applyAppleNotification(body = {}) {
+      if (!body.signedPayload) {
+        throw badRequest("signedPayload is required", "VALIDATION_ERROR");
       }
 
-      const status = body.status || subscription.status;
+      const notification = decodeStorePayload(body.signedPayload, "signedPayload");
+      const signedTransaction = notification.data?.signedTransactionInfo;
+      const originalTransactionId = signedTransaction
+        ? decodeStorePayload(signedTransaction, "signedTransactionInfo").originalTransactionId
+        : null;
 
-      if (!allowedWebhookStatuses.has(status)) {
-        throw badRequest("status is not supported", "VALIDATION_ERROR");
+      if (!originalTransactionId) {
+        return { accepted: true, subscription: null };
       }
-
-      const updatedSubscription = await subscriptions.update(subscription.id, {
-        status,
-        expiresAt: assertDate(body.expires_at || subscription.expiresAt, "expires_at"),
-        providerPayload: body.provider_payload || subscription.providerPayload || null
-      });
 
       return {
         accepted: true,
-        subscription: serializeSubscription(updatedSubscription)
+        notification_type: notification.notificationType || null,
+        subscription: serializeSubscription(await refreshAppleSubscription(originalTransactionId))
+      };
+    },
+
+    // Google Play Real-time Developer Notifications delivered by a Pub/Sub push
+    // subscription. The token is re-fetched from the Play Developer API.
+    async applyGoogleNotification(body = {}) {
+      let notification;
+
+      try {
+        notification = JSON.parse(Buffer.from(body.message?.data || "", "base64").toString("utf8"));
+      } catch {
+        throw badRequest("message.data must be base64-encoded JSON", "VALIDATION_ERROR");
+      }
+
+      const purchaseToken = notification.subscriptionNotification?.purchaseToken;
+
+      if (!purchaseToken) {
+        return { accepted: true, subscription: null };
+      }
+
+      return {
+        accepted: true,
+        subscription: serializeSubscription(await refreshGoogleSubscription(purchaseToken))
       };
     },
 
@@ -706,31 +851,68 @@ export function createSubscriptionService({ config, notificationService = null, 
       return await subscriptions.update(id, attributes);
     },
 
-    async verifyApplePurchase(parent, body) {
-      if (!body.receipt) {
-        throw badRequest("receipt is required", "VALIDATION_ERROR");
+    // StoreKit 2: the client sends the transaction id (or the signed
+    // transaction it got from StoreKit). The server looks it up at Apple.
+    async verifyApplePurchase(parent, { signedTransaction = null, transactionId = null } = {}) {
+      const id = transactionId
+        || (signedTransaction ? decodeStorePayload(signedTransaction, "signed_transaction").transactionId : null);
+
+      if (!id) {
+        throw badRequest("transaction_id or signed_transaction is required", "VALIDATION_ERROR");
       }
 
-      return await verifyPurchase(parent, "apple", {
-        ...body,
-        provider_payload: {
-          receipt: body.receipt
-        }
+      const transaction = await requireStore(appStore, "Apple").getTransaction(String(id));
+
+      assertAppleBundle(transaction);
+      assertAccountToken(parent, transaction.appAccountToken);
+      const tariffId = tariffForProduct("apple", transaction.productId);
+      const providerSubscriptionId = String(transaction.originalTransactionId);
+      await assertPurchaseOwner(parent, "apple", providerSubscriptionId);
+      const expiresAt = appleExpiry(transaction, tariffId);
+
+      return await activateStorePurchase(parent, {
+        expiresAt,
+        provider: "apple",
+        providerPayload: applePayload(transaction),
+        providerSubscriptionId,
+        status: appleStatus(transaction, expiresAt),
+        tariffId
       });
     },
 
-    async verifyGooglePurchase(parent, body) {
-      if (!body.purchase_token) {
+    async verifyGooglePurchase(parent, { productId = null, purchaseToken } = {}) {
+      if (!purchaseToken) {
         throw badRequest("purchase_token is required", "VALIDATION_ERROR");
       }
 
-      return await verifyPurchase(parent, "google", {
-        ...body,
-        provider_subscription_id: body.provider_subscription_id || body.purchase_token,
-        provider_payload: {
-          product_id: body.product_id || null,
-          purchase_token: body.purchase_token
-        }
+      const store = requireStore(googlePlay, "Google Play");
+      const purchase = await store.getSubscription(purchaseToken);
+      const lineItem = (purchase.lineItems || []).find((item) => !productId || item.productId === productId);
+
+      if (!lineItem) {
+        throw badRequest("Purchase does not contain the requested product", "GOOGLE_PURCHASE_INVALID");
+      }
+
+      assertAccountToken(parent, purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId);
+      const tariffId = tariffForProduct("google", lineItem.productId);
+      await assertPurchaseOwner(parent, "google", purchaseToken);
+      const expiresAt = googleExpiry(purchase, lineItem.productId);
+      const status = googleStatus(purchase, expiresAt);
+
+      if (status === "active" && purchase.acknowledgementState === "ACKNOWLEDGEMENT_STATE_PENDING") {
+        await store.acknowledgeSubscription(lineItem.productId, purchaseToken);
+      }
+
+      return await activateStorePurchase(parent, {
+        expiresAt,
+        provider: "google",
+        providerPayload: {
+          product_id: lineItem.productId,
+          order_id: purchase.latestOrderId || null
+        },
+        providerSubscriptionId: purchaseToken,
+        status,
+        tariffId
       });
     }
   };

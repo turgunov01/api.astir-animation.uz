@@ -38,6 +38,15 @@ function envList(name) {
     .filter(Boolean);
 }
 
+// "store.product.id:tariff_id,other.product:tariff_id" -> { "store.product.id": "tariff_id" }
+function productTariffMap(name) {
+  return Object.fromEntries(
+    envList(name)
+      .map((entry) => entry.split(":").map((part) => part.trim()))
+      .filter(([productId, tariffId]) => productId && tariffId)
+  );
+}
+
 function resolveJwtSecret() {
   const provided = process.env.JWT_SECRET || "";
   if (provided) {
@@ -106,6 +115,25 @@ export const config = {
     secretKey: process.env.CLICK_SECRET_KEY || "",
     returnUrl: process.env.CLICK_RETURN_URL || "",
     defaultSubscriptionDays: optionalNumber(process.env.CLICK_DEFAULT_SUBSCRIPTION_DAYS, 30)
+  },
+  // App Store Server API credentials (App Store Connect > Users and Access >
+  // Integrations > In-App Purchase). This is NOT the Sign in with Apple key.
+  appleIap: {
+    bundleId: process.env.APPLE_IAP_BUNDLE_ID || "",
+    issuerId: process.env.APPLE_IAP_ISSUER_ID || "",
+    keyId: process.env.APPLE_IAP_KEY_ID || "",
+    privateKey: process.env.APPLE_IAP_PRIVATE_KEY || "",
+    privateKeyPath: process.env.APPLE_IAP_PRIVATE_KEY_PATH || "",
+    // auto | production | sandbox
+    environment: process.env.APPLE_IAP_ENVIRONMENT || "auto",
+    apiUrl: process.env.APPLE_IAP_API_URL || "",
+    products: productTariffMap("APPLE_IAP_PRODUCTS")
+  },
+  googlePlay: {
+    packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME || "",
+    serviceAccountPath: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_PATH || "",
+    apiUrl: process.env.GOOGLE_PLAY_API_URL || "",
+    products: productTariffMap("GOOGLE_PLAY_PRODUCTS")
   }
 };
 

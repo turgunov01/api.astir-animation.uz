@@ -12,6 +12,7 @@ import { createLegacyStreamingState } from "../services/legacyStreamingState.js"
 import { createNotificationService } from "../services/notificationService.js";
 import { createPairingService } from "../services/pairingService.js";
 import { createRecommendationService } from "../services/recommendationService.js";
+import { createAppStoreClient, createGooglePlayClient } from "../services/storeVerifiers.js";
 import { createSubscriptionService } from "../services/subscriptionService.js";
 import { createTariffService } from "../services/tariffService.js";
 import { createTranscoderService } from "../services/transcoderService.js";
@@ -51,7 +52,9 @@ export function createContainer({ store = defaultStore } = {}) {
     notifications: repositories.notifications
   });
   services.subscriptions = createSubscriptionService({
+    appStore: createAppStoreClient(config.appleIap),
     config,
+    googlePlay: createGooglePlayClient(config.googlePlay),
     notificationService: services.notifications,
     parents: repositories.parents,
     subscriptions: repositories.subscriptions,
