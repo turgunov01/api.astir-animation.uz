@@ -26,6 +26,7 @@ import {
   verifyGoogleToken,
   verifyOtp
 } from "./auth.js";
+import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -2280,7 +2281,16 @@ export function createLegacyRoutes({
       throw legacyError(400, "identity_token is required");
     }
     const profile = await verifyAppleToken(token, request.body);
-    const user = await findOrCreateOAuthUser(request.legacyDb, profile);
+    let user = await findOrCreateOAuthUser(request.legacyDb, profile);
+    const authorizationCode = request.body.authorization_code || request.body.authorizationCode;
+    // Apple's refresh token is needed to revoke access on account deletion.
+    const appleRefreshToken = await exchangeAppleAuthorizationCode(authorizationCode, profile.client_id);
+    if (appleRefreshToken) {
+      user = await request.legacyDb.one(
+        "UPDATE users SET apple_refresh_token = $2, apple_client_id = $3 WHERE id = $1 RETURNING *",
+        [user.id, appleRefreshToken, profile.client_id]
+      );
+    }
     response.json(await issueTokenPair(request.legacyDb, user));
   }));
 
@@ -2308,6 +2318,18 @@ export function createLegacyRoutes({
       phone: request.body.phone
     });
     response.json(tokenUserWithAvatar(request, media, user));
+  }));
+
+  // Self-service account deletion (App Store Review Guideline 5.1.1(v)).
+  // Related rows go away via ON DELETE CASCADE / SET NULL.
+  router.delete("/auth/me", requireUser, asyncHandler(async (request, response) => {
+    const user = request.legacyUser;
+    if (user.role === "super_admin") {
+      throw legacyError(403, "forbidden", "super_admin account cannot be self-deleted");
+    }
+    const appleRevoked = await revokeAppleToken(user.apple_refresh_token, user.apple_client_id);
+    await request.legacyDb.query("DELETE FROM users WHERE id = $1", [user.id]);
+    response.json({ deleted: true, apple_revoked: appleRevoked });
   }));
 
   router.post("/auth/me/avatar", requireUser, avatarUpload, asyncHandler(async (request, response) => {

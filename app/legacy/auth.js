@@ -499,13 +499,25 @@ export async function verifyAppleToken(identityToken, body = {}) {
       audience: audiences,
       issuer: "https://appleid.apple.com"
     }));
-  } catch {
+  } catch (error) {
+    // Logged so App Review failures can be told apart: expired token, wrong
+    // bundle ID in APPLE_CLIENT_IDS (aud mismatch), bad signature, etc.
+    console.warn(JSON.stringify({
+      level: "warn",
+      msg: "apple identity token rejected",
+      code: error.code,
+      claim: error.claim,
+      reason: error.reason,
+      error: error.message,
+      accepted_audiences: audiences
+    }));
     throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
   return {
     provider: "apple",
     subject: payload.sub,
+    client_id: Array.isArray(payload.aud) ? payload.aud[0] : payload.aud,
     email: payload.email || firstBodyString(body, "email"),
     name: firstBodyString(body, "given_name", "givenName", "name", "fullName.givenName"),
     last_name: firstBodyString(body, "family_name", "familyName", "last_name", "lastName", "fullName.familyName")
@@ -521,6 +533,10 @@ export async function findOrCreateOAuthUser(db, profile) {
 
   if (!user && profile.email) {
     user = await db.one("SELECT * FROM users WHERE email = $1", [profile.email.toLowerCase()]);
+  }
+
+  if (user && !user.active) {
+    throw legacyError(403, "account_disabled", "account is disabled");
   }
 
   if (user) {

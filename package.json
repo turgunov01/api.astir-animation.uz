@@ -15,7 +15,8 @@
     "test:content-upload": "node scripts/content-upload-test.js",
     "test:auth-off": "node scripts/auth-toggle-test.js",
     "test:legacy": "node scripts/legacy-test.js",
-    "test:search": "node scripts/postgres-search-test.js"
+    "test:search": "node scripts/postgres-search-test.js",
+    "test:apple": "node scripts/apple-auth-test.js"
   },
   "keywords": [],
   "author": "",

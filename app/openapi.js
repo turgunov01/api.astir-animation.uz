@@ -1520,6 +1520,11 @@ export const openApiDocument = {
                     type: "string",
                     example: "eyJhbGci..."
                   },
+                  authorization_code: {
+                    type: "string",
+                    description: "ASAuthorizationAppleIDCredential.authorizationCode. Exchanged for an Apple refresh token so access can be revoked on account deletion.",
+                    example: "c1a2b3..."
+                  },
                   identityToken: {
                     type: "string",
                     description: "CamelCase alias for identity_token.",
@@ -1937,6 +1942,36 @@ export const openApiDocument = {
       }
     },
     "/api/v1/auth/me": {
+      delete: {
+        tags: ["Auth"],
+        summary: "Delete current account",
+        description: "Permanently deletes the current user and related data (children, devices, subscriptions, tokens). For Sign in with Apple users the Apple refresh token is revoked first. Required by App Store Review Guideline 5.1.1(v).",
+        security: [{ legacyBearer: [] }],
+        responses: {
+          200: {
+            description: "Deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    deleted: { type: "boolean", example: true },
+                    apple_revoked: { type: "boolean", example: true }
+                  }
+                }
+              }
+            }
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LegacyErrorResponse" }
+              }
+            }
+          }
+        }
+      },
       get: {
         tags: ["Auth"],
         summary: "Get current legacy user",
