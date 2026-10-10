@@ -26,6 +26,7 @@ const scopes = [
       "POST /api/v1/auth/me/avatar",
       "GET /api/v1/auth/me",
       "PUT /api/v1/auth/me",
+      "DELETE /api/v1/auth/me",
       "POST /api/v1/auth/child/init",
       "GET /api/v1/auth/child/{device_id}/status",
       "POST /api/v1/auth/child/confirm",
