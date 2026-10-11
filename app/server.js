@@ -16,6 +16,7 @@ import { createLegacySwaggerForRequest } from "./legacy/swagger.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { requestContext } from "./middleware/requestContext.js";
 import { createRequestLogger } from "./middleware/requestLogger.js";
+import { detectClient } from "./services/requestJournal.js";
 import { openApiDocument } from "./openapi.js";
 import { createBillingRoutes } from "./routes/billingRoutes.js";
 import { createRoutes } from "./routes/index.js";
@@ -87,6 +88,7 @@ export function createApp({ container = createContainer() } = {}) {
   app.get(["/v1/app-config", "/api/v1/app-config"], async (request, response, next) => {
     try {
       response.set("Cache-Control", "public, max-age=60");
+      projectSettings.recordFetch(detectClient(request.headers), request.get("x-app-version"));
       response.json(await projectSettings.publicConfig(`https://${request.get("host")}`));
     } catch (error) {
       next(error);

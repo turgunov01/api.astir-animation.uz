@@ -112,6 +112,9 @@ function validate(section, value) {
 
 export function createProjectSettings({ db = null, config = {} } = {}) {
   let cache = null;
+  // Who picked the settings up and when (since the last restart), so the
+  // admin can see that apps are in sync.
+  const fetches = {};
 
   async function load() {
     if (cache && Date.now() - cache.at < CACHE_MS) return cache;
@@ -135,10 +138,26 @@ export function createProjectSettings({ db = null, config = {} } = {}) {
   }
 
   return {
+    recordFetch(client, appVersion = "") {
+      const entry = fetches[client] || { count: 0, last_at: null, last_version: null };
+      entry.count += 1;
+      entry.last_at = new Date().toISOString();
+      if (appVersion) entry.last_version = String(appVersion).slice(0, 40);
+      fetches[client] = entry;
+    },
+
     // `requestBaseUrl` stands in for the API address until an admin sets one.
     async all(requestBaseUrl = "") {
       const { settings, meta } = await load();
-      return { settings: { ...settings, api: { ...settings.api, base_url: settings.api.base_url || requestBaseUrl } }, meta };
+      const updated = Object.values(meta).map((item) => new Date(item.updated_at).getTime()).filter(Number.isFinite);
+      return {
+        settings: { ...settings, api: { ...settings.api, base_url: settings.api.base_url || requestBaseUrl } },
+        meta,
+        sync: {
+          updated_at: updated.length ? new Date(Math.max(...updated)).toISOString() : null,
+          fetches
+        }
+      };
     },
 
     async feature(name) {
