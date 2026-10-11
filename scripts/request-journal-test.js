@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createRequestJournal, detectClient, maskSecrets } from "../app/services/requestJournal.js";
+import { buildJournalEntry, createRequestJournal, detectClient, maskSecrets, shouldCapture } from "../app/services/requestJournal.js";
 
 assert.deepEqual(maskSecrets({ email: "a@b", password: "x", nested: { refresh_token: "y", pin: "1234", name: "ok" } }), {
   email: "a@b", password: "••••", nested: { refresh_token: "••••", pin: "••••", name: "ok" }
@@ -9,24 +9,24 @@ assert.equal(detectClient({ origin: "https://dash.astir-animation.uz", "user-age
 assert.equal(detectClient({ "user-agent": "curl/8" }), "other");
 
 const journal = createRequestJournal();
-assert.equal(journal.shouldCapture("/health"), false);
-assert.equal(journal.shouldCapture("/media/uploads/a.jpg"), false);
-assert.equal(journal.shouldCapture("/api/v1/admin/api-requests"), false);
-assert.equal(journal.shouldCapture("/v1/auth/login"), true);
+assert.equal(shouldCapture("/health"), false);
+assert.equal(shouldCapture("/media/uploads/a.jpg"), false);
+assert.equal(shouldCapture("/api/v1/admin/api-requests"), false);
+assert.equal(shouldCapture("/v1/auth/login"), true);
 
 const response = (status, headers = {}) => ({ statusCode: status, getHeaders: () => headers });
-journal.add({
+journal.add(buildJournalEntry({
   request: { method: "POST", originalUrl: "/v1/auth/login?token=abc&lang=ru", headers: { "user-agent": "Dart/3.9", authorization: "Bearer zzz" }, body: { email: "p@x", password: "secret" }, legacyUser: { id: "u1", name: "Sardor", email: "p@x", role: "parent" } },
   response: response(200, { "content-type": "application/json" }),
   responseBody: JSON.stringify({ accessToken: "aaa", user: { id: "u1" } }),
   durationMs: 12.3
-});
-journal.add({
+}));
+journal.add(buildJournalEntry({
   request: { method: "GET", originalUrl: "/api/v1/admin/overview", headers: { origin: "https://dash.astir-animation.uz", "user-agent": "Mozilla" }, body: {}, errorMessage: "boom" },
   response: response(500),
   responseBody: "{\"error\":\"boom\"}",
   durationMs: 40
-});
+}));
 
 const list = journal.list({});
 assert.equal(list.data.length, 2);

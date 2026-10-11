@@ -49,6 +49,11 @@ export function detectClient(headers = {}) {
   return "other";
 }
 
+export function shouldCapture(url) {
+  const path = String(url || "").split("?")[0];
+  return !SKIP.some((pattern) => pattern.test(path));
+}
+
 function maskQuery(url) {
   const [path, query = ""] = String(url).split("?");
   if (!query) return { path, query: {} };
@@ -56,47 +61,63 @@ function maskQuery(url) {
   return { path, query: maskSecrets(params) };
 }
 
+// One journal entry from a finished request: summary columns plus the
+// masked details (headers, bodies, files).
+export function buildJournalEntry({ request, response, responseBody, durationMs }) {
+  const url = request.originalUrl || request.url;
+  const { path, query } = maskQuery(url);
+  const user = request.legacyUser || request.parent || null;
+  const device = request.actor?.device || request.legacyActor?.device || null;
+  const files = request.file ? [request.file] : Array.isArray(request.files) ? request.files : request.files ? Object.values(request.files).flat() : [];
+  const summary = user
+    ? { id: user.id, name: [user.name, user.last_name].filter(Boolean).join(" ").trim() || null, email: user.email || null, role: user.role || null }
+    : device ? { id: device.id, name: device.name || "Устройство", role: "device" } : null;
+
+  return {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    method: request.method,
+    path,
+    query,
+    status: response.statusCode,
+    duration_ms: durationMs,
+    request_id: request.id || null,
+    client: detectClient(request.headers),
+    user_id: summary?.id ? String(summary.id) : null,
+    user_summary: summary,
+    error: request.errorMessage || null,
+    detail: {
+      ip: request.ip || null,
+      request: {
+        headers: maskSecrets({ ...request.headers }),
+        body: truncate(maskSecrets(request.body && Object.keys(request.body).length ? request.body : undefined)),
+        files: files.map((file) => ({ field: file.fieldname, name: file.originalname, type: file.mimetype, size: file.size }))
+      },
+      response: {
+        headers: maskSecrets(typeof response.getHeaders === "function" ? { ...response.getHeaders() } : {}),
+        body: truncate(maskSecrets(parseBody(responseBody)))
+      }
+    }
+  };
+}
+
+// In-memory journal, used when there is no database (tests, local runs).
 export function createRequestJournal() {
   const entries = [];
 
+  const shape = (entry) => ({
+    ...entry,
+    user: entry.user_summary,
+    ip: entry.detail?.ip || null,
+    request: entry.detail?.request,
+    response: entry.detail?.response
+  });
+
   return {
-    shouldCapture(url) {
-      const path = String(url || "").split("?")[0];
-      return !SKIP.some((pattern) => pattern.test(path));
-    },
+    shouldCapture,
 
-    add({ request, response, responseBody, durationMs }) {
-      const url = request.originalUrl || request.url;
-      const { path, query } = maskQuery(url);
-      const user = request.legacyUser || request.parent || null;
-      const device = request.actor?.device || request.legacyActor?.device || null;
-      const files = request.file ? [request.file] : Array.isArray(request.files) ? request.files : request.files ? Object.values(request.files).flat() : [];
-
-      entries.push({
-        id: crypto.randomUUID(),
-        at: new Date().toISOString(),
-        method: request.method,
-        path,
-        query,
-        status: response.statusCode,
-        duration_ms: durationMs,
-        request_id: request.id || null,
-        client: detectClient(request.headers),
-        ip: request.ip || null,
-        user: user
-          ? { id: user.id, name: [user.name, user.last_name].filter(Boolean).join(" ").trim() || null, email: user.email || null, role: user.role || null }
-          : device ? { id: device.id, name: device.name || "Устройство", role: "device" } : null,
-        error: request.errorMessage || null,
-        request: {
-          headers: maskSecrets({ ...request.headers }),
-          body: truncate(maskSecrets(request.body && Object.keys(request.body).length ? request.body : undefined)),
-          files: files.map((file) => ({ field: file.fieldname, name: file.originalname, type: file.mimetype, size: file.size }))
-        },
-        response: {
-          headers: maskSecrets(typeof response.getHeaders === "function" ? { ...response.getHeaders() } : {}),
-          body: truncate(maskSecrets(parseBody(responseBody)))
-        }
-      });
+    add(entry) {
+      entries.push(entry);
       while (entries.length > MAX_ENTRIES) entries.shift();
     },
 
@@ -116,7 +137,7 @@ export function createRequestJournal() {
         if (status === "5xx" && entry.status < 500) return false;
         if (status === "4xx" && (entry.status < 400 || entry.status >= 500)) return false;
         if (!needle) return true;
-        return [entry.path, entry.user?.name, entry.user?.email, entry.error, entry.request_id, String(entry.status)]
+        return [entry.path, entry.user_summary?.name, entry.user_summary?.email, entry.error, entry.request_id, String(entry.status)]
           .some((value) => String(value || "").toLowerCase().includes(needle));
       });
       const counts = { all: entries.length, app: 0, admin: 0, browser: 0, other: 0 };
@@ -124,12 +145,13 @@ export function createRequestJournal() {
       return {
         counts,
         has_more: rows.length > size,
-        data: rows.slice(0, size).map(({ request, response, ...summary }) => summary)
+        data: rows.slice(0, size).map(({ detail, user_summary: user, ...summary }) => ({ ...summary, user, ip: detail?.ip || null }))
       };
     },
 
     get(id) {
-      return entries.find((entry) => entry.id === id) || null;
+      const entry = entries.find((item) => item.id === id);
+      return entry ? shape(entry) : null;
     }
   };
 }

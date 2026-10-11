@@ -12,6 +12,7 @@ import { createPaymentProviders } from "../services/paymentProviders.js";
 import { createPresence } from "../services/presence.js";
 import { createApiMonitor } from "../services/apiMonitor.js";
 import { createRequestJournal } from "../services/requestJournal.js";
+import { createApiRequestStore } from "../services/apiRequestStore.js";
 import { createProjectSettings } from "../services/projectSettings.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
@@ -82,7 +83,8 @@ export function createContainer({ store = defaultStore } = {}) {
   services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
   services.presence = createPresence({ db: databaseDb });
   services.apiMonitor = createApiMonitor();
-  services.requestJournal = createRequestJournal();
+  // Kept in Postgres so the journal and monitoring survive restarts.
+  services.requestJournal = databaseDb ? createApiRequestStore({ db: databaseDb }) : createRequestJournal();
   services.projectSettings = createProjectSettings({ db: databaseDb, config });
   // Admin-entered payment credentials override .env once loaded.
   services.paymentProviders.loadSettings().catch(() => {});

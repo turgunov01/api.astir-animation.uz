@@ -5,12 +5,14 @@ function elapsedMs(startedAt) {
 // One JSON line per request (with time and duration), a record in the
 // in-memory API monitor and, with the response body, in the request journal
 // behind the admin "Отладка API" page.
+import { buildJournalEntry, shouldCapture } from "../services/requestJournal.js";
+
 export function createRequestLogger({ monitor = null, journal = null } = {}) {
   return function requestLogger(request, response, next) {
     const startedAt = process.hrtime.bigint();
     // CORS preflights are browser plumbing, not API calls.
     const preflight = request.method === "OPTIONS";
-    const capture = !preflight && journal?.shouldCapture(request.originalUrl || request.url);
+    const capture = !preflight && Boolean(journal) && shouldCapture(request.originalUrl || request.url);
     let responseBody;
 
     if (capture) {
@@ -48,7 +50,7 @@ export function createRequestLogger({ monitor = null, journal = null } = {}) {
         message: request.errorMessage || null
       });
 
-      if (capture) journal.add({ request, response, responseBody, durationMs });
+      if (capture) journal.add(buildJournalEntry({ request, response, responseBody, durationMs }));
     });
 
     next();

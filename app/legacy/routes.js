@@ -4612,11 +4612,11 @@ export function createLegacyRoutes({
   }));
 
   router.get("/admin/api-requests", requireAdmin, asyncHandler(async (request, response) => {
-    response.json(requestJournal.list(request.query));
+    response.json(await requestJournal.list(request.query));
   }));
 
   router.get("/admin/api-requests/:id", requireAdmin, asyncHandler(async (request, response) => {
-    const entry = requestJournal.get(request.params.id);
+    const entry = await requestJournal.get(request.params.id);
     if (!entry) {
       throw legacyError(404, "request_not_found", "запрос уже вытеснен из журнала");
     }
@@ -4633,7 +4633,7 @@ export function createLegacyRoutes({
       database = { ok: false, latency_ms: null, error: error.message };
     }
     response.json({
-      ...apiMonitor.stats({ range: request.query.range }),
+      ...(requestJournal?.stats ? await requestJournal.stats({ range: request.query.range }) : apiMonitor.stats({ range: request.query.range })),
       process: apiMonitor.process(),
       database
     });
