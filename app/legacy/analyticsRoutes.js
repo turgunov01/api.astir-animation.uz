@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { requireActor } from "./auth.js";
+import { requireActor, requireAdmin } from "./auth.js";
+import { buildContentStudioStats } from "./contentStudioStats.js";
 import {
   asyncHandler,
   isUuid,
@@ -470,7 +471,7 @@ function mergeWatchSessions(series, sessions, contentId, days, durationSec) {
   };
 }
 
-export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null, watchSessions = null } = {}) {
+export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null, watchSessions = null, devices = null, children = null } = {}) {
   const router = Router();
   const analyticsOptions = { contentMovies, contentReactions };
 
@@ -509,6 +510,24 @@ export function createAnalyticsRoutes({ contentMovies = null, contentReactions =
     const target = await resolveReactionTarget(request.legacyDb, request.params.content_id, requestedTargetType(request), analyticsOptions);
 
     response.json(await statisticsForTarget(request.legacyDb, target, analyticsOptions));
+  }));
+
+  router.get("/statistics/:content_id/studio", requireAdmin, asyncHandler(async (request, response) => {
+    const id = request.params.content_id;
+    const movie = contentMovies?.findById?.(id);
+    const legacy = movie || !isUuid(id) ? null : await request.legacyDb.one("SELECT duration_sec FROM content WHERE id = $1", [id]);
+
+    if (!movie && !legacy) {
+      throw legacyError(404, "content_not_found", "content not found");
+    }
+
+    response.json(await buildContentStudioStats(request.legacyDb, id, {
+      days: request.query.days,
+      durationSec: Number(movie?.duration_sec ?? legacy?.duration_sec) || 0,
+      watchSessions,
+      devices,
+      children
+    }));
   }));
 
   router.get("/statistics/:content_id/timeseries", asyncHandler(async (request, response) => {

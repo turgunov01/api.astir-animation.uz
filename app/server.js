@@ -119,7 +119,9 @@ export function createApp({ container = createContainer() } = {}) {
   const analyticsRoutes = createAnalyticsRoutes({
     contentMovies: container.repositories.contentMovies,
     contentReactions: container.repositories.contentReactions,
-    watchSessions: container.repositories.watchSessions
+    watchSessions: container.repositories.watchSessions,
+    devices: container.repositories.devices,
+    children: container.repositories.children
   });
 
   const fullSwaggerOptions = createSwaggerUiOptions({
