@@ -2018,6 +2018,8 @@ export function createLegacyRoutes({
   contentCategories = null,
   contentLikes = null,
   contentMovies = null,
+  contentPurge = null,
+  contentService = null,
   media,
   streaming = null,
   tariffs = null
@@ -3470,7 +3472,25 @@ export function createLegacyRoutes({
   }));
 
   router.delete("/series/:id", requireAdmin, asyncHandler(async (request, response) => {
-    await deleteLegacyRecordWithMedia(request.legacyDb, media, "series", request.params.id, ["poster_path"]);
+    const seriesId = request.params.id;
+    await getById(request.legacyDb, "series", seriesId);
+
+    // A deleted series takes its episodes with it — each fully purged (video,
+    // audio, comments, reactions, history) — plus comments on the series itself.
+    const episodeIds = new Set([
+      ...(await request.legacyDb.many("SELECT id::text AS id FROM content WHERE series_id = $1", [seriesId])).map((row) => row.id),
+      ...(contentMovies?.list?.() || []).filter((movie) => movie.series_id === seriesId).map((movie) => movie.id)
+    ]);
+    for (const episodeId of episodeIds) {
+      if (contentMovies?.findById?.(episodeId) && contentService?.deleteMovie) {
+        await contentService.deleteMovie(episodeId);
+      } else {
+        await contentPurge?.purge(episodeId);
+      }
+    }
+    await contentPurge?.purge(seriesId);
+
+    await deleteLegacyRecordWithMedia(request.legacyDb, media, "series", seriesId, ["poster_path"]);
     response.json(messageResponse("deleted"));
   }));
 

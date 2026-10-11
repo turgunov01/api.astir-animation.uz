@@ -74,14 +74,15 @@ export function createContainer({ store = defaultStore } = {}) {
     contentMovies: repositories.contentMovies
   });
   services.legacyStreaming = createLegacyStreaming({ config });
+  services.contentPurge = createContentPurge({
+    db: databaseDb,
+    mediaRoot: config.mediaRoot,
+    streaming: services.legacyStreaming,
+    contentReactions: repositories.contentReactions,
+    watchSessions: repositories.watchSessions
+  });
   services.content = createContentService({
-    contentPurge: createContentPurge({
-      db: databaseDb,
-      mediaRoot: config.mediaRoot,
-      streaming: services.legacyStreaming,
-      contentReactions: repositories.contentReactions,
-      watchSessions: repositories.watchSessions
-    }),
+    contentPurge: services.contentPurge,
     contentCategories: repositories.contentCategories,
     contentLikes: repositories.contentLikes,
     contentMovieTags: repositories.contentMovieTags,
