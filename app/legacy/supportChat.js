@@ -21,18 +21,31 @@ export function serializeSupportMessage(row) {
   };
 }
 
+// A paging cursor is a timestamp or — as released apps send — a message id.
+// Unknown values are ignored instead of failing the request.
+async function resolveCursor(db, chatId, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw) && !Number.isNaN(Date.parse(raw))) return new Date(raw).toISOString();
+  if (!/^[0-9a-f-]{36}$/i.test(raw)) return null;
+  const row = await db.one("SELECT created_at FROM support_messages WHERE id = $1 AND chat_id = $2", [raw, chatId]);
+  return row ? new Date(row.created_at).toISOString() : null;
+}
+
 // Newest first (the order the app already expects). `before` / `after` are
 // message timestamps for paging back through history or fetching new ones.
 export async function listSupportMessages(db, chatId, { before, after, limit } = {}) {
   const size = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const where = ["m.chat_id = $1"];
   const params = [chatId];
-  if (before) {
-    params.push(new Date(before).toISOString());
+  const beforeAt = await resolveCursor(db, chatId, before);
+  const afterAt = await resolveCursor(db, chatId, after);
+  if (beforeAt) {
+    params.push(beforeAt);
     where.push(`m.created_at < $${params.length}`);
   }
-  if (after) {
-    params.push(new Date(after).toISOString());
+  if (afterAt) {
+    params.push(afterAt);
     where.push(`m.created_at > $${params.length}`);
   }
   params.push(size + 1);
