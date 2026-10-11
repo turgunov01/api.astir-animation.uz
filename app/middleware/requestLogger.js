@@ -8,7 +8,9 @@ function elapsedMs(startedAt) {
 export function createRequestLogger({ monitor = null, journal = null } = {}) {
   return function requestLogger(request, response, next) {
     const startedAt = process.hrtime.bigint();
-    const capture = journal?.shouldCapture(request.originalUrl || request.url);
+    // CORS preflights are browser plumbing, not API calls.
+    const preflight = request.method === "OPTIONS";
+    const capture = !preflight && journal?.shouldCapture(request.originalUrl || request.url);
     let responseBody;
 
     if (capture) {
@@ -35,7 +37,7 @@ export function createRequestLogger({ monitor = null, journal = null } = {}) {
         durationMs
       }));
 
-      monitor?.record({
+      if (!preflight) monitor?.record({
         at: Date.now(),
         method: request.method,
         url: url.split("?")[0],
