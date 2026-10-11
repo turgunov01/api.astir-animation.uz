@@ -4374,41 +4374,23 @@ export function createLegacyRoutes({
     `);
     const byProvider = new Map(stats.map((row) => [row.provider, row]));
     const base = String(config.publicBaseUrl || `https://${request.get("host")}`).replace(/\/$/, "");
-    const mask = (value) => (value ? `${String(value).slice(0, 3)}•••${String(value).slice(-2)}` : null);
-    const products = (map) => Object.entries(map || {}).map(([product, tariff]) => ({ product, tariff }));
-    const settings = {
+    // URLs to paste into the provider's own dashboard.
+    const endpoints = {
       click: [
-        { label: "Service ID", value: config.click?.serviceId || null },
-        { label: "Merchant ID", value: config.click?.merchantId || null },
-        { label: "Merchant user ID", value: config.click?.merchantUserId || null },
-        { label: "Secret key", value: mask(config.click?.secretKey), secret: true },
-        { label: "Prepare URL", value: `${base}/api/v1/billing/click/prepare`, copy: true },
-        { label: "Complete URL", value: `${base}/api/v1/billing/click/complete`, copy: true },
-        { label: "Return URL", value: config.click?.returnUrl || null }
+        { label: "Prepare URL", value: `${base}/api/v1/billing/click/prepare` },
+        { label: "Complete URL", value: `${base}/api/v1/billing/click/complete` }
       ],
-      apple: [
-        { label: "Bundle ID", value: config.appleIap?.bundleId || null },
-        { label: "Issuer ID", value: mask(config.appleIap?.issuerId), secret: true },
-        { label: "Key ID", value: config.appleIap?.keyId || null },
-        { label: "Private key", value: config.appleIap?.privateKey || config.appleIap?.privateKeyPath ? "загружен" : null, secret: true },
-        { label: "Окружение", value: config.appleIap?.environment || "auto" },
-        { label: "Server notifications URL", value: `${base}/api/v1/billing/webhook/apple`, copy: true }
-      ],
-      google: [
-        { label: "Package name", value: config.googlePlay?.packageName || null },
-        { label: "Service account", value: config.googlePlay?.serviceAccountPath ? "загружен" : null, secret: true },
-        { label: "Real-time notifications URL", value: `${base}/api/v1/billing/webhook/google`, copy: true }
-      ]
+      apple: [{ label: "App Store Server Notifications URL", value: `${base}/api/v1/billing/webhook/apple` }],
+      google: [{ label: "Real-time developer notifications URL", value: `${base}/api/v1/billing/webhook/google` }]
     };
-    const productMaps = { apple: products(config.appleIap?.products), google: products(config.googlePlay?.products) };
 
     response.json({
       providers: providers.map((provider) => {
         const row = byProvider.get(provider.id) || {};
         return {
           ...provider,
-          settings: settings[provider.id] || [],
-          products: productMaps[provider.id] || [],
+          settings: paymentProviders.settingsFor(provider.id),
+          endpoints: endpoints[provider.id] || [],
           stats: {
             paid_total: row.paid_total || 0,
             revenue_total_cents: Number(row.revenue_total_cents || 0),
@@ -4420,6 +4402,18 @@ export function createLegacyRoutes({
         };
       })
     });
+  }));
+
+  router.put("/admin/payment-providers/:id/settings", requireAdmin, asyncHandler(async (request, response) => {
+    const values = request.body?.values;
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      throw legacyError(400, "validation_error", "values must be an object");
+    }
+    const settings = await paymentProviders.saveSettings(request.params.id, values, request.legacyUser?.id || null);
+    if (!settings) {
+      throw legacyError(404, "provider_not_found", "unknown payment provider");
+    }
+    response.json({ settings, configured: (await paymentProviders.adminList()).find((item) => item.id === request.params.id)?.configured || false });
   }));
 
   router.patch("/admin/payment-providers/:id", requireAdmin, asyncHandler(async (request, response) => {

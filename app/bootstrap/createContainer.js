@@ -76,6 +76,8 @@ export function createContainer({ store = defaultStore } = {}) {
   });
   services.legacyStreaming = createLegacyStreaming({ config });
   services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
+  // Admin-entered payment credentials override .env once loaded.
+  services.paymentProviders.loadSettings().catch(() => {});
   services.contentPurge = createContentPurge({
     db: databaseDb,
     mediaRoot: config.mediaRoot,

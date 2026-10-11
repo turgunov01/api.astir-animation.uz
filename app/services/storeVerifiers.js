@@ -41,9 +41,16 @@ function storeError(provider, status, body) {
   );
 }
 
+// Settings can change at runtime (admin panel), so caches are tied to the
+// credentials they were built from.
+function fingerprint(...values) {
+  return values.map((value) => String(value || "")).join("|");
+}
+
 export function createAppStoreClient(appleIap = {}, { fetchImpl = fetch } = {}) {
   let cachedToken = null;
   let cachedTokenExpiresAt = 0;
+  let cachedFor = "";
 
   function isConfigured() {
     return Boolean(appleIap.bundleId && appleIap.issuerId && appleIap.keyId
@@ -62,9 +69,13 @@ export function createAppStoreClient(appleIap = {}, { fetchImpl = fetch } = {}) 
   async function authToken() {
     const now = Math.floor(Date.now() / 1000);
 
-    if (cachedToken && cachedTokenExpiresAt - 60 > now) {
+    const credentials = fingerprint(appleIap.bundleId, appleIap.issuerId, appleIap.keyId, appleIap.privateKey, appleIap.privateKeyPath);
+
+    if (cachedToken && cachedFor === credentials && cachedTokenExpiresAt - 60 > now) {
       return cachedToken;
     }
+
+    cachedFor = credentials;
 
     const key = await importPKCS8(readKey(appleIap.privateKey, appleIap.privateKeyPath), "ES256");
     cachedTokenExpiresAt = now + APPLE_TOKEN_TTL_SECONDS;
@@ -143,9 +154,10 @@ export function createAppStoreClient(appleIap = {}, { fetchImpl = fetch } = {}) 
 
 export function createGooglePlayClient(googlePlay = {}, { fetchImpl = fetch, accessTokenProvider = null } = {}) {
   let auth = null;
+  let authFor = "";
 
   function isConfigured() {
-    return Boolean(googlePlay.packageName && (googlePlay.serviceAccountPath || accessTokenProvider));
+    return Boolean(googlePlay.packageName && (googlePlay.serviceAccountJson || googlePlay.serviceAccountPath || accessTokenProvider));
   }
 
   function assertConfigured() {
@@ -162,7 +174,14 @@ export function createGooglePlayClient(googlePlay = {}, { fetchImpl = fetch, acc
       return await accessTokenProvider();
     }
 
-    auth ||= new GoogleAuth({ keyFile: googlePlay.serviceAccountPath, scopes: [GOOGLE_SCOPE] });
+    // Service account JSON pasted in the admin panel wins over a key file.
+    const credentials = fingerprint(googlePlay.serviceAccountJson, googlePlay.serviceAccountPath);
+    if (!auth || authFor !== credentials) {
+      auth = googlePlay.serviceAccountJson
+        ? new GoogleAuth({ credentials: JSON.parse(googlePlay.serviceAccountJson), scopes: [GOOGLE_SCOPE] })
+        : new GoogleAuth({ keyFile: googlePlay.serviceAccountPath, scopes: [GOOGLE_SCOPE] });
+      authFor = credentials;
+    }
 
     return await auth.getAccessToken();
   }
