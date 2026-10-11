@@ -1344,6 +1344,74 @@ function legacyLimitResponse(childId, permission = null) {
   };
 }
 
+// The child's general viewing limit is its newest "allow" rule without a
+// category/content/series target. Shared by parent and admin endpoints.
+async function legacyChildLimitPermission(db, childId) {
+  return db.one(
+    `
+      SELECT *
+      FROM child_permissions
+      WHERE child_id = $1
+        AND mode = 'allow'
+        AND content_id IS NULL
+        AND category_id IS NULL
+        AND series_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [childId]
+  );
+}
+
+async function legacyWriteChildLimit(db, childId, body = {}) {
+  const existing = await legacyChildLimitPermission(db, childId);
+  const dailyMinutes = toInteger(body.dailyMinutes ?? body.daily_minutes, existing?.daily_limit_minutes || 60);
+  const watchFromMin = legacyParseTimeOfDay(
+    body.allowedFrom ?? body.allowed_from,
+    "allowedFrom",
+    existing?.watch_from_min ?? 8 * 60
+  );
+  const watchUntilMin = legacyParseTimeOfDay(
+    body.allowedTo ?? body.allowed_to,
+    "allowedTo",
+    existing?.watch_until_min ?? 20 * 60
+  );
+  const weekdayMask = legacyAllowedDaysToMask(
+    body.allowedDays ?? body.allowed_days,
+    existing?.weekday_mask ?? legacyAllowedDaysToMask([1, 2, 3, 4, 5, 6, 7])
+  );
+
+  if (dailyMinutes < 1 || dailyMinutes > 1440) {
+    throw legacyError(400, "invalid_daily_limit", "dailyMinutes must be between 1 and 1440");
+  }
+
+  const permission = existing
+    ? await db.one(
+      `
+        UPDATE child_permissions
+        SET daily_limit_minutes = $1,
+            watch_from_min = $2,
+            watch_until_min = $3,
+            weekday_mask = $4
+        WHERE id = $5
+        RETURNING *
+      `,
+      [dailyMinutes, watchFromMin, watchUntilMin, weekdayMask, existing.id]
+    )
+    : await insertRow(db, "child_permissions", {
+      child_id: childId,
+      mode: "allow",
+      category_id: null,
+      content_id: null,
+      watch_from_min: watchFromMin,
+      watch_until_min: watchUntilMin,
+      weekday_mask: weekdayMask,
+      daily_limit_minutes: dailyMinutes
+    });
+
+  return legacyLimitResponse(childId, permission);
+}
+
 async function legacyUsedSecondsToday(db, childId) {
   const row = await db.one(
     `
@@ -2466,6 +2534,62 @@ export function createLegacyRoutes({
     response.json(result);
   }));
 
+  // Admin edits of a child on behalf of its parent (dashboard child card).
+  async function adminChild(request) {
+    const child = await request.legacyDb.one(
+      "SELECT * FROM children WHERE id = $1 AND parent_id = $2",
+      [request.params.child_id, request.params.user_id]
+    );
+    if (!child) {
+      throw legacyError(404, "child_not_found", "child not found");
+    }
+    return child;
+  }
+
+  router.post("/users/:user_id/children", requireAdmin, asyncHandler(async (request, response) => {
+    requireFields(request.body, ["name"]);
+    const parent = await request.legacyDb.one("SELECT id FROM users WHERE id = $1", [request.params.user_id]);
+    if (!parent) {
+      throw legacyError(404, "user_not_found", "user not found");
+    }
+    const child = await insertRow(request.legacyDb, "children", {
+      parent_id: parent.id,
+      name: request.body.name,
+      age: toInteger(request.body.age, 0),
+      avatar_url: request.body.avatar_url || "",
+      active: request.body.active !== false
+    });
+    response.status(201).json(child);
+  }));
+
+  router.patch("/users/:user_id/children/:child_id", requireAdmin, asyncHandler(async (request, response) => {
+    await adminChild(request);
+    response.json(await request.legacyDb.one(
+      "UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age) WHERE id = $3 RETURNING *",
+      [request.body.name || null, toInteger(request.body.age, null), request.params.child_id]
+    ));
+  }));
+
+  router.put("/users/:user_id/children/:child_id/pin", requireAdmin, asyncHandler(async (request, response) => {
+    requireFields(request.body, ["pin"]);
+    if (!/^\d{4}$/.test(String(request.body.pin))) {
+      throw legacyError(400, "invalid_pin", "pin must be 4 digits");
+    }
+    await adminChild(request);
+    await request.legacyDb.query("UPDATE children SET pin_hash = $1 WHERE id = $2", [hashSecret(String(request.body.pin)), request.params.child_id]);
+    response.json(messageResponse("pin_updated"));
+  }));
+
+  router.get("/users/:user_id/children/:child_id/limits", requireAdmin, asyncHandler(async (request, response) => {
+    const child = await adminChild(request);
+    response.json({ limit: legacyLimitResponse(child.id, await legacyChildLimitPermission(request.legacyDb, child.id)) });
+  }));
+
+  router.put("/users/:user_id/children/:child_id/limits", requireAdmin, asyncHandler(async (request, response) => {
+    const child = await adminChild(request);
+    response.json({ limit: await legacyWriteChildLimit(request.legacyDb, child.id, request.body || {}) });
+  }));
+
   router.get("/children", requireParent, asyncHandler(async (request, response) => {
     response.json(await request.legacyDb.many("SELECT * FROM children WHERE parent_id = $1 ORDER BY created_at DESC", [request.legacyUser.id]));
   }));
@@ -2538,22 +2662,7 @@ export function createLegacyRoutes({
       throw legacyError(404, "child_not_found", "child not found");
     }
 
-    const permission = await request.legacyDb.one(
-      `
-        SELECT *
-        FROM child_permissions
-        WHERE child_id = $1
-          AND mode = 'allow'
-          AND content_id IS NULL
-          AND category_id IS NULL
-          AND series_id IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      [child.id]
-    );
-
-    response.json({ limit: legacyLimitResponse(child.id, permission) });
+    response.json({ limit: legacyLimitResponse(child.id, await legacyChildLimitPermission(request.legacyDb, child.id)) });
   }));
 
   router.put("/children/:id/limits", requireParent, asyncHandler(async (request, response) => {
@@ -2570,66 +2679,7 @@ export function createLegacyRoutes({
       throw legacyError(404, "child_not_found", "child not found");
     }
 
-    const existing = await request.legacyDb.one(
-      `
-        SELECT *
-        FROM child_permissions
-        WHERE child_id = $1
-          AND mode = 'allow'
-          AND content_id IS NULL
-          AND category_id IS NULL
-          AND series_id IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      [child.id]
-    );
-    const body = request.body || {};
-    const dailyMinutes = toInteger(body.dailyMinutes ?? body.daily_minutes, existing?.daily_limit_minutes || 60);
-    const watchFromMin = legacyParseTimeOfDay(
-      body.allowedFrom ?? body.allowed_from,
-      "allowedFrom",
-      existing?.watch_from_min ?? 8 * 60
-    );
-    const watchUntilMin = legacyParseTimeOfDay(
-      body.allowedTo ?? body.allowed_to,
-      "allowedTo",
-      existing?.watch_until_min ?? 20 * 60
-    );
-    const weekdayMask = legacyAllowedDaysToMask(
-      body.allowedDays ?? body.allowed_days,
-      existing?.weekday_mask ?? legacyAllowedDaysToMask([1, 2, 3, 4, 5, 6, 7])
-    );
-
-    if (dailyMinutes < 1 || dailyMinutes > 1440) {
-      throw legacyError(400, "invalid_daily_limit", "dailyMinutes must be between 1 and 1440");
-    }
-
-    const permission = existing
-      ? await request.legacyDb.one(
-        `
-          UPDATE child_permissions
-          SET daily_limit_minutes = $1,
-              watch_from_min = $2,
-              watch_until_min = $3,
-              weekday_mask = $4
-          WHERE id = $5
-          RETURNING *
-        `,
-        [dailyMinutes, watchFromMin, watchUntilMin, weekdayMask, existing.id]
-      )
-      : await insertRow(request.legacyDb, "child_permissions", {
-        child_id: child.id,
-        mode: "allow",
-        category_id: null,
-        content_id: null,
-        watch_from_min: watchFromMin,
-        watch_until_min: watchUntilMin,
-        weekday_mask: weekdayMask,
-        daily_limit_minutes: dailyMinutes
-      });
-
-    response.json({ limit: legacyLimitResponse(child.id, permission) });
+    response.json({ limit: await legacyWriteChildLimit(request.legacyDb, child.id, request.body || {}) });
   }));
 
   router.get("/children/:id/blacklist", requireParent, asyncHandler(async (request, response) => {
