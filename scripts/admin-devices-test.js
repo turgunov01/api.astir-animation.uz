@@ -85,6 +85,21 @@ import { computeDeviceStats } from "../app/services/deviceStats.js";
   assert.equal(stats.current.connected, 3);
   assert.equal(stats.current.idle, 2, "pad last used 40 days ago, old never used since pairing 80 days ago");
   assert.equal(stats.current.qr_conversion, 50, "2 of 4 codes in the period ended in a pairing");
+
+  // Codes a device regenerates while waiting count as one attempt.
+  const retried = computeDeviceStats({
+    devices: [],
+    pairingSessions: [
+      { id: "a1", deviceName: "Pad", platform: "android", status: "pending", createdAt: ago(2), expiresAt: new Date(Date.parse(ago(2)) + 600_000).toISOString() },
+      { id: "a2", deviceName: "Pad", platform: "android", status: "approved", createdAt: new Date(Date.parse(ago(2)) + 600_000).toISOString(), expiresAt: new Date(Date.parse(ago(2)) + 1_200_000).toISOString() },
+      { id: "b1", deviceName: "Phone", platform: "ios", status: "pending", createdAt: ago(4), expiresAt: ago(3.99) }
+    ],
+    watchSessions: [],
+    days: 30,
+    now
+  });
+  assert.equal(retried.current.qr_attempts, 2);
+  assert.equal(retried.current.qr_conversion, 50, "the pad paired on its second code, the phone gave up");
   assert.equal(stats.current.median_pair_seconds, 40);
   assert.deepEqual(stats.qr_outcomes, [{ key: "approved", count: 2 }, { key: "expired", count: 1 }, { key: "pending", count: 1 }]);
   assert.equal(stats.current.devices_per_child, 1.5);

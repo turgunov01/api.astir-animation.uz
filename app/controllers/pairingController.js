@@ -24,6 +24,10 @@ export function createPairingController({ pairingService }) {
       });
     },
 
+    findByCode(request, response) {
+      response.json({ pairingSession: pairingService.findPendingSessionByCode(request.parent.id, request.params.code) });
+    },
+
     async approveSession(request, response) {
       response.json({
         pairingSession: await pairingService.approvePairingSession(

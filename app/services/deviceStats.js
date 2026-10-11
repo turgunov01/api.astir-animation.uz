@@ -17,6 +17,8 @@ function kpi(current, previous) {
 
 const time = (value) => (value ? new Date(value).getTime() : NaN);
 
+const ATTEMPT_GAP_MS = 15 * 60 * 1000;
+
 export function computeDeviceStats({ devices, pairingSessions, watchSessions, childNames = new Map(), days = 30, now = Date.now() }) {
   const todayStart = localDayStart(now);
   const from = todayStart - (days - 1) * DAY_MS;
@@ -53,6 +55,27 @@ export function computeDeviceStats({ devices, pairingSessions, watchSessions, ch
   const qrNow = qr(from, end);
   const qrBefore = qr(previousFrom, from);
   const approvedNow = qrNow.filter((session) => outcome(session) === "approved");
+  // One attempt = the codes a device shows in a row (it regenerates them while
+  // waiting), so conversion reflects people, not refreshed QR codes.
+  const attempts = (list) => {
+    const groups = [];
+    const open = new Map();
+    for (const session of [...list].sort((left, right) => time(left.createdAt) - time(right.createdAt))) {
+      const key = session.deviceName ? `${session.deviceName}|${session.platform || ""}` : `#${session.id || groups.length}`;
+      const current = open.get(key);
+      const lastEnd = current ? time(current.at(-1).expiresAt) || time(current.at(-1).createdAt) : 0;
+      if (current && time(session.createdAt) - lastEnd <= ATTEMPT_GAP_MS) {
+        current.push(session);
+      } else {
+        const group = [session];
+        groups.push(group);
+        open.set(key, group);
+      }
+    }
+    return groups.map((group) => (group.some((session) => outcome(session) === "approved") ? "approved" : outcome(group.at(-1))));
+  };
+  const attemptsNow = attempts(qrNow);
+  const attemptsBefore = attempts(qrBefore);
   const pairSeconds = approvedNow
     .map((session) => (time(session.approvedAt || session.updatedAt) - time(session.createdAt)) / 1000)
     .filter((seconds) => Number.isFinite(seconds) && seconds >= 0);
@@ -97,8 +120,9 @@ export function computeDeviceStats({ devices, pairingSessions, watchSessions, ch
       idle_share: ratio(idle.length, connected.length),
       children_with_devices: perChild.size,
       devices_per_child: perChild.size ? Math.round((connected.length / perChild.size) * 10) / 10 : 0,
-      qr_conversion: ratio(approvedNow.length, qrNow.length),
-      qr_conversion_previous: ratio(qrBefore.filter((session) => outcome(session) === "approved").length, qrBefore.length),
+      qr_conversion: ratio(attemptsNow.filter((result) => result === "approved").length, attemptsNow.length),
+      qr_conversion_previous: ratio(attemptsBefore.filter((result) => result === "approved").length, attemptsBefore.length),
+      qr_attempts: attemptsNow.length,
       median_pair_seconds: median === null ? null : Math.round(median),
       churn_share: ratio(devices.filter((device) => device.revokedAt).length, devices.length)
     },

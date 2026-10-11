@@ -5,6 +5,7 @@ export function createPairingRoutes({ authMiddleware, pairingController }) {
   const router = Router();
 
   router.post("/sessions", asyncHandler(pairingController.createSession));
+  router.get("/sessions/by-code/:code", authMiddleware.requireParent, asyncHandler(pairingController.findByCode));
   router.get("/sessions/:sessionId", asyncHandler(pairingController.getSession));
   router.post(
     "/sessions/:sessionId/approve",
