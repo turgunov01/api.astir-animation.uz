@@ -28,6 +28,7 @@ import {
   verifyOtp
 } from "./auth.js";
 import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js";
+import { buildAdminOverview } from "./adminOverview.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -4222,6 +4223,10 @@ export function createLegacyRoutes({
 
   router.get("/support/attachments/:path", asyncHandler(async (request, response) => {
     response.sendFile(media.resolve(request.params.path));
+  }));
+
+  router.get("/admin/overview", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await buildAdminOverview(request.legacyDb, request.query));
   }));
 
   router.get("/admin/support/chats", requireAdmin, asyncHandler(async (request, response) => {
