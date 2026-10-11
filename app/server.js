@@ -69,6 +69,8 @@ export function createApp({ container = createContainer() } = {}) {
 
   // Payment providers: the app asks which ones to offer, and new payments
   // through a provider the admin switched off are refused.
+  app.use(container.services.presence.middleware());
+
   const paymentProviders = container.services.paymentProviders;
   app.get(["/v1/billing/providers", "/api/v1/billing/providers"], async (request, response, next) => {
     try {

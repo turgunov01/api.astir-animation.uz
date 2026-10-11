@@ -34,6 +34,14 @@ import { buildSalesStats } from "./adminSalesStats.js";
 import { buildParentStats } from "./adminParentStats.js";
 import { buildChildStats } from "./adminChildStats.js";
 import {
+  findSupportMessage,
+  listAdminSupportChats,
+  listSupportMessages,
+  markSupportChatRead,
+  supportChatMedia,
+  supportChatProfile
+} from "./supportChat.js";
+import {
   asyncHandler,
   buildUpdate,
   i18n,
@@ -363,6 +371,13 @@ function supportMessageBody(body = {}) {
   }
 
   return "";
+}
+
+// A reply must point at a message of the same chat; anything else is ignored.
+async function supportReplyTarget(db, chatId, replyToId) {
+  if (!replyToId || !/^[0-9a-f-]{36}$/i.test(String(replyToId))) return null;
+  const row = await db.one("SELECT id FROM support_messages WHERE id = $1 AND chat_id = $2", [replyToId, chatId]);
+  return row?.id || null;
 }
 
 function assertSupportMessagePayload(body, stored) {
@@ -4313,7 +4328,7 @@ export function createLegacyRoutes({
       response.json({ data: [] });
       return;
     }
-    response.json({ data: await request.legacyDb.many("SELECT * FROM support_messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 50", [chat.id]) });
+    response.json(await listSupportMessages(request.legacyDb, chat.id, request.query));
   }));
 
   router.post("/support/chat/messages", requireUser, supportUpload, asyncHandler(async (request, response) => {
@@ -4332,6 +4347,7 @@ export function createLegacyRoutes({
       sender_id: request.legacyUser.id,
       sender_role: "user",
       body,
+      reply_to_id: await supportReplyTarget(request.legacyDb, chat.id, request.body?.reply_to_id),
       attachment_path: stored?.path || null,
       attachment_url: stored?.url || null,
       attachment_name: stored?.original_name || null,
@@ -4340,16 +4356,16 @@ export function createLegacyRoutes({
     });
     await updateById(request.legacyDb, "support_chats", chat.id, {
       last_message_at: new Date().toISOString(),
-      last_message_preview: body.slice(0, 120),
+      last_message_preview: (body || (stored ? `📎 ${stored.original_name || "Файл"}` : "")).slice(0, 120),
       admin_unread_count: chat.admin_unread_count + 1
     });
-    response.status(201).json(message);
+    response.status(201).json(await findSupportMessage(request.legacyDb, message.id));
   }));
 
   router.post("/support/chat/read", requireUser, asyncHandler(async (request, response) => {
     const chat = await request.legacyDb.one("SELECT * FROM support_chats WHERE user_id = $1", [request.legacyUser.id]);
     if (chat) {
-      await updateById(request.legacyDb, "support_chats", chat.id, { user_unread_count: 0 });
+      await markSupportChatRead(request.legacyDb, chat.id, "user");
     }
     response.json(messageResponse("read"));
   }));
@@ -4463,17 +4479,7 @@ export function createLegacyRoutes({
 
   router.get("/admin/support/chats", requireAdmin, asyncHandler(async (request, response) => {
     const { limit, offset } = parseLimitOffset(request.query);
-    const rows = await request.legacyDb.many(
-      `
-        SELECT sc.*, row_to_json(u.*) AS user
-        FROM support_chats sc
-        JOIN users u ON u.id = sc.user_id
-        ORDER BY sc.last_message_at DESC NULLS LAST, sc.created_at DESC
-        LIMIT $1 OFFSET $2
-      `,
-      [limit, offset]
-    );
-    response.json({ data: rows, limit, offset });
+    response.json({ data: await listAdminSupportChats(request.legacyDb, { q: request.query.q, limit, offset }), limit, offset });
   }));
 
   router.get("/admin/support/chats/:id", requireAdmin, asyncHandler(async (request, response) => {
@@ -4481,7 +4487,37 @@ export function createLegacyRoutes({
   }));
 
   router.get("/admin/support/chats/:id/messages", requireAdmin, asyncHandler(async (request, response) => {
-    response.json({ data: await request.legacyDb.many("SELECT * FROM support_messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 100", [request.params.id]) });
+    response.json(await listSupportMessages(request.legacyDb, request.params.id, request.query));
+  }));
+
+  router.get("/admin/support/chats/:id/media", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await supportChatMedia(request.legacyDb, request.params.id));
+  }));
+
+  router.get("/admin/support/chats/:id/profile", requireAdmin, asyncHandler(async (request, response) => {
+    const profile = await supportChatProfile(request.legacyDb, request.params.id);
+    if (!profile) {
+      throw legacyError(404, "chat_not_found", "chat not found");
+    }
+    response.json(profile);
+  }));
+
+  // Delete a message for everyone, with its file; the chat preview follows.
+  router.delete("/admin/support/messages/:id", requireAdmin, asyncHandler(async (request, response) => {
+    const message = await request.legacyDb.one("DELETE FROM support_messages WHERE id = $1 RETURNING *", [request.params.id]);
+    if (!message) {
+      throw legacyError(404, "message_not_found", "message not found");
+    }
+    if (message.attachment_path) {
+      await request.legacyDb.query("DELETE FROM media_assets WHERE path = $1", [message.attachment_path]);
+      media.remove(message.attachment_path);
+    }
+    const last = await request.legacyDb.one("SELECT * FROM support_messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 1", [message.chat_id]);
+    await updateById(request.legacyDb, "support_chats", message.chat_id, {
+      last_message_at: last?.created_at || null,
+      last_message_preview: last ? String(last.body || last.attachment_name || "").slice(0, 120) : null
+    });
+    response.json(messageResponse("deleted"));
   }));
 
   router.post("/admin/support/chats/:id/messages", requireAdmin, supportUpload, asyncHandler(async (request, response) => {
@@ -4497,6 +4533,7 @@ export function createLegacyRoutes({
       sender_id: request.legacyUser.id,
       sender_role: "admin",
       body,
+      reply_to_id: await supportReplyTarget(request.legacyDb, chat.id, request.body?.reply_to_id),
       attachment_path: stored?.path || null,
       attachment_url: stored?.url || null,
       attachment_name: stored?.original_name || null,
@@ -4505,14 +4542,14 @@ export function createLegacyRoutes({
     });
     await updateById(request.legacyDb, "support_chats", chat.id, {
       last_message_at: new Date().toISOString(),
-      last_message_preview: body.slice(0, 120),
+      last_message_preview: (body || (stored ? `📎 ${stored.original_name || "Файл"}` : "")).slice(0, 120),
       user_unread_count: chat.user_unread_count + 1
     });
-    response.status(201).json(message);
+    response.status(201).json(await findSupportMessage(request.legacyDb, message.id));
   }));
 
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
-    await updateById(request.legacyDb, "support_chats", request.params.id, { admin_unread_count: 0 });
+    await markSupportChatRead(request.legacyDb, request.params.id, "admin");
     response.json(messageResponse("read"));
   }));
 
