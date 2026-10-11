@@ -1,3 +1,4 @@
+import { localDayKey, localDayStart, localHour } from "../lib/localDay.js";
 // One payload for the admin "Аналитика" tab of a cartoon: zero-filled daily
 // series for every metric (views, viewers, watch time, likes, dislikes,
 // comments) for the period and the one before it, the last 48 hours by hour,
@@ -17,9 +18,7 @@ const AGE_GROUPS = [
   { key: "13+", max: Infinity }
 ];
 
-function dayKey(time) {
-  return new Date(time).toISOString().slice(0, 10);
-}
+const dayKey = localDayKey;
 
 function emptyDay() {
   return { views: 0, viewers: new Set(), watch_seconds: 0, likes: 0, dislikes: 0, comments: 0 };
@@ -41,7 +40,7 @@ export async function buildContentStudioStats(db, contentIds, {
   const durationOf = (id) => Number(durations[id]) || 0;
   const days = Math.min(Math.max(Number(requestedDays) || 28, 1), 365);
   const now = Date.now();
-  const todayStart = new Date(dayKey(now)).getTime();
+  const todayStart = localDayStart(now);
   const from = todayStart - (days - 1) * DAY_MS;
   const previousFrom = from - days * DAY_MS;
 
@@ -78,7 +77,7 @@ export async function buildContentStudioStats(db, contentIds, {
     }
     const hoursAgo = Math.floor((now - time) / HOUR_MS);
     if (hoursAgo >= 0 && hoursAgo < 48) hourly[47 - hoursAgo] += 1;
-    if (time >= from) byHourOfDay[new Date(time).getHours()] += 1;
+    if (time >= from) byHourOfDay[localHour(time)] += 1;
   }
 
   for (const session of watchSessions?.all?.() || []) {

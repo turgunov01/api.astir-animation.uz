@@ -1,3 +1,4 @@
+import { localDayKey, localDayStart } from "../lib/localDay.js";
 // Sales report for the admin "Подписки" page, from the live v1 billing
 // tables: revenue and payments by day, MRR, ARPU/ARPPU, conversion to paid,
 // churn, renewals, payment success, splits by tariff and provider, plus
@@ -7,9 +8,7 @@ const DAY_MS = 86_400_000;
 const SUCCEEDED = new Set(["succeeded", "success", "paid", "completed"]);
 const FAILED = new Set(["failed", "canceled", "cancelled", "error", "rejected"]);
 
-function dayKey(time) {
-  return new Date(time).toISOString().slice(0, 10);
-}
+const dayKey = localDayKey;
 
 function ratio(part, whole) {
   return whole ? Math.round((part / whole) * 1000) / 10 : null;
@@ -29,7 +28,7 @@ function localizedTitle(value) {
 }
 
 export function computeSalesStats({ transactions, subscriptions, parentsTotal, newParents = { current: 0, previous: 0 }, tariffs = [], days = 30, now = Date.now() }) {
-  const todayStart = new Date(dayKey(now)).getTime();
+  const todayStart = localDayStart(now);
   const from = todayStart - (days - 1) * DAY_MS;
   const previousFrom = from - days * DAY_MS;
   const inRange = (time, start, end) => time >= start && time < end;

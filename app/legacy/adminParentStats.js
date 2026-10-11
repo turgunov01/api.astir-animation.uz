@@ -1,3 +1,4 @@
+import { localDayKey, localDayStart } from "../lib/localDay.js";
 // Parents report for the admin "Родители" page: registrations and active
 // parents by day, DAU/WAU/MAU, a funnel (registered → added a child →
 // paired a device → paid), sign-up methods, children per family and how many
@@ -9,9 +10,7 @@
 const DAY_MS = 86_400_000;
 const PAID = ["succeeded", "success", "paid", "completed"];
 
-function dayKey(time) {
-  return new Date(time).toISOString().slice(0, 10);
-}
+const dayKey = localDayKey;
 
 function ratio(part, whole) {
   return whole ? Math.round((part / whole) * 1000) / 10 : null;
@@ -22,7 +21,7 @@ function kpi(current, previous) {
 }
 
 export function computeParentStats({ parents, activity, childCounts, deviceParents, payingParents, days = 30, now = Date.now() }) {
-  const todayStart = new Date(dayKey(now)).getTime();
+  const todayStart = localDayStart(now);
   const from = todayStart - (days - 1) * DAY_MS;
   const previousFrom = from - days * DAY_MS;
   const end = todayStart + DAY_MS;
