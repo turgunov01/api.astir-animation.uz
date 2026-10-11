@@ -1,3 +1,4 @@
+import { ageFromBirthDate, formatBirthDate, parseBirthDate } from "../lib/childAge.js";
 import { Router } from "express";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -1379,14 +1380,29 @@ function legacyLimitResponse(childId, permission = null) {
 
 // Child rows leave the API without the PIN hash (4 digits are trivial to
 // brute-force offline); clients only need to know whether a PIN is set.
+// birth_date from a request body; when given, age follows it.
+function childBirthAttrs(body = {}) {
+  const birthDate = parseBirthDate(body.birth_date ?? body.birthDate, {
+    onInvalid: () => legacyError(400, "invalid_birth_date", "birth_date must be a past date (YYYY-MM-DD) within 25 years")
+  });
+  if (birthDate === undefined) return {};
+  return { birth_date: birthDate, age: birthDate ? ageFromBirthDate(birthDate) : 0 };
+}
+
 function publicChild(row) {
   if (!row) {
     return row;
   }
 
   const { pin_hash: pinHash, ...child } = row;
+  const birthDate = formatBirthDate(child.birth_date);
 
-  return { ...child, has_pin: Boolean(pinHash) };
+  return {
+    ...child,
+    birth_date: birthDate,
+    age: birthDate ? ageFromBirthDate(birthDate) : child.age,
+    has_pin: Boolean(pinHash)
+  };
 }
 
 // The child's general viewing limit is its newest "allow" rule without a
@@ -2632,16 +2648,20 @@ export function createLegacyRoutes({
       name: request.body.name,
       age: toInteger(request.body.age, 0),
       avatar_url: request.body.avatar_url || "",
-      active: request.body.active !== false
+      active: request.body.active !== false,
+      ...childBirthAttrs(request.body)
     });
     response.status(201).json(publicChild(child));
   }));
 
   router.patch("/users/:user_id/children/:child_id", requireAdmin, asyncHandler(async (request, response) => {
     await adminChild(request);
+    const birth = childBirthAttrs(request.body);
     response.json(publicChild(await request.legacyDb.one(
-      "UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age) WHERE id = $3 RETURNING *",
-      [request.body.name || null, toInteger(request.body.age, null), request.params.child_id]
+      `UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age),
+         birth_date = CASE WHEN $4 THEN $5::date ELSE birth_date END
+       WHERE id = $3 RETURNING *`,
+      [request.body.name || null, birth.age ?? toInteger(request.body.age, null), request.params.child_id, "birth_date" in birth, birth.birth_date ?? null]
     )));
   }));
 
@@ -2677,7 +2697,8 @@ export function createLegacyRoutes({
       name: request.body.name,
       age: toInteger(request.body.age, 0),
       avatar_url: request.body.avatar_url || "",
-      active: request.body.active !== false
+      active: request.body.active !== false,
+      ...childBirthAttrs(request.body)
     });
     response.status(201).json(publicChild(child));
   }));
@@ -2687,9 +2708,12 @@ export function createLegacyRoutes({
       throw legacyError(400, "invalid child_id", "invalid child_id");
     }
 
+    const birth = childBirthAttrs(request.body);
     const child = await request.legacyDb.one(
-      "UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age), avatar_url = COALESCE($3, avatar_url), active = COALESCE($4, active) WHERE id = $5 AND parent_id = $6 RETURNING *",
-      [request.body.name, toInteger(request.body.age, null), request.body.avatar_url, request.body.active, request.params.id, request.legacyUser.id]
+      `UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age), avatar_url = COALESCE($3, avatar_url), active = COALESCE($4, active),
+         birth_date = CASE WHEN $7 THEN $8::date ELSE birth_date END
+       WHERE id = $5 AND parent_id = $6 RETURNING *`,
+      [request.body.name, birth.age ?? toInteger(request.body.age, null), request.body.avatar_url, request.body.active, request.params.id, request.legacyUser.id, "birth_date" in birth, birth.birth_date ?? null]
     );
     if (!child) {
       throw legacyError(404, "child_not_found", "child not found");

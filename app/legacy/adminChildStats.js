@@ -1,3 +1,5 @@
+import { ageFromBirthDate } from "../lib/childAge.js";
+
 import { localDayKey, localDayStart, localHour } from "../lib/localDay.js";
 
 // Children report for the admin "Дети" page: how many kids watch and how
@@ -24,7 +26,9 @@ function kpi(current, previous) {
 }
 
 // The age field holds either an age or (in older profiles) a birth year.
-export function childAge(value, now = Date.now()) {
+export function childAge(value, now = Date.now(), birthDate = null) {
+  const fromBirth = ageFromBirthDate(birthDate, new Date(now));
+  if (fromBirth !== null) return fromBirth;
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return null;
   if (number > 1900) return new Date(now).getUTCFullYear() - number;
@@ -83,7 +87,7 @@ export function computeChildStats({ children, sessions, limits, devices, titles 
   const ages = new Map(AGE_GROUPS.map((group) => [group.key, 0]));
   let unknownAge = 0;
   for (const child of children) {
-    const age = childAge(child.age, now);
+    const age = childAge(child.age, now, child.birth_date);
     if (age === null) unknownAge += 1;
     else ages.set(AGE_GROUPS.find((group) => age <= group.max).key, ages.get(AGE_GROUPS.find((group) => age <= group.max).key) + 1);
   }
@@ -132,7 +136,7 @@ export function computeChildStats({ children, sessions, limits, devices, titles 
 export async function buildChildStats(db, { days: requestedDays, watchSessions = null, watchLimits = null, devices = null, contentMovies = null } = {}) {
   const days = [7, 30, 90, 365].includes(Number(requestedDays)) ? Number(requestedDays) : 30;
   const [children, legacyTitles] = await Promise.all([
-    db.many("SELECT id::text AS id, age, active, extended_until, pin_hash IS NOT NULL AS has_pin FROM children"),
+    db.many("SELECT id::text AS id, age, birth_date, active, extended_until, pin_hash IS NOT NULL AS has_pin FROM children"),
     db.many("SELECT id::text AS id, title FROM content")
   ]);
 
