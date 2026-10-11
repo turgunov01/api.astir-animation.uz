@@ -621,8 +621,10 @@ try {
     headers: { authorization: `Bearer ${parentToken}` }
   });
 
-  assert.equal(blockedPremiumMovie.status, 403);
-  assert.equal(blockedPremiumMovie.body.error.code, "PREMIUM_TARIFF_REQUIRED");
+  // Premium is shown to everyone, locked: a preview and a paywall.
+  assert.equal(blockedPremiumMovie.status, 200);
+  assert.equal(blockedPremiumMovie.body.movie.subscription_required, true);
+  assert.equal(blockedPremiumMovie.body.movie.playback.preview_only, true);
 
   const superAdminPremiumMovie = await request(baseUrl, `/v1/content/movies/${premiumMovieId}`, {
     headers: { authorization: `Bearer ${superAdminToken}` }

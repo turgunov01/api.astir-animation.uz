@@ -1018,11 +1018,10 @@ export function createContentService({
     return isSeriesContainer(movie) || isSeriesMovie(movie) ? "series" : "movies";
   }
 
+  // Premium content is listed for everyone (marked subscription_required,
+  // with a 15 s preview); only the parent's blacklist hides it.
   function canExposeMovieToActor(actor, movie, adminActor) {
-    return adminActor || (
-      tariffService.canWatchMovie(actor, movie)
-      && !isMovieBlacklistedForActor(actor, movie)
-    );
+    return adminActor || !isMovieBlacklistedForActor(actor, movie);
   }
 
   function blacklistIdsForMovie(movie) {
@@ -1094,7 +1093,6 @@ export function createContentService({
     const movie = contentMovies.findById(contentId);
 
     if (movie) {
-      tariffService.assertCanWatchMovie(actor, movie);
 
       return {
         id: movie.id,
@@ -1234,7 +1232,6 @@ export function createContentService({
       const movie = contentMovies.findById(contentId);
 
       if (movie) {
-        tariffService.assertCanWatchMovie(actor, movie);
         assertMovieNotBlacklisted(actor, movie);
         const movieWithTranscode = transcoder.ensureMovieTranscoded(movie);
         const likeContext = likeContextForActor(actor);
@@ -1358,10 +1355,6 @@ export function createContentService({
         const movie = contentMovies.findById(like.targetId);
 
         if (movie) {
-          if (!tariffService.canWatchMovie(actor, movie)) {
-            continue;
-          }
-
           if (isMovieBlacklistedForActor(actor, movie)) {
             continue;
           }
@@ -1490,7 +1483,6 @@ export function createContentService({
       const adminActor = isAdminActor(actor);
 
       if (!adminActor) {
-        tariffService.assertCanWatchMovie(actor, movie);
         assertMovieNotBlacklisted(actor, movie);
       }
 
@@ -1501,7 +1493,6 @@ export function createContentService({
         movie: await overlayStreaming(await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode)
-            .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
             .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item)),
           contentTags,
           contentMovieTags,
@@ -1517,7 +1508,6 @@ export function createContentService({
       const adminActor = isAdminActor(actor);
 
       if (!adminActor) {
-        tariffService.assertCanWatchMovie(actor, movie);
         assertMovieNotBlacklisted(actor, movie);
       }
       const likeContext = likeContextForActor(actor);
@@ -1526,7 +1516,6 @@ export function createContentService({
         movie_id: movie.id,
         series: await overlayStreamingMany(await Promise.all(
           listSeriesRecords(movie)
-            .filter((item) => adminActor || tariffService.canWatchMovie(actor, item))
             .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item))
             .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
         ))
@@ -1729,7 +1718,6 @@ export function createContentService({
         contentMovies.list()
           .filter((movie) => !isSeriesMovie(movie))
           .filter((movie) => !seriesOnly || listSeriesRecords(movie).length > 0 || normalized(movie.content_type) === "series")
-          .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
           .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
           .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
           .filter((movie) => movieMatchesSearch(movie, q) || listSeriesRecords(movie).some((item) => movieMatchesSearch(item, q)))
@@ -1773,7 +1761,6 @@ export function createContentService({
       const maxItems = Math.min(Math.max(Number(limit) || 20, 1), MAX_PAGE_LIMIT);
       const movies = contentMovies.list()
         .filter((movie) => !isSeriesMovie(movie))
-        .filter((movie) => adminActor || tariffService.canWatchMovie(actor, movie))
         .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
         .sort((left, right) => (
           (metricValue(right.views_count) + metricValue(right.series_views_count))
