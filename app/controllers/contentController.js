@@ -575,7 +575,7 @@ export function createContentController({ contentService }) {
     },
 
     async listTags(request, response) {
-      response.json(await contentService.listTags());
+      response.json(await contentService.listTags(request.actor));
     },
 
     async listTagContent(request, response) {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
+import { withTagActivitySync } from "./tagActivity.js";
 
 // Hard cap on how many items any content-list request may return in one page.
 // Stops a client from pulling the whole catalog in a single heavy response;
@@ -856,6 +857,8 @@ export function createContentService({
   transcoder,
   usageDb = null
 }) {
+  contentMovieTags = withTagActivitySync(contentMovieTags, contentTags);
+
   // What still points at each category: cartoons/series in the catalog,
   // legacy series and episodes, subcategories and parental rules. A category
   // with anything attached must not be deleted.
@@ -1528,7 +1531,7 @@ export function createContentService({
     async listFilters() {
       return {
         categories: contentCategories.list().map(serializeCategory),
-        tags: (await contentTags.list()).map(serializeTag)
+        tags: (await contentTags.list()).map(serializeTag).filter((tag) => tag.active)
       };
     },
 
@@ -1853,16 +1856,17 @@ export function createContentService({
       };
     },
 
-    async createTag({ name, slug, active }) {
+    async createTag({ name, slug }) {
       const tagSlug = slug ? slugify(slug, "tag") : await uniqueTagSlug(contentTags, name);
 
       await assertTagNameAvailable(contentTags, name);
       await assertTagSlugAvailable(contentTags, tagSlug);
 
+      // A new tag has no content yet, so it starts hidden from the app.
       return serializeTag(await contentTags.create(tagAttributes({
         name,
         slug: tagSlug,
-        active
+        active: false
       })));
     },
 
@@ -1882,10 +1886,14 @@ export function createContentService({
       return serializeTag(await getTagRecord(tagId));
     },
 
-    async listTags() {
+    // Admins see every tag; the app only gets active (non-empty) ones.
+    async listTags(actor = null) {
       const counts = await contentMovieTags.countByTag();
+      const tags = (await contentTags.list())
+        .map((tag) => ({ ...serializeTag(tag), content_count: counts.get(tag.id) || 0 }));
+
       return {
-        tags: (await contentTags.list()).map((tag) => ({ ...serializeTag(tag), content_count: counts.get(tag.id) || 0 }))
+        tags: isAdminActor(actor) ? tags : tags.filter((tag) => tag.active)
       };
     },
 
@@ -1992,6 +2000,10 @@ export function createContentService({
       if (Object.hasOwn(tagUpdates, "slug")) {
         tagUpdates.slug = slugify(tagUpdates.slug, "tag");
         await assertTagSlugAvailable(contentTags, tagUpdates.slug, tag.id);
+      }
+
+      if (tagUpdates.active === true && !(await contentMovieTags.countByTag()).get(tag.id)) {
+        throw conflict("Пустой тег нельзя включить — сначала добавьте его хотя бы к одному мультфильму", "TAG_EMPTY");
       }
 
       return serializeTag(await contentTags.update(tag.id, tagUpdates));

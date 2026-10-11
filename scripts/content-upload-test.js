@@ -292,11 +292,13 @@ try {
   assert.equal(createTagResponse.body.tag.name, "Upload Test Tag");
   assert.equal(createTagResponse.body.tag.slug, "upload-test-tag");
 
+  // A new tag has no content yet: it starts inactive and the app does not see it.
+  assert.equal(createTagResponse.body.tag.active, false);
   const listedTags = await requestJson(baseUrl, "/v1/content/tags");
   assert.equal(listedTags.status, 200);
   assert.equal(
     listedTags.body.tags.some((tag) => tag.id === createTagResponse.body.tag.id),
-    true
+    false
   );
 
   const singleTag = await requestJson(baseUrl, `/v1/content/tags/${createTagResponse.body.tag.id}`);
