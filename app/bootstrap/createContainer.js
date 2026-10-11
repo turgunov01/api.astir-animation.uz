@@ -8,6 +8,7 @@ import { createRepositories } from "../repositories/index.js";
 import { createAuthService } from "../services/authService.js";
 import { createChildService } from "../services/childService.js";
 import { createContentPurge } from "../services/contentPurge.js";
+import { createPaymentProviders } from "../services/paymentProviders.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
 import { createLegacyStreamingState } from "../services/legacyStreamingState.js";
@@ -74,6 +75,7 @@ export function createContainer({ store = defaultStore } = {}) {
     contentMovies: repositories.contentMovies
   });
   services.legacyStreaming = createLegacyStreaming({ config });
+  services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
   services.contentPurge = createContentPurge({
     db: databaseDb,
     mediaRoot: config.mediaRoot,

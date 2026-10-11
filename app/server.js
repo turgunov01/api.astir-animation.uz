@@ -66,6 +66,18 @@ export function createApp({ container = createContainer() } = {}) {
   }));
   app.use(buildCors(container.config));
   app.use(express.json({ limit: "1mb" }));
+
+  // Payment providers: the app asks which ones to offer, and new payments
+  // through a provider the admin switched off are refused.
+  const paymentProviders = container.services.paymentProviders;
+  app.get(["/v1/billing/providers", "/api/v1/billing/providers"], async (request, response, next) => {
+    try {
+      response.json({ providers: await paymentProviders.publicList() });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.use(paymentProviders.guard());
   app.use(express.urlencoded({ extended: false }));
 
   const legacyDb = container.searchDb || createLegacyDb();
@@ -115,6 +127,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentPurge: container.services.contentPurge,
     contentService: container.services.content,
     media: legacyMedia,
+    paymentProviders: container.services.paymentProviders,
     streaming: container.services.legacyStreaming,
     tariffs: container.repositories.tariffs
   });

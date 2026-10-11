@@ -2022,6 +2022,7 @@ export function createLegacyRoutes({
   contentPurge = null,
   contentService = null,
   media,
+  paymentProviders = null,
   streaming = null,
   tariffs = null
 }) {
@@ -4354,6 +4355,80 @@ export function createLegacyRoutes({
 
   router.get("/admin/overview", requireAdmin, asyncHandler(async (request, response) => {
     response.json(await buildAdminOverview(request.legacyDb, request.query));
+  }));
+
+  // Payment integrations page: switch, setup status (no secrets) and numbers.
+  router.get("/admin/payment-providers", requireAdmin, asyncHandler(async (request, response) => {
+    const providers = await paymentProviders.adminList();
+    const stats = await request.legacyDb.many(`
+      SELECT provider,
+        count(*) FILTER (WHERE status IN ('succeeded', 'success', 'paid', 'completed'))::int AS paid_total,
+        COALESCE(sum(amount_cents) FILTER (WHERE status IN ('succeeded', 'success', 'paid', 'completed')), 0)::bigint AS revenue_total_cents,
+        count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS attempts_30d,
+        count(*) FILTER (WHERE created_at >= now() - interval '30 days' AND status IN ('succeeded', 'success', 'paid', 'completed'))::int AS paid_30d,
+        COALESCE(sum(amount_cents) FILTER (WHERE created_at >= now() - interval '30 days' AND status IN ('succeeded', 'success', 'paid', 'completed')), 0)::bigint AS revenue_30d_cents,
+        max(created_at) FILTER (WHERE status IN ('succeeded', 'success', 'paid', 'completed')) AS last_paid_at
+      FROM v1_transactions GROUP BY provider
+    `);
+    const byProvider = new Map(stats.map((row) => [row.provider, row]));
+    const base = String(config.publicBaseUrl || `https://${request.get("host")}`).replace(/\/$/, "");
+    const mask = (value) => (value ? `${String(value).slice(0, 3)}•••${String(value).slice(-2)}` : null);
+    const products = (map) => Object.entries(map || {}).map(([product, tariff]) => ({ product, tariff }));
+    const settings = {
+      click: [
+        { label: "Service ID", value: config.click?.serviceId || null },
+        { label: "Merchant ID", value: config.click?.merchantId || null },
+        { label: "Merchant user ID", value: config.click?.merchantUserId || null },
+        { label: "Secret key", value: mask(config.click?.secretKey), secret: true },
+        { label: "Prepare URL", value: `${base}/api/v1/billing/click/prepare`, copy: true },
+        { label: "Complete URL", value: `${base}/api/v1/billing/click/complete`, copy: true },
+        { label: "Return URL", value: config.click?.returnUrl || null }
+      ],
+      apple: [
+        { label: "Bundle ID", value: config.appleIap?.bundleId || null },
+        { label: "Issuer ID", value: mask(config.appleIap?.issuerId), secret: true },
+        { label: "Key ID", value: config.appleIap?.keyId || null },
+        { label: "Private key", value: config.appleIap?.privateKey || config.appleIap?.privateKeyPath ? "загружен" : null, secret: true },
+        { label: "Окружение", value: config.appleIap?.environment || "auto" },
+        { label: "Server notifications URL", value: `${base}/api/v1/billing/webhook/apple`, copy: true }
+      ],
+      google: [
+        { label: "Package name", value: config.googlePlay?.packageName || null },
+        { label: "Service account", value: config.googlePlay?.serviceAccountPath ? "загружен" : null, secret: true },
+        { label: "Real-time notifications URL", value: `${base}/api/v1/billing/webhook/google`, copy: true }
+      ]
+    };
+    const productMaps = { apple: products(config.appleIap?.products), google: products(config.googlePlay?.products) };
+
+    response.json({
+      providers: providers.map((provider) => {
+        const row = byProvider.get(provider.id) || {};
+        return {
+          ...provider,
+          settings: settings[provider.id] || [],
+          products: productMaps[provider.id] || [],
+          stats: {
+            paid_total: row.paid_total || 0,
+            revenue_total_cents: Number(row.revenue_total_cents || 0),
+            attempts_30d: row.attempts_30d || 0,
+            paid_30d: row.paid_30d || 0,
+            revenue_30d_cents: Number(row.revenue_30d_cents || 0),
+            last_paid_at: row.last_paid_at || null
+          }
+        };
+      })
+    });
+  }));
+
+  router.patch("/admin/payment-providers/:id", requireAdmin, asyncHandler(async (request, response) => {
+    if (typeof request.body?.enabled !== "boolean") {
+      throw legacyError(400, "validation_error", "enabled must be true or false");
+    }
+    const provider = await paymentProviders.setEnabled(request.params.id, request.body.enabled, request.legacyUser?.id || null);
+    if (!provider) {
+      throw legacyError(404, "provider_not_found", "unknown payment provider");
+    }
+    response.json(provider);
   }));
 
   router.get("/admin/billing/stats", requireAdmin, asyncHandler(async (request, response) => {
