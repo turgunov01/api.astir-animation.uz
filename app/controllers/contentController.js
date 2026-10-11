@@ -578,6 +578,10 @@ export function createContentController({ contentService }) {
       response.json(await contentService.listTags());
     },
 
+    async listTagContent(request, response) {
+      response.json(await contentService.listTagContent(request.params.tag_id));
+    },
+
     async replaceMovieTags(request, response) {
       const body = payload(request);
 

@@ -84,6 +84,7 @@ export function createContentRoutes({ authMiddleware, contentController, uploadM
   );
   router.get("/tags", authMiddleware.requireActor, asyncHandler(contentController.listTags));
   router.get("/tags/:tag_id", authMiddleware.requireActor, asyncHandler(contentController.getTag));
+  router.get("/tags/:tag_id/content", authMiddleware.requireParent, asyncHandler(contentController.listTagContent));
   router.post(
     "/tags/create",
     authMiddleware.requireParent,

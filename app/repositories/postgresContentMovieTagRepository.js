@@ -1,5 +1,19 @@
 export function createPostgresContentMovieTagRepository(db) {
   return {
+    async countByTag() {
+      const rows = await db.many("SELECT tag_id, count(*)::int AS count FROM v1_content_movie_tags GROUP BY tag_id");
+      return new Map(rows.map((row) => [row.tag_id, row.count]));
+    },
+
+    async listMovieIdsByTag(tagId) {
+      const rows = await db.many(
+        "SELECT movie_id FROM v1_content_movie_tags WHERE tag_id = $1 ORDER BY created_at DESC",
+        [tagId]
+      );
+
+      return rows.map((row) => row.movie_id);
+    },
+
     async listByMovieId(movieId) {
       const rows = await db.many(
         "SELECT tag_id FROM v1_content_movie_tags WHERE movie_id = $1 ORDER BY created_at",

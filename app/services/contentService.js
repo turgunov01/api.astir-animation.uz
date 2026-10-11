@@ -1883,9 +1883,34 @@ export function createContentService({
     },
 
     async listTags() {
+      const counts = await contentMovieTags.countByTag();
       return {
-        tags: (await contentTags.list()).map(serializeTag)
+        tags: (await contentTags.list()).map((tag) => ({ ...serializeTag(tag), content_count: counts.get(tag.id) || 0 }))
       };
+    },
+
+    // Admin tag page: every catalog item carrying the tag, newest link first.
+    async listTagContent(tagId) {
+      const tag = await getTagRecord(tagId);
+      const items = (await contentMovieTags.listMovieIdsByTag(tag.id))
+        .map((movieId) => contentMovies.findById(movieId))
+        .filter(Boolean)
+        .map((movie) => {
+          const category = movie.category_id ? contentCategories.findById(movie.category_id) : null;
+          return {
+            id: movie.id,
+            title: toLocalizedText(movie.title),
+            content_type: movie.content_type || "movie",
+            poster_url: sourceUrl(movie.poster),
+            published: movie.published !== false,
+            is_premium: Boolean(movie.is_premium),
+            age_rating: movie.age_rating ?? 0,
+            duration_sec: movie.duration_sec ?? 0,
+            category: category ? { id: category.id, title: toLocalizedText(category.title || category.name) } : null
+          };
+        });
+
+      return { tag: { ...serializeTag(tag), content_count: items.length }, items, total: items.length };
     },
 
     async replaceMovieTags(movieId, attributes) {
