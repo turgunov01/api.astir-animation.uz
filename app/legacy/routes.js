@@ -4583,11 +4583,11 @@ export function createLegacyRoutes({
   }));
 
   router.get("/admin/project-settings", requireAdmin, asyncHandler(async (request, response) => {
-    response.json(await projectSettings.all());
+    response.json(await projectSettings.all(`https://${request.get("host")}`));
   }));
 
   router.put("/admin/project-settings/:section", requireAdmin, asyncHandler(async (request, response) => {
-    response.json(await projectSettings.update(request.params.section, request.body?.value, request.legacyUser?.id || null));
+    response.json(await projectSettings.update(request.params.section, request.body?.value, request.legacyUser?.id || null, `https://${request.get("host")}`));
   }));
 
   // Before switching the apps to a new API address, make sure it answers.

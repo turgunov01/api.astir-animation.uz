@@ -135,9 +135,10 @@ export function createProjectSettings({ db = null, config = {} } = {}) {
   }
 
   return {
-    async all() {
+    // `requestBaseUrl` stands in for the API address until an admin sets one.
+    async all(requestBaseUrl = "") {
       const { settings, meta } = await load();
-      return { settings, meta };
+      return { settings: { ...settings, api: { ...settings.api, base_url: settings.api.base_url || requestBaseUrl } }, meta };
     },
 
     async feature(name) {
@@ -145,7 +146,7 @@ export function createProjectSettings({ db = null, config = {} } = {}) {
       return settings.features[name] !== false;
     },
 
-    async update(section, value, actorId = null) {
+    async update(section, value, actorId = null, requestBaseUrl = "") {
       if (!SECTIONS.includes(section)) throw badRequest("Неизвестный раздел настроек", "VALIDATION_ERROR");
       if (!db) throw badRequest("Database is not configured", "DATABASE_REQUIRED");
       const clean = validate(section, sanitize(DEFAULT_PROJECT_SETTINGS[section], value));
@@ -155,7 +156,7 @@ export function createProjectSettings({ db = null, config = {} } = {}) {
         [section, JSON.stringify(clean), actorId]
       );
       cache = null;
-      return this.all();
+      return this.all(requestBaseUrl);
     },
 
     // What the apps get: everything here is meant to be public.
