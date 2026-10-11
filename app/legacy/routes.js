@@ -1344,6 +1344,18 @@ function legacyLimitResponse(childId, permission = null) {
   };
 }
 
+// Child rows leave the API without the PIN hash (4 digits are trivial to
+// brute-force offline); clients only need to know whether a PIN is set.
+function publicChild(row) {
+  if (!row) {
+    return row;
+  }
+
+  const { pin_hash: pinHash, ...child } = row;
+
+  return { ...child, has_pin: Boolean(pinHash) };
+}
+
 // The child's general viewing limit is its newest "allow" rule without a
 // category/content/series target. Shared by parent and admin endpoints.
 async function legacyChildLimitPermission(db, childId) {
@@ -2515,7 +2527,23 @@ export function createLegacyRoutes({
   }));
 
   router.get("/users/:id/children", requireAdmin, asyncHandler(async (request, response) => {
-    response.json(await request.legacyDb.many("SELECT * FROM children WHERE parent_id = $1 ORDER BY created_at DESC", [request.params.id]));
+    const rows = await request.legacyDb.many(
+      `
+        SELECT
+          c.*,
+          (SELECT COUNT(*) FROM child_devices d WHERE d.child_id = c.id AND d.revoked_at IS NULL AND d.status <> 'pending')::integer AS devices_count,
+          (SELECT MAX(w.watched_at) FROM watch_history w WHERE w.viewer_id = c.id) AS last_watched_at
+        FROM children c
+        WHERE c.parent_id = $1
+        ORDER BY c.created_at DESC
+      `,
+      [request.params.id]
+    );
+    const withLimits = await Promise.all(rows.map(async (row) => ({
+      ...publicChild(row),
+      limit: legacyLimitResponse(row.id, await legacyChildLimitPermission(request.legacyDb, row.id))
+    })));
+    response.json(withLimits);
   }));
 
   router.delete("/users/:user_id/children/:child_id", requireAdmin, asyncHandler(async (request, response) => {
@@ -2531,7 +2559,7 @@ export function createLegacyRoutes({
     if (!result) {
       throw legacyError(404, "child_not_found", "child not found");
     }
-    response.json(result);
+    response.json(publicChild(result));
   }));
 
   // Admin edits of a child on behalf of its parent (dashboard child card).
@@ -2559,15 +2587,15 @@ export function createLegacyRoutes({
       avatar_url: request.body.avatar_url || "",
       active: request.body.active !== false
     });
-    response.status(201).json(child);
+    response.status(201).json(publicChild(child));
   }));
 
   router.patch("/users/:user_id/children/:child_id", requireAdmin, asyncHandler(async (request, response) => {
     await adminChild(request);
-    response.json(await request.legacyDb.one(
+    response.json(publicChild(await request.legacyDb.one(
       "UPDATE children SET name = COALESCE($1, name), age = COALESCE($2, age) WHERE id = $3 RETURNING *",
       [request.body.name || null, toInteger(request.body.age, null), request.params.child_id]
-    ));
+    )));
   }));
 
   router.put("/users/:user_id/children/:child_id/pin", requireAdmin, asyncHandler(async (request, response) => {
@@ -2591,7 +2619,8 @@ export function createLegacyRoutes({
   }));
 
   router.get("/children", requireParent, asyncHandler(async (request, response) => {
-    response.json(await request.legacyDb.many("SELECT * FROM children WHERE parent_id = $1 ORDER BY created_at DESC", [request.legacyUser.id]));
+    const rows = await request.legacyDb.many("SELECT * FROM children WHERE parent_id = $1 ORDER BY created_at DESC", [request.legacyUser.id]);
+    response.json(rows.map(publicChild));
   }));
 
   router.post("/children", requireParent, asyncHandler(async (request, response) => {
@@ -2603,7 +2632,7 @@ export function createLegacyRoutes({
       avatar_url: request.body.avatar_url || "",
       active: request.body.active !== false
     });
-    response.status(201).json(child);
+    response.status(201).json(publicChild(child));
   }));
 
   router.put("/children/:id", requireParent, asyncHandler(async (request, response) => {
@@ -2618,7 +2647,7 @@ export function createLegacyRoutes({
     if (!child) {
       throw legacyError(404, "child_not_found", "child not found");
     }
-    response.json(child);
+    response.json(publicChild(child));
   }));
 
   router.delete("/children/:id", requireParent, asyncHandler(async (request, response) => {
@@ -2645,7 +2674,7 @@ export function createLegacyRoutes({
     if (!child) {
       throw legacyError(404, "child_not_found", "child not found");
     }
-    response.json(child);
+    response.json(publicChild(child));
   }));
 
   router.get("/children/:id/limits", requireParent, asyncHandler(async (request, response) => {
