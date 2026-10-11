@@ -2056,6 +2056,7 @@ export function createLegacyRoutes({
   media,
   requestJournal = null,
   paymentProviders = null,
+  projectSettings = null,
   streaming = null,
   tariffs = null,
   watchLimits = null,
@@ -4107,6 +4108,9 @@ export function createLegacyRoutes({
   }));
 
   router.post("/content/:id/comments", requireUser, asyncHandler(async (request, response) => {
+    if (projectSettings && !(await projectSettings.feature("comments")) && !["admin", "super_admin"].includes(request.legacyUser.role)) {
+      throw legacyError(403, "comments_disabled", "Комментарии временно отключены");
+    }
     requireFields(request.body, ["body"]);
     const target = await resolveCommentTarget(request.legacyDb, request.params.id, contentMovies);
     const row = await insertRow(request.legacyDb, "comments", {
@@ -4354,6 +4358,9 @@ export function createLegacyRoutes({
   }));
 
   router.post("/support/chat/messages", requireUser, supportUpload, asyncHandler(async (request, response) => {
+    if (projectSettings && !(await projectSettings.feature("support_chat"))) {
+      throw legacyError(403, "support_chat_disabled", "Чат поддержки временно недоступен");
+    }
     let chat = await request.legacyDb.one("SELECT * FROM support_chats WHERE user_id = $1", [request.legacyUser.id]);
     if (!chat) {
       chat = await insertRow(request.legacyDb, "support_chats", { user_id: request.legacyUser.id });
@@ -4573,6 +4580,35 @@ export function createLegacyRoutes({
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
     await markSupportChatRead(request.legacyDb, request.params.id, "admin");
     response.json(messageResponse("read"));
+  }));
+
+  router.get("/admin/project-settings", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await projectSettings.all());
+  }));
+
+  router.put("/admin/project-settings/:section", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await projectSettings.update(request.params.section, request.body?.value, request.legacyUser?.id || null));
+  }));
+
+  // Before switching the apps to a new API address, make sure it answers.
+  router.post("/admin/project-settings/check-url", requireAdmin, asyncHandler(async (request, response) => {
+    const url = String(request.body?.url || "").replace(/\/+$/, "");
+    if (!/^https:\/\/[^/]+/.test(url)) {
+      throw legacyError(400, "validation_error", "нужен адрес вида https://…");
+    }
+    const started = Date.now();
+    try {
+      const health = await fetch(`${url}/health`, { signal: AbortSignal.timeout(6000) });
+      const appConfig = await fetch(`${url}/v1/app-config`, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+      response.json({
+        ok: health.ok,
+        status: health.status,
+        latency_ms: Date.now() - started,
+        serves_app_config: Boolean(appConfig?.ok)
+      });
+    } catch (error) {
+      response.json({ ok: false, status: null, latency_ms: Date.now() - started, error: error.name === "TimeoutError" ? "нет ответа за 6 секунд" : error.message });
+    }
   }));
 
   router.get("/admin/api-requests", requireAdmin, asyncHandler(async (request, response) => {

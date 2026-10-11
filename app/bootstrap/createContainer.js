@@ -12,6 +12,7 @@ import { createPaymentProviders } from "../services/paymentProviders.js";
 import { createPresence } from "../services/presence.js";
 import { createApiMonitor } from "../services/apiMonitor.js";
 import { createRequestJournal } from "../services/requestJournal.js";
+import { createProjectSettings } from "../services/projectSettings.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
 import { createLegacyStreamingState } from "../services/legacyStreamingState.js";
@@ -82,6 +83,7 @@ export function createContainer({ store = defaultStore } = {}) {
   services.presence = createPresence({ db: databaseDb });
   services.apiMonitor = createApiMonitor();
   services.requestJournal = createRequestJournal();
+  services.projectSettings = createProjectSettings({ db: databaseDb, config });
   // Admin-entered payment credentials override .env once loaded.
   services.paymentProviders.loadSettings().catch(() => {});
   services.contentPurge = createContentPurge({

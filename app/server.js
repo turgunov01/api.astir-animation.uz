@@ -80,6 +80,18 @@ export function createApp({ container = createContainer() } = {}) {
     }
   });
   app.use(paymentProviders.guard());
+
+  // Public project config for the mobile apps (API address, versions,
+  // maintenance, feature switches, contacts). Cached briefly by clients.
+  const projectSettings = container.services.projectSettings;
+  app.get(["/v1/app-config", "/api/v1/app-config"], async (request, response, next) => {
+    try {
+      response.set("Cache-Control", "public, max-age=60");
+      response.json(await projectSettings.publicConfig(`https://${request.get("host")}`));
+    } catch (error) {
+      next(error);
+    }
+  });
   app.use(express.urlencoded({ extended: false }));
 
   const legacyDb = container.searchDb || createLegacyDb();
@@ -129,6 +141,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentPurge: container.services.contentPurge,
     apiMonitor: container.services.apiMonitor,
     requestJournal: container.services.requestJournal,
+    projectSettings: container.services.projectSettings,
     contentService: container.services.content,
     devices: container.repositories.devices,
     media: legacyMedia,
