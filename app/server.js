@@ -126,6 +126,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentMovies: container.repositories.contentMovies,
     contentPurge: container.services.contentPurge,
     contentService: container.services.content,
+    devices: container.repositories.devices,
     media: legacyMedia,
     paymentProviders: container.services.paymentProviders,
     streaming: container.services.legacyStreaming,

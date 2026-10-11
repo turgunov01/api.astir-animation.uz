@@ -31,6 +31,7 @@ import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js
 import { buildAdminOverview } from "./adminOverview.js";
 import { listAdminComments, replyToComment } from "./adminComments.js";
 import { buildSalesStats } from "./adminSalesStats.js";
+import { buildParentStats } from "./adminParentStats.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -2021,6 +2022,7 @@ export function createLegacyRoutes({
   contentMovies = null,
   contentPurge = null,
   contentService = null,
+  devices = null,
   media,
   paymentProviders = null,
   streaming = null,
@@ -4429,6 +4431,10 @@ export function createLegacyRoutes({
       throw legacyError(404, "provider_not_found", "unknown payment provider");
     }
     response.json(provider);
+  }));
+
+  router.get("/admin/parents/stats", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await buildParentStats(request.legacyDb, { days: request.query.days, devices }));
   }));
 
   router.get("/admin/billing/stats", requireAdmin, asyncHandler(async (request, response) => {
