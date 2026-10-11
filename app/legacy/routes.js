@@ -2062,6 +2062,7 @@ async function maybeStartTranscode(db, config, content) {
 
 export function createLegacyRoutes({
   apiMonitor = null,
+  notificationService = null,
   childContentBlacklist = null,
   config,
   contentCategories = null,
@@ -2080,6 +2081,16 @@ export function createLegacyRoutes({
   watchSessions = null
 }) {
   const router = Router();
+
+  // Push + in-app notice to a parent when the team answers them. Best
+  // effort: a failed push never fails the admin's action.
+  function notifyParent(userId, payload) {
+    if (!notificationService || !userId) return;
+    Promise.resolve(notificationService.sendParentPush(String(userId), payload)).catch((error) => {
+      console.error(JSON.stringify({ event: "team_reply_notification_failed", type: payload?.data?.type, message: error?.message }));
+    });
+  }
+  const preview = (text, fallback) => (String(text || "").trim() || fallback).slice(0, 140);
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
   const imageError = (message) => legacyError(400, "invalid_image", message);
@@ -4533,6 +4544,18 @@ export function createLegacyRoutes({
     if (!reply) {
       throw legacyError(404, "comment_not_found", "comment not found");
     }
+    const answered = await request.legacyDb.one(
+      `SELECT c.user_id, COALESCE(c.target_id, c.content_id::text) AS content_id, COALESCE(c.parent_id, c.id) AS thread_id, u.role
+       FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = $1`,
+      [request.params.id]
+    );
+    if (answered && !["admin", "super_admin"].includes(answered.role)) {
+      notifyParent(answered.user_id, {
+        title: "Команда Astir ответила на ваш комментарий",
+        body: preview(body, "Новый ответ"),
+        data: { type: "comment_reply", contentId: answered.content_id, commentId: answered.thread_id }
+      });
+    }
     response.status(201).json(reply);
   }));
 
@@ -4603,6 +4626,11 @@ export function createLegacyRoutes({
       last_message_at: new Date().toISOString(),
       last_message_preview: (body || (stored ? `📎 ${stored.original_name || "Файл"}` : "")).slice(0, 120),
       user_unread_count: chat.user_unread_count + 1
+    });
+    notifyParent(chat.user_id, {
+      title: "Поддержка Astir",
+      body: preview(body, stored ? `📎 ${stored.original_name || "Файл"}` : "Новое сообщение"),
+      data: { type: "support_message", chatId: chat.id }
     });
     response.status(201).json(await findSupportMessage(request.legacyDb, message.id));
   }));

@@ -151,6 +151,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentMovies: container.repositories.contentMovies,
     contentPurge: container.services.contentPurge,
     apiMonitor: container.services.apiMonitor,
+    notificationService: container.services.notifications,
     requestJournal: container.services.requestJournal,
     projectSettings: container.services.projectSettings,
     contentService: container.services.content,

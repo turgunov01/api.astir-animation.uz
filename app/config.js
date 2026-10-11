@@ -102,7 +102,17 @@ export const config = {
   firebase: {
     projectId: process.env.FIREBASE_PROJECT_ID || "",
     serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "",
-    apiUrl: process.env.FIREBASE_API_URL || ""
+    apiUrl: process.env.FIREBASE_API_URL || "",
+    // Second project for app builds registered there (Firebase migration).
+    fallback: {
+      projectId: process.env.FIREBASE_FALLBACK_PROJECT_ID || "",
+      serviceAccountPath: process.env.FIREBASE_FALLBACK_SERVICE_ACCOUNT_PATH || "",
+      // Set explicitly: an empty value would fall back to FIREBASE_API_URL
+      // of the primary project.
+      apiUrl: process.env.FIREBASE_FALLBACK_PROJECT_ID
+        ? `https://fcm.googleapis.com/v1/projects/${process.env.FIREBASE_FALLBACK_PROJECT_ID}/messages:send`
+        : ""
+    }
   },
   notifications: {
     childAppOpenCooldownSeconds: optionalNumber(process.env.CHILD_APP_OPEN_NOTIFICATION_COOLDOWN_SECONDS, 300)

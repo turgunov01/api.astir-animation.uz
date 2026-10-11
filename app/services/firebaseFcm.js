@@ -105,6 +105,12 @@ function resultForConfigError(error, tokenCount) {
   };
 }
 
+function isSenderMismatch(error) {
+  const firebase = error?.response?.data?.error;
+  const details = JSON.stringify(firebase?.details || []);
+  return error?.response?.status === 403 && (details.includes("SENDER_ID_MISMATCH") || /sender ?id/i.test(firebase?.message || ""));
+}
+
 function uniqueTokens(tokens) {
   const values = Array.isArray(tokens) ? tokens : [tokens];
 
@@ -209,6 +215,23 @@ export function createFirebaseFcmService(firebaseConfig = {}) {
       return resultForConfigError(error, tokenList.length);
     }
 
+    // Tokens from app builds on the other Firebase project (the app moved
+    // from one project to another) are refused with SENDER_ID_MISMATCH;
+    // those are retried through the fallback project.
+    let fallback = null;
+    const fallbackSender = async () => {
+      if (fallback !== null) return fallback;
+      fallback = false;
+      if (!firebaseConfig?.fallback?.projectId) return fallback;
+      try {
+        const config = resolveFirebaseConfig(firebaseConfig.fallback);
+        fallback = { config, accessToken: await getAccessToken(config.serviceAccountPath) };
+      } catch (error) {
+        logFirebaseError("Firebase FCM fallback project configuration failed", error);
+      }
+      return fallback;
+    };
+
     const responses = [];
 
     for (const token of tokenList) {
@@ -228,6 +251,16 @@ export function createFirebaseFcmService(firebaseConfig = {}) {
           providerResponse: response.data
         });
       } catch (error) {
+        const other = isSenderMismatch(error) ? await fallbackSender() : null;
+        if (other) {
+          try {
+            const response = await postMessage({ apiUrl: other.config.apiUrl, accessToken: other.accessToken, token, title, body, data });
+            responses.push({ sent: true, status: response.status, project: other.config.projectId, providerResponse: response.data });
+            continue;
+          } catch (fallbackError) {
+            logFirebaseError("Firebase FCM fallback token request failed", fallbackError);
+          }
+        }
         logFirebaseError("Firebase FCM token request failed", error);
         responses.push({
           sent: false,
