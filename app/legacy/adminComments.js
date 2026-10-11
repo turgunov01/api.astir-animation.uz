@@ -9,7 +9,10 @@ function fullName(row) {
   return [row.user_name, row.user_last_name].filter(Boolean).join(" ").trim();
 }
 
-function serialize(row) {
+// Avatars are signed, expiring URLs: routes pass a signer for the stored path.
+const keepAvatar = (row) => row.user_avatar_url || "";
+
+function serialize(row, signAvatar = keepAvatar) {
   return {
     id: row.id,
     body: row.body,
@@ -20,7 +23,7 @@ function serialize(row) {
     author: {
       id: row.user_id,
       name: fullName(row) || row.user_email || "Пользователь",
-      avatar_url: row.user_avatar_url || "",
+      avatar_url: signAvatar(row),
       is_admin: ADMIN_ROLES.has(row.user_role)
     }
   };
@@ -28,7 +31,7 @@ function serialize(row) {
 
 const SELECT_COMMENT = `
   SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.email AS user_email,
-    u.avatar_url AS user_avatar_url, u.role AS user_role
+    u.avatar_url AS user_avatar_url, u.avatar_path AS user_avatar_path, u.role AS user_role
   FROM comments c
   JOIN users u ON u.id = c.user_id
 `;
@@ -69,7 +72,7 @@ async function describeContent(db, contentMovies, ids) {
   return map;
 }
 
-export async function listAdminComments(db, contentMovies, query = {}) {
+export async function listAdminComments(db, contentMovies, query = {}, { avatar = keepAvatar } = {}) {
   const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
   const offset = Math.max(Number(query.offset) || 0, 0);
   const sort = SORTS[query.sort] || SORTS.new;
@@ -109,8 +112,8 @@ export async function listAdminComments(db, contentMovies, query = {}) {
 
   return {
     items: rows.map((row) => {
-      const own = replies.filter((reply) => reply.parent_id === row.id).map(serialize);
-      const comment = serialize(row);
+      const own = replies.filter((reply) => reply.parent_id === row.id).map((reply) => serialize(reply, avatar));
+      const comment = serialize(row, avatar);
       return { ...comment, content: contents.get(comment.content_id) || null, replies: own, replies_count: own.length };
     }),
     total: totalRow?.count || 0,

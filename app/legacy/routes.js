@@ -2068,6 +2068,11 @@ export function createLegacyRoutes({
   const categoryIconUpload = [posterUpload, validateImageUploads({ file: "icon" }, { toError: imageError })];
   const videoUpload = media.upload("videos", { maxMb: config.maxVideoUploadMb || 2048 }).single("file");
   const supportUpload = media.upload("support", { maxMb: 50 }).single("file");
+  // Stored avatar URLs carry an expiring signature; sign the path afresh.
+  const signedAvatar = (request) => (row) => {
+    const storedPath = row.avatar_path || row.user_avatar_path;
+    return storedPath ? media.publicUrl(request, storedPath) : (row.avatar_url || row.user_avatar_url || "");
+  };
 
   function localizedContentCategoryValue(value, lang) {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -4069,7 +4074,7 @@ export function createLegacyRoutes({
     const rows = await request.legacyDb.many(
       `
         SELECT c.*, COALESCE(c.target_id, c.content_id::text) AS content_id,
-          u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url
+          u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url, u.avatar_path AS user_avatar_path
         FROM comments c
         JOIN users u ON u.id = c.user_id
         WHERE ((c.target_type = $1 AND c.target_id = $2)
@@ -4084,7 +4089,7 @@ export function createLegacyRoutes({
     const replies = rows.length
       ? await request.legacyDb.many(
         `
-          SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url
+          SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url, u.avatar_path AS user_avatar_path
           FROM comments c JOIN users u ON u.id = c.user_id
           WHERE c.parent_id = ANY($1::uuid[])
           ORDER BY c.created_at ASC
@@ -4092,9 +4097,11 @@ export function createLegacyRoutes({
         [rows.map((row) => row.id)]
       )
       : [];
+    const sign = signedAvatar(request);
+    const withAvatar = (row) => ({ ...row, user_avatar_url: sign(row) });
     response.json(rows.map((row) => ({
-      ...serializeComment(row),
-      replies: replies.filter((reply) => reply.parent_id === row.id).map(serializeComment)
+      ...serializeComment(withAvatar(row)),
+      replies: replies.filter((reply) => reply.parent_id === row.id).map((reply) => serializeComment(withAvatar(reply)))
     })));
   }));
 
@@ -4476,7 +4483,7 @@ export function createLegacyRoutes({
   }));
 
   router.get("/admin/comments", requireAdmin, asyncHandler(async (request, response) => {
-    response.json(await listAdminComments(request.legacyDb, contentMovies, request.query));
+    response.json(await listAdminComments(request.legacyDb, contentMovies, request.query, { avatar: signedAvatar(request) }));
   }));
 
   router.post("/admin/comments/:id/replies", requireAdmin, asyncHandler(async (request, response) => {
@@ -4493,7 +4500,7 @@ export function createLegacyRoutes({
 
   router.get("/admin/support/chats", requireAdmin, asyncHandler(async (request, response) => {
     const { limit, offset } = parseLimitOffset(request.query);
-    response.json({ data: await listAdminSupportChats(request.legacyDb, { q: request.query.q, limit, offset }), limit, offset });
+    response.json({ data: await listAdminSupportChats(request.legacyDb, { q: request.query.q, limit, offset, signAvatar: signedAvatar(request) }), limit, offset });
   }));
 
   router.get("/admin/support/chats/:id", requireAdmin, asyncHandler(async (request, response) => {
@@ -4509,7 +4516,7 @@ export function createLegacyRoutes({
   }));
 
   router.get("/admin/support/chats/:id/profile", requireAdmin, asyncHandler(async (request, response) => {
-    const profile = await supportChatProfile(request.legacyDb, request.params.id);
+    const profile = await supportChatProfile(request.legacyDb, request.params.id, { signAvatar: signedAvatar(request) });
     if (!profile) {
       throw legacyError(404, "chat_not_found", "chat not found");
     }

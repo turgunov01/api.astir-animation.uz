@@ -61,7 +61,10 @@ export async function markSupportChatRead(db, chatId, reader) {
   await db.query(`UPDATE support_chats SET ${reader === "admin" ? "admin_unread_count" : "user_unread_count"} = 0 WHERE id = $1`, [chatId]);
 }
 
-export async function listAdminSupportChats(db, { q = "", limit = 50, offset = 0 } = {}) {
+// Avatars are signed, expiring URLs: build a fresh one from the stored path.
+const keepAvatar = (row) => row.avatar_url || null;
+
+export async function listAdminSupportChats(db, { q = "", limit = 50, offset = 0, signAvatar = keepAvatar } = {}) {
   const params = [];
   let filter = "";
   if (String(q).trim()) {
@@ -71,7 +74,7 @@ export async function listAdminSupportChats(db, { q = "", limit = 50, offset = 0
   }
   params.push(Math.min(Number(limit) || 50, 200), Math.max(Number(offset) || 0, 0));
   const rows = await db.many(
-    `SELECT sc.*, u.id AS user_id, u.name, u.last_name, u.email, u.phone, u.avatar_url, u.last_seen_at,
+    `SELECT sc.*, u.id AS user_id, u.name, u.last_name, u.email, u.phone, u.avatar_url, u.avatar_path, u.last_seen_at,
        lm.sender_role AS last_sender_role, lm.read_at AS last_read_at, lm.attachment_type AS last_attachment_type,
        lm.attachment_name AS last_attachment_name, lm.body AS last_body
      FROM support_chats sc
@@ -100,7 +103,7 @@ export async function listAdminSupportChats(db, { q = "", limit = 50, offset = 0
       name: [row.name, row.last_name].filter(Boolean).join(" ").trim() || row.email || row.phone || "Пользователь",
       email: row.email,
       phone: row.phone,
-      avatar_url: row.avatar_url,
+      avatar_url: signAvatar(row),
       last_seen_at: row.last_seen_at,
       online: isOnline(row.last_seen_at)
     }
@@ -129,9 +132,9 @@ export async function supportChatMedia(db, chatId) {
   return { media, files, links };
 }
 
-export async function supportChatProfile(db, chatId) {
+export async function supportChatProfile(db, chatId, { signAvatar = keepAvatar } = {}) {
   const user = await db.one(
-    `SELECT u.id, u.name, u.last_name, u.email, u.phone, u.avatar_url, u.created_at, u.last_seen_at, u.auth_provider
+    `SELECT u.id, u.name, u.last_name, u.email, u.phone, u.avatar_url, u.avatar_path, u.created_at, u.last_seen_at, u.auth_provider
      FROM support_chats sc JOIN users u ON u.id = sc.user_id WHERE sc.id = $1`,
     [chatId]
   );
@@ -146,8 +149,10 @@ export async function supportChatProfile(db, chatId) {
     `, [user.id]),
     db.one(`SELECT count(*)::int AS messages, count(*) FILTER (WHERE attachment_url IS NOT NULL)::int AS files FROM support_messages WHERE chat_id = $1`, [chatId])
   ]);
+  const { avatar_path: _avatarPath, ...publicUser } = user;
   return {
-    ...user,
+    ...publicUser,
+    avatar_url: signAvatar(user),
     full_name: [user.name, user.last_name].filter(Boolean).join(" ").trim() || user.email || "Пользователь",
     online: isOnline(user.last_seen_at),
     children,
