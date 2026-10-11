@@ -105,7 +105,7 @@ export function createApiRequestStore({ db }) {
             percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms,
             max(at) AS last_at
           FROM api_requests WHERE ${scope} GROUP BY method, route`, [since]),
-        db.many(`SELECT at, method, path, status, duration_ms, error, request_id FROM api_requests WHERE ${scope} AND status >= 400 ORDER BY at DESC LIMIT 40`, [since]),
+        db.many(`SELECT id, at, method, path, status, duration_ms, client, error, request_id FROM api_requests WHERE ${scope} AND status >= 400 ORDER BY at DESC LIMIT 40`, [since]),
         db.one("SELECT min(at) AS first_at FROM api_requests")
       ]);
 
@@ -145,7 +145,7 @@ export function createApiRequestStore({ db }) {
         top_endpoints: [...rows].sort((left, right) => right.requests - left.requests).slice(0, 10),
         slowest_endpoints: rows.filter((row) => row.requests >= 2).sort((left, right) => right.p95_ms - left.p95_ms).slice(0, 10),
         failing_endpoints: rows.filter((row) => row.errors + row.client_errors > 0).sort((left, right) => (right.errors * 1000 + right.client_errors) - (left.errors * 1000 + left.client_errors)).slice(0, 10),
-        recent_errors: errors.map((row) => ({ at: row.at, method: row.method, url: row.path, status: row.status, ms: round(row.duration_ms), message: row.error, request_id: row.request_id }))
+        recent_errors: errors.map((row) => ({ id: row.id, client: row.client, at: row.at, method: row.method, url: row.path, status: row.status, ms: round(row.duration_ms), message: row.error, request_id: row.request_id }))
       };
     },
 
