@@ -1,3 +1,4 @@
+import { normalizePrivateKeyPem } from "../lib/pem.js";
 import fs from "node:fs";
 import { GoogleAuth } from "google-auth-library";
 import { SignJWT, decodeJwt, importPKCS8 } from "jose";
@@ -16,11 +17,7 @@ const GOOGLE_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 const APPLE_TOKEN_TTL_SECONDS = 50 * 60;
 
 function readKey(inline, filePath) {
-  if (inline) {
-    return inline.replace(/\\n/g, "\n");
-  }
-
-  return filePath ? fs.readFileSync(filePath, "utf8") : "";
+  return normalizePrivateKeyPem(inline || (filePath ? fs.readFileSync(filePath, "utf8") : ""));
 }
 
 // Unverified decode of a JWS payload. Only used to extract an ID that is then

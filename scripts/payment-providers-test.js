@@ -62,8 +62,12 @@ console.log("payment providers tests passed");
   const pem = "-----BEGIN PRIVATE KEY-----\nMIGTAgEAMBMGByqGSM49\n-----END PRIVATE KEY-----";
   await live.saveSettings("apple", { bundleId: "uz.astir.app", issuerId: "issuer", keyId: "KEY123", privateKey: pem, products: { "astir.premium.month": "premium" } });
   assert.equal(config.appleIap.bundleId, "uz.astir.app", "live config updated in place");
-  assert.equal(config.appleIap.privateKey, pem);
+  assert.equal(config.appleIap.privateKey, `${pem}\n`, "stored as a clean PEM");
   assert.notEqual(stored.get("apple.privateKey").value, pem, "secret stored encrypted");
+
+  // A key pasted from a terminal (zsh adds "%" to an unterminated line) is cleaned up.
+  await live.saveSettings("apple", { privateKey: pem.replace("\n-----END", "%\n-----END") });
+  assert.equal(config.appleIap.privateKey, `${pem}\n`);
   assert.ok(stored.get("apple.privateKey").value.startsWith("v1:"));
   const apple = (await live.publicList()).find((row) => row.id === "apple");
   assert.equal(apple.available, true);
@@ -87,7 +91,7 @@ console.log("payment providers tests passed");
   // A restart reads the encrypted values back.
   const config2 = { jwtSecret: "test-secret", click: {}, appleIap: {}, googlePlay: {} };
   await createPaymentProviders({ db: settingsDb, config: config2 }).loadSettings();
-  assert.equal(config2.appleIap.privateKey, pem);
+  assert.equal(config2.appleIap.privateKey, `${pem}\n`);
   assert.deepEqual(config2.appleIap.products, { "astir.premium.month": "premium" });
 }
 

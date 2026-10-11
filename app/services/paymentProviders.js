@@ -1,3 +1,4 @@
+import { normalizePrivateKeyPem } from "../lib/pem.js";
 import crypto from "node:crypto";
 import { badRequest, forbidden } from "../lib/errors.js";
 
@@ -256,8 +257,9 @@ export function createPaymentProviders({ db = null, config = {} } = {}) {
           changes.push({ field, value: null });
           continue;
         }
-        const value = field.type === "products" && typeof raw === "object" ? JSON.stringify(raw) : String(raw).trim();
+        let value = field.type === "products" && typeof raw === "object" ? JSON.stringify(raw) : String(raw).trim();
         validateValue(id, field, value);
+        if (id === "apple" && field.key === "privateKey") value = normalizePrivateKeyPem(value);
         if (field.secret && !key) throw badRequest("Нет ключа шифрования на сервере (JWT_SECRET)", "ENCRYPTION_KEY_MISSING");
         changes.push({ field, value: field.secret ? encrypt(key, value) : value });
       }
