@@ -30,6 +30,7 @@ import {
 import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js";
 import { buildAdminOverview } from "./adminOverview.js";
 import { listAdminComments, replyToComment } from "./adminComments.js";
+import { buildSalesStats } from "./adminSalesStats.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -4353,6 +4354,13 @@ export function createLegacyRoutes({
 
   router.get("/admin/overview", requireAdmin, asyncHandler(async (request, response) => {
     response.json(await buildAdminOverview(request.legacyDb, request.query));
+  }));
+
+  router.get("/admin/billing/stats", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await buildSalesStats(request.legacyDb, {
+      days: request.query.days,
+      tariffs: tariffs?.list ? tariffs.list() : []
+    }));
   }));
 
   router.get("/admin/comments", requireAdmin, asyncHandler(async (request, response) => {
