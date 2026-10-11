@@ -307,7 +307,7 @@ export function createContentController({ contentService }) {
 
         return await contentService.createCategory({
           title: requiredLocalizedText(body, "title"),
-          description: requiredLocalizedText(body, "description"),
+          description: optionalLocalizedText(body, "description") || { en: "", ru: "", uz: "" },
           type: optionalString(body, "type") || "other",
           slug: optionalString(body, "slug"),
           active: optionalBoolean(body, "active", true),
