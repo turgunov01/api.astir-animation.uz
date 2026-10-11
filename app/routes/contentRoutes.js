@@ -1,17 +1,25 @@
 import { Router } from "express";
 import { asyncHandler } from "../lib/errors.js";
+import { validateImageUploads } from "../lib/imageRules.js";
 
 export function createContentRoutes({ authMiddleware, contentController, uploadMiddleware }) {
   const router = Router();
-  const movieUpload = uploadMiddleware.fields([
-    { name: "video", maxCount: 1 },
-    { name: "poster", maxCount: 1 }
-  ]);
-  const posterUpload = uploadMiddleware.fields([
-    { name: "poster", maxCount: 1 },
-    { name: "file", maxCount: 1 }
-  ]);
-  const iconUpload = uploadMiddleware.single("icon");
+  const bannerRules = validateImageUploads({ poster: "banner", file: "banner" });
+  const movieUpload = [
+    uploadMiddleware.fields([
+      { name: "video", maxCount: 1 },
+      { name: "poster", maxCount: 1 }
+    ]),
+    bannerRules
+  ];
+  const posterUpload = [
+    uploadMiddleware.fields([
+      { name: "poster", maxCount: 1 },
+      { name: "file", maxCount: 1 }
+    ]),
+    bannerRules
+  ];
+  const iconUpload = [uploadMiddleware.single("icon"), validateImageUploads({ icon: "icon" })];
 
   router.get("/", authMiddleware.requireActor, asyncHandler(contentController.list));
   router.get("/filters", authMiddleware.requireActor, asyncHandler(contentController.listFilters));

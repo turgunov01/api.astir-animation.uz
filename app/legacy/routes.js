@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import QRCode from "qrcode";
 import { hashSecret, verifySecret } from "../lib/security.js";
 import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles.js";
+import { validateImageUploads } from "../lib/imageRules.js";
 import {
   authenticateRequest,
   createOtp,
@@ -1942,6 +1943,9 @@ export function createLegacyRoutes({
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
   const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
+  const imageError = (message) => legacyError(400, "invalid_image", message);
+  const bannerUpload = [posterUpload, validateImageUploads({ file: "banner" }, { toError: imageError })];
+  const categoryIconUpload = [posterUpload, validateImageUploads({ file: "icon" }, { toError: imageError })];
   const videoUpload = media.upload("videos", { maxMb: config.maxVideoUploadMb || 2048 }).single("file");
   const supportUpload = media.upload("support", { maxMb: 50 }).single("file");
 
@@ -3146,7 +3150,7 @@ export function createLegacyRoutes({
     response.sendFile(media.resolve(category.poster_path));
   }));
 
-  router.post("/categories/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+  router.post("/categories/:id/poster", requireAdmin, categoryIconUpload, asyncHandler(async (request, response) => {
     const category = await getById(request.legacyDb, "categories", request.params.id);
     const oldPaths = await mediaAssetPaths(request.legacyDb, "categories", request.params.id, "category_poster");
     const stored = media.persistFile("category_poster", request.file, request);
@@ -3440,7 +3444,7 @@ export function createLegacyRoutes({
     response.sendFile(media.resolve(row.poster_path));
   }));
 
-  router.post("/series/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+  router.post("/series/:id/poster", requireAdmin, bannerUpload, asyncHandler(async (request, response) => {
     const row = await getById(request.legacyDb, "series", request.params.id);
     const oldPaths = await mediaAssetPaths(request.legacyDb, "series", request.params.id, "series_poster");
     const stored = media.persistFile("series_poster", request.file, request);
@@ -3587,7 +3591,7 @@ export function createLegacyRoutes({
     response.sendFile(media.resolve(row.poster_path));
   }));
 
-  router.post("/content/:id/poster", requireAdmin, posterUpload, asyncHandler(async (request, response) => {
+  router.post("/content/:id/poster", requireAdmin, bannerUpload, asyncHandler(async (request, response) => {
     const row = await getById(request.legacyDb, "content", request.params.id);
     const oldPaths = await mediaAssetPaths(request.legacyDb, "content", request.params.id, "content_poster");
     const stored = media.persistFile("content_poster", request.file, request);

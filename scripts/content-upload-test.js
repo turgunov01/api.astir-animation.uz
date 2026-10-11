@@ -208,8 +208,16 @@ function videoBlob() {
   return new Blob([Buffer.from("fake mp4 bytes")], { type: "video/mp4" });
 }
 
-function imageBlob() {
-  return new Blob([Buffer.from("fake png bytes")], { type: "image/png" });
+// Minimal PNG header: uploads are validated by dimensions (banner 16:9, icon 1:1).
+function imageBlob(width = 1920, height = 1080) {
+  const header = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+  header.writeUInt32BE(13, 8);
+  header.write("IHDR", 12, "ascii");
+  header.writeUInt32BE(width, 16);
+  header.writeUInt32BE(height, 20);
+
+  return new Blob([header], { type: "image/png" });
 }
 
 function uploadFiles() {
@@ -257,7 +265,7 @@ function multipartCategoryBody(metadata, options = {}) {
   }
 
   if (options.icon !== false) {
-    form.append("icon", imageBlob(), options.fileName || "category-icon.png");
+    form.append("icon", imageBlob(512, 512), options.fileName || "category-icon.png");
   }
 
   return form;
