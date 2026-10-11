@@ -3218,6 +3218,16 @@ export function createLegacyRoutes({
   }));
 
   router.delete("/categories/:id", requireAdmin, asyncHandler(async (request, response) => {
+    const usage = await request.legacyDb.one(`
+      SELECT
+        (SELECT count(*)::int FROM series WHERE category_id = $1) AS series,
+        (SELECT count(*)::int FROM content WHERE category_id = $1) AS content,
+        (SELECT count(*)::int FROM categories WHERE parent_category_id = $1) AS subcategories,
+        (SELECT count(*)::int FROM child_permissions WHERE category_id = $1) AS rules
+    `, [request.params.id]);
+    if (Object.values(usage || {}).some((count) => Number(count) > 0)) {
+      throw legacyError(409, "category_in_use", "Категорию нельзя удалить: к ней привязан контент или правила");
+    }
     await deleteLegacyRecordWithMedia(request.legacyDb, media, "categories", request.params.id, ["poster_path"]);
     response.json(messageResponse("deleted"));
   }));

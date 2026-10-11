@@ -853,8 +853,44 @@ export function createContentService({
   contentStreaming,
   contentTags,
   tariffService,
-  transcoder
+  transcoder,
+  usageDb = null
 }) {
+  // What still points at each category: cartoons/series in the catalog,
+  // legacy series and episodes, subcategories and parental rules. A category
+  // with anything attached must not be deleted.
+  async function categoryUsage() {
+    const usage = new Map();
+    const bump = (id, key, count = 1) => {
+      if (!id) return;
+      const entry = usage.get(id) || { movies: 0, series: 0, content: 0, subcategories: 0, rules: 0 };
+      entry[key] += count;
+      usage.set(id, entry);
+    };
+
+    for (const movie of contentMovies.list()) {
+      bump(movie.category_id, movie.content_type === "series" ? "series" : "movies");
+    }
+
+    if (usageDb) {
+      const rows = await usageDb.many(`
+        SELECT category_id AS id, 'series' AS key, count(*)::int AS count FROM series WHERE category_id IS NOT NULL GROUP BY category_id
+        UNION ALL SELECT category_id, 'content', count(*)::int FROM content WHERE category_id IS NOT NULL GROUP BY category_id
+        UNION ALL SELECT parent_category_id, 'subcategories', count(*)::int FROM categories WHERE parent_category_id IS NOT NULL GROUP BY parent_category_id
+        UNION ALL SELECT category_id, 'rules', count(*)::int FROM child_permissions WHERE category_id IS NOT NULL GROUP BY category_id
+      `);
+      for (const row of rows) bump(String(row.id), row.key, Number(row.count));
+    }
+
+    return usage;
+  }
+
+  function withUsage(serialized, usage) {
+    const counts = usage.get(serialized.id) || { movies: 0, series: 0, content: 0, subcategories: 0, rules: 0 };
+    const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    return { ...serialized, usage: { ...counts, total }, can_delete: total === 0 };
+  }
+
   async function overlayStreaming(serialized) {
     if (!contentStreaming || !serialized?.id) {
       return serialized;
@@ -1154,8 +1190,17 @@ export function createContentService({
       })));
     },
 
-    deleteCategory(categoryId) {
+    async deleteCategory(categoryId) {
       const category = getCategory(categoryId);
+      const { usage } = withUsage(serializeCategory(category), await categoryUsage());
+
+      if (usage.total > 0) {
+        throw conflict(
+          "Категорию нельзя удалить: к ней привязан контент или правила. Сначала перенесите их в другую категорию.",
+          "CATEGORY_IN_USE"
+        );
+      }
+
       const deletedCategory = contentCategories.delete(category.id);
 
       removeStoredFile(deletedCategory.icon);
@@ -1473,9 +1518,10 @@ export function createContentService({
       };
     },
 
-    listCategories() {
+    async listCategories() {
+      const usage = await categoryUsage();
       return {
-        categories: contentCategories.list().map(serializeCategory)
+        categories: contentCategories.list().map((category) => withUsage(serializeCategory(category), usage))
       };
     },
 

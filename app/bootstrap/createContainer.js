@@ -81,7 +81,8 @@ export function createContainer({ store = defaultStore } = {}) {
     contentTags: repositories.contentTags,
     childService: services.children,
     tariffService: services.tariffs,
-    transcoder: services.transcoder
+    transcoder: services.transcoder,
+    usageDb: databaseDb
   });
   services.faqs = createFaqService({
     faqs: repositories.faqs
