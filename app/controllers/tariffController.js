@@ -5,6 +5,7 @@ import {
   requiredString
 } from "../lib/validation.js";
 import { badRequest } from "../lib/errors.js";
+import { normalizeTariffAccess } from "../services/tariffService.js";
 
 function firstValue(body, ...fields) {
   for (const field of fields) {
@@ -138,6 +139,13 @@ function constructorAttributes(body, { defaults = false } = {}) {
 
   if (defaults || Object.hasOwn(body || {}, "features")) {
     attributes.features = optionalStringList(body, "features", defaults ? [] : null);
+  }
+
+  if (Object.hasOwn(body || {}, "access")) {
+    if (body.access !== null && (typeof body.access !== "object" || Array.isArray(body.access))) {
+      throw badRequest("access must be an object", "VALIDATION_ERROR");
+    }
+    attributes.access = normalizeTariffAccess(body.access);
   }
 
   return Object.fromEntries(

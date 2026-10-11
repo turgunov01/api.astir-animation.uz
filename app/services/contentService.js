@@ -154,7 +154,7 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     ? ["auto", ...renditions.map((rendition) => rendition.quality)]
     : [];
   const tagIds = [...new Set(await contentMovieTags.listByMovieId(movie.id))];
-  const canWatch = !movie.is_premium || Boolean(likeContext?.canWatchPremium);
+  const canWatch = likeContext?.canWatch ? likeContext.canWatch({ ...movie, tag_ids: tagIds }) : !movie.is_premium || Boolean(likeContext?.canWatchPremium);
   const subscriptionRequired = Boolean(movie.is_premium && !canWatch);
   const previewDurationSec = subscriptionRequired ? 15 : 0;
 
@@ -858,7 +858,17 @@ export function createContentService({
   transcoder,
   usageDb = null
 }) {
-  contentMovieTags = withTagActivitySync(contentMovieTags, contentTags);
+  contentMovieTags = withTagActivitySync(contentMovieTags, contentTags, contentMovies);
+
+  // Backfill the mirrored tag ids once at start-up (tags may live in Postgres).
+  if (contentMovies?.list && contentMovieTags?.listByMovieId) {
+    Promise.resolve().then(async () => {
+      for (const movie of contentMovies.list()) {
+        const tagIds = [...new Set(await contentMovieTags.listByMovieId(movie.id))];
+        if (tagIds.join() !== (movie.tag_ids || []).join()) contentMovies.update(movie.id, { tag_ids: tagIds });
+      }
+    }).catch(() => {});
+  }
 
   // What still points at each category: cartoons/series in the catalog,
   // legacy series and episodes, subcategories and parental rules. A category
@@ -927,6 +937,7 @@ export function createContentService({
     return {
       contentLikes,
       canWatchPremium: tariffService.canWatchMovie(actor, { is_premium: true }),
+      canWatch: (movie) => isAdminActor(actor) || tariffService.canWatchMovie(actor, movie),
       ownerId: ownerIdForActor(actor)
     };
   }

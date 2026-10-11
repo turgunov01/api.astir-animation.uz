@@ -57,6 +57,59 @@ function tariffPriceCents(tariff) {
     : 0;
 }
 
+// Content rules of a tariff (the admin "constructor"). Free content is open
+// to everyone; a tariff decides which premium content it unlocks. Empty
+// lists mean "any", so a premium tariff without rules unlocks everything.
+const EMPTY_ACCESS = {
+  category_ids: [],
+  tag_ids: [],
+  content_types: [],
+  max_age_rating: null,
+  include_ids: [],
+  exclude_ids: []
+};
+
+function list(value) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+export function normalizeTariffAccess(access) {
+  const source = access && typeof access === "object" ? access : {};
+  const maxAge = Number(source.max_age_rating);
+
+  return {
+    category_ids: list(source.category_ids),
+    tag_ids: list(source.tag_ids),
+    content_types: list(source.content_types).filter((type) => ["movie", "series", "episode"].includes(type)),
+    max_age_rating: source.max_age_rating === null || source.max_age_rating === undefined || source.max_age_rating === "" || !Number.isFinite(maxAge) ? null : Math.max(0, Math.round(maxAge)),
+    include_ids: list(source.include_ids),
+    exclude_ids: list(source.exclude_ids)
+  };
+}
+
+function movieKind(movie) {
+  const type = String(movie.content_type || "").toLowerCase();
+  if (type === "episode" || movie.series_id) return "episode";
+  if (type === "series") return "series";
+  return "movie";
+}
+
+export function tariffUnlocksMovie(tariff, movie) {
+  if (!movie?.is_premium) return true;
+  if (!tariff) return false;
+
+  const access = normalizeTariffAccess(tariff.access);
+  if (movie.id && access.include_ids.includes(String(movie.id))) return true;
+  if (!tariff.can_watch_premium) return false;
+  if (movie.id && access.exclude_ids.includes(String(movie.id))) return false;
+  if (access.category_ids.length && !access.category_ids.includes(String(movie.category_id || ""))) return false;
+  if (access.tag_ids.length && !list(movie.tag_ids).some((tagId) => access.tag_ids.includes(tagId))) return false;
+  if (access.content_types.length && !access.content_types.includes(movieKind(movie))) return false;
+  if (access.max_age_rating !== null && (Number(movie.age_rating) || 0) > access.max_age_rating) return false;
+
+  return true;
+}
+
 function serializeTariff(tariff) {
   const priceCents = tariffPriceCents(tariff);
 
@@ -70,6 +123,7 @@ function serializeTariff(tariff) {
     duration_days: Number(tariff.duration_days) || 30,
     max_children: Number(tariff.max_children) || 1,
     features: Array.isArray(tariff.features) ? tariff.features : [],
+    access: { ...EMPTY_ACCESS, ...normalizeTariffAccess(tariff.access) },
     price: priceString(priceCents),
     price_cents: priceCents,
     currency: tariff.currency || "UZS",
@@ -198,22 +252,23 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
     return currentTariffForParentSync(parentFromActor(actor)).tariff.can_watch_premium;
   }
 
+  function actorTariff(actor) {
+    return currentTariffForParentSync(parentFromActor(actor)).tariff;
+  }
+
   seedDefaultTariffs();
 
   return {
     assertCanWatchMovie(actor, movie) {
-      if (!movie.is_premium) {
-        return;
-      }
-
-      if (!canWatchPremium(actor)) {
+      if (!tariffUnlocksMovie(actorTariff(actor), movie)) {
         throw forbidden("Premium tariff is required to watch this content", "PREMIUM_TARIFF_REQUIRED");
       }
     },
 
     canWatchMovie(actor, movie) {
-      return !movie.is_premium || canWatchPremium(actor);
+      return tariffUnlocksMovie(actorTariff(actor), movie);
     },
+
 
     createTariff(attributes) {
       if (attributes.id && tariffs.findById(attributes.id)) {
