@@ -20,6 +20,7 @@ import { detectClient } from "./services/requestJournal.js";
 import { openApiDocument } from "./openapi.js";
 import { createBillingRoutes } from "./routes/billingRoutes.js";
 import { createRoutes } from "./routes/index.js";
+import { createSecureMedia } from "./lib/secureMedia.js";
 import { createSwaggerIndexPage } from "./swagger/indexPage.js";
 import { swaggerScopes } from "./swagger/scopedDocs.js";
 import { createSwaggerUiOptions } from "./swagger/uiTheme.js";
@@ -67,6 +68,14 @@ export function createApp({ container = createContainer() } = {}) {
   }));
   app.use(buildCors(container.config));
   app.use(express.json({ limit: "1mb" }));
+
+  // Video is served only through signed, expiring links (and only as a
+  // preview for locked premium titles). Without a secret the old open
+  // /media keeps working, so a misconfigured server doesn't go dark.
+  const secureMedia = process.env.MEDIA_SIGNING_SECRET
+    ? createSecureMedia({ secret: process.env.MEDIA_SIGNING_SECRET, mediaRoot: container.config.mediaRoot })
+    : null;
+  if (secureMedia) app.use(secureMedia.signJsonResponses);
 
   // Payment providers: the app asks which ones to offer, and new payments
   // through a provider the admin switched off are refused.
@@ -118,10 +127,10 @@ export function createApp({ container = createContainer() } = {}) {
     response.json(createLegacySwaggerForRequest(request));
   });
 
-  // NOTE: this serves the whole media root as open static. The HMAC signed-URL
-  // scheme in legacy/media.js is not enforced here yet — enabling that is a
-  // follow-up that requires coordinated client changes (see security/findings.md #4).
-  // Hardening applied now: no dotfiles, no directory index.
+  // Images (posters, avatars, chat files) stay public static; video paths are
+  // refused here unless they come through a signed /media/s/<token>/ link
+  // (security/findings.md #4). No dotfiles, no directory index.
+  if (secureMedia) app.use("/media", secureMedia.handler, secureMedia.guard);
   app.use("/media", express.static(path.resolve(container.config.mediaRoot), {
     dotfiles: "deny",
     index: false
