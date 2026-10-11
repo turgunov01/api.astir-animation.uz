@@ -31,6 +31,7 @@ import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js
 import { buildAdminOverview } from "./adminOverview.js";
 import { listAdminComments, replyToComment } from "./adminComments.js";
 import { buildSalesStats } from "./adminSalesStats.js";
+import { otpMessage, sendMail, smtpConfigured } from "../lib/mailer.js";
 import { buildParentStats } from "./adminParentStats.js";
 import { buildChildStats } from "./adminChildStats.js";
 import {
@@ -4580,6 +4581,38 @@ export function createLegacyRoutes({
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
     await markSupportChatRead(request.legacyDb, request.params.id, "admin");
     response.json(messageResponse("read"));
+  }));
+
+  // Mail server for OTP codes: same encrypted, live settings as payments.
+  router.get("/admin/email", requireAdmin, asyncHandler(async (request, response) => {
+    response.json({ settings: paymentProviders.settingsFor("email"), configured: smtpConfigured(config.smtp) });
+  }));
+
+  router.put("/admin/email", requireAdmin, asyncHandler(async (request, response) => {
+    const values = request.body?.values;
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      throw legacyError(400, "validation_error", "values must be an object");
+    }
+    const settings = await paymentProviders.saveSettings("email", values, request.legacyUser?.id || null);
+    response.json({ settings, configured: smtpConfigured(config.smtp) });
+  }));
+
+  router.post("/admin/email/test", requireAdmin, asyncHandler(async (request, response) => {
+    const to = String(request.body?.to || request.legacyUser?.email || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+      throw legacyError(400, "validation_error", "нужен email получателя");
+    }
+    if (!smtpConfigured(config.smtp)) {
+      throw legacyError(400, "smtp_unavailable", "Заполните сервер, порт, логин, пароль и отправителя");
+    }
+    const started = Date.now();
+    try {
+      const sample = otpMessage(config.smtp, "123456", 10);
+      await sendMail(config.smtp, { to, subject: `[Тест] ${sample.subject}`, text: `Это тестовое письмо из админки Astir — так выглядит письмо с кодом:\n\n${sample.text}` });
+      response.json({ ok: true, to, ms: Date.now() - started });
+    } catch (error) {
+      response.json({ ok: false, to, ms: Date.now() - started, error: error.message });
+    }
   }));
 
   router.get("/admin/project-settings", requireAdmin, asyncHandler(async (request, response) => {

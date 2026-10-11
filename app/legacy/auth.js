@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import jwt from "jsonwebtoken";
-import nodemailer from "nodemailer";
+import { otpMessage, sendMail, smtpConfigured } from "../lib/mailer.js";
 import { config } from "../config.js";
 import { hashSecret, verifySecret } from "../lib/security.js";
 import {
@@ -187,7 +187,7 @@ export function issueTVToken(device) {
 }
 
 export async function createOtp(db, email, purpose = "login") {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_PORT || !process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.SMTP_FROM) {
+  if (!smtpConfigured(config.smtp)) {
     throw legacyError(503, "smtp_unavailable", "SMTP configuration is required");
   }
 
@@ -198,22 +198,7 @@ export async function createOtp(db, email, purpose = "login") {
     [email.toLowerCase(), hashSecret(code), purpose, expiresAt]
   );
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_SECURE || "false").toLowerCase() === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: email,
-    subject: "Astir verification code",
-    text: `Your Astir verification code is ${code}. It expires in 10 minutes.`
-  });
+  await sendMail(config.smtp, { to: email, ...otpMessage(config.smtp, code, 10) });
 
   return {
     email,

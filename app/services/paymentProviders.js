@@ -48,6 +48,21 @@ export const PROVIDER_FIELDS = {
       { key: "products", label: "Продукты → тарифы", type: "products" }
     ]
   },
+  // Not a payment provider, but stored and applied the same way (encrypted
+  // password, live config): the mail server that sends OTP codes.
+  email: {
+    configKey: "smtp",
+    fields: [
+      { key: "host", label: "SMTP-сервер", placeholder: "smtp.gmail.com" },
+      { key: "port", label: "Порт", placeholder: "587 или 465", cast: "number" },
+      { key: "secure", label: "Шифрование SSL (порт 465)", options: ["false", "true"], cast: "boolean" },
+      { key: "user", label: "Логин", placeholder: "noreply@astir-animation.uz" },
+      { key: "pass", label: "Пароль", secret: true, placeholder: "Пароль приложения от почты" },
+      { key: "from", label: "Отправитель", placeholder: "Astir <noreply@astir-animation.uz>" },
+      { key: "otp_subject", label: "Тема письма с кодом", placeholder: "Код подтверждения Astir" },
+      { key: "otp_text", label: "Текст письма с кодом", multiline: true, placeholder: "Ваш код подтверждения Astir: {code}. Код действует {minutes} минут." }
+    ]
+  },
   google: {
     configKey: "googlePlay",
     fields: [
@@ -95,6 +110,12 @@ function validateValue(provider, field, value) {
   }
   if (provider === "apple" && field.key === "privateKey" && !/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(value)) {
     throw badRequest("Private key: вставьте содержимое .p8 файла целиком, вместе с BEGIN/END", "VALIDATION_ERROR");
+  }
+  if (provider === "email" && field.key === "port" && !/^\d{2,5}$/.test(value)) {
+    throw badRequest("Порт: число, например 587 или 465", "VALIDATION_ERROR");
+  }
+  if (provider === "email" && field.key === "otp_text" && !value.includes("{code}")) {
+    throw badRequest("Текст письма должен содержать {code} — туда подставится код", "VALIDATION_ERROR");
   }
   if (provider === "google" && field.key === "serviceAccountJson") {
     let parsed;
@@ -164,7 +185,9 @@ export function createPaymentProviders({ db = null, config = {} } = {}) {
       config[configKey] ||= {};
       for (const field of fields) {
         const override = overrides.get(`${provider}.${field.key}`);
-        const value = override ? (field.type === "products" ? JSON.parse(override.value) : override.value) : envDefaults[configKey][field.key];
+        let value = override ? (field.type === "products" ? JSON.parse(override.value) : override.value) : envDefaults[configKey][field.key];
+        if (override && field.cast === "number") value = Number(value);
+        if (override && field.cast === "boolean") value = value === "true";
         if (value === undefined) delete config[configKey][field.key];
         else config[configKey][field.key] = value;
       }
@@ -213,7 +236,7 @@ export function createPaymentProviders({ db = null, config = {} } = {}) {
           placeholder: field.placeholder || null,
           set: hasValue,
           source: override ? "admin" : hasValue ? "server" : null,
-          value: field.secret ? null : field.type === "products" ? live || {} : live || "",
+          value: field.secret ? null : field.type === "products" ? live || {} : live === undefined || live === null || live === "" ? "" : String(live),
           updated_at: override?.updated_at || null
         };
       });

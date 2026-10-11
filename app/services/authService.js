@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import { otpMessage, sendMail, smtpConfigured } from "../lib/mailer.js";
 import { conflict, serviceUnavailable, unauthorized } from "../lib/errors.js";
 import { hashSecret, randomCode, verifySecret } from "../lib/security.js";
 import { signParentToken } from "../lib/tokens.js";
@@ -21,33 +21,12 @@ function addMinutes(minutes) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
-function hasSmtpConfig(config) {
-  const smtp = config.smtp || {};
-
-  return Boolean(smtp.host && smtp.port && smtp.user && smtp.pass && smtp.from);
-}
-
 async function sendOtpEmail(config, email, code) {
-  if (!hasSmtpConfig(config)) {
+  if (!smtpConfigured(config.smtp)) {
     throw serviceUnavailable("SMTP configuration is required", "SMTP_UNAVAILABLE");
   }
 
-  const transporter = nodemailer.createTransport({
-    host: config.smtp.host,
-    port: config.smtp.port,
-    secure: config.smtp.secure,
-    auth: {
-      user: config.smtp.user,
-      pass: config.smtp.pass
-    }
-  });
-
-  await transporter.sendMail({
-    from: config.smtp.from,
-    to: email,
-    subject: "Astir verification code",
-    text: `Your Astir verification code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`
-  });
+  await sendMail(config.smtp, { to: email, ...otpMessage(config.smtp, code, config.otpTtlMinutes) });
 }
 
 export function createAuthService({ config, otpCodes, parents }) {

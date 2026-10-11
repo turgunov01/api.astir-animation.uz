@@ -92,3 +92,29 @@ console.log("payment providers tests passed");
 }
 
 console.log("payment provider settings tests passed");
+
+// ---- SMTP settings for OTP emails ----
+import { otpMessage, smtpConfigured } from "../app/lib/mailer.js";
+{
+  const stored = new Map();
+  const settingsDb = {
+    async many() { return [...stored.values()]; },
+    async transaction(work) {
+      return await work({ async query(sql, params) { if (!sql.startsWith("DELETE")) stored.set(params[1], { provider: params[0], key: params[1], value: params[2], secret: params[3] }); } });
+    }
+  };
+  const config = { jwtSecret: "x", smtp: { port: 587, secure: false } };
+  const mail = createPaymentProviders({ db: settingsDb, config });
+  await mail.loadSettings();
+  assert.equal(smtpConfigured(config.smtp), false);
+  await mail.saveSettings("email", { host: "smtp.example.uz", port: "465", secure: "true", user: "noreply@example.uz", pass: "app-password", from: "Astir <noreply@example.uz>", otp_text: "Код: {code} ({minutes} мин)" });
+  assert.equal(config.smtp.port, 465, "port cast to a number");
+  assert.equal(config.smtp.secure, true, "secure cast to a boolean");
+  assert.equal(smtpConfigured(config.smtp), true);
+  assert.notEqual(stored.get("pass").value, "app-password", "password stored encrypted");
+  assert.deepEqual(otpMessage(config.smtp, "482915", 10), { subject: "Код подтверждения Astir", text: "Код: 482915 (10 мин)" });
+  await assert.rejects(mail.saveSettings("email", { otp_text: "no placeholder" }), (error) => error.statusCode === 400);
+  await assert.rejects(mail.saveSettings("email", { port: "abc" }), (error) => error.statusCode === 400);
+  assert.equal(mail.settingsFor("email").find((field) => field.key === "pass").value, null);
+  console.log("smtp settings tests passed");
+}
