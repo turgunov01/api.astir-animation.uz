@@ -6,7 +6,7 @@ import { badRequest, forbidden } from "../lib/errors.js";
 // refused; callbacks and store webhooks keep working so payments already in
 // flight still complete.
 export const PAYMENT_PROVIDERS = [
-  { id: "click", name: "Click", kind: "checkout", platforms: ["android", "ios"] },
+  { id: "click", name: "Click", kind: "checkout", platforms: ["android"] },
   { id: "apple", name: "App Store (In-App Purchase)", kind: "store", platforms: ["ios"] },
   { id: "google", name: "Google Play Billing", kind: "store", platforms: ["android"] }
 ];
