@@ -13,6 +13,7 @@ import { createNotificationService } from "../services/notificationService.js";
 import { createPairingService } from "../services/pairingService.js";
 import { createRecommendationService } from "../services/recommendationService.js";
 import { createAppStoreClient, createGooglePlayClient } from "../services/storeVerifiers.js";
+import { createAdminDeviceService } from "../services/adminDeviceService.js";
 import { createSubscriptionService } from "../services/subscriptionService.js";
 import { createTariffService } from "../services/tariffService.js";
 import { createTranscoderService } from "../services/transcoderService.js";
@@ -99,6 +100,13 @@ export function createContainer({ store = defaultStore } = {}) {
     childService: services.children,
     children: repositories.children,
     contentService: services.content,
+    watchSessions: repositories.watchSessions
+  });
+
+  services.adminDevices = createAdminDeviceService({
+    children: repositories.children,
+    devices: repositories.devices,
+    parents: repositories.parents,
     watchSessions: repositories.watchSessions
   });
 

@@ -1,5 +1,9 @@
 export function createWatchSessionRepository(store) {
   return {
+    all() {
+      return store.all("watchSessions");
+    },
+
     findById(id) {
       return store.findById("watchSessions", id);
     },

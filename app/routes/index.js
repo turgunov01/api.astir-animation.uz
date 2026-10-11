@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createAdminDeviceRoutes } from "./adminDeviceRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createBillingRoutes } from "./billingRoutes.js";
 import { createChildrenRoutes } from "./childrenRoutes.js";
@@ -15,6 +16,10 @@ import { asyncHandler } from "../lib/errors.js";
 export function createRoutes({ controllers, middleware }) {
   const routes = Router();
 
+  routes.use("/admin/devices", createAdminDeviceRoutes({
+    adminDeviceController: controllers.adminDevices,
+    authMiddleware: middleware.auth
+  }));
   routes.use("/auth", createAuthRoutes({
     authController: controllers.auth,
     authMiddleware: middleware.auth

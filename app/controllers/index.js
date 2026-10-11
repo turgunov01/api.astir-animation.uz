@@ -1,3 +1,4 @@
+import { createAdminDeviceController } from "./adminDeviceController.js";
 import { createBillingController } from "./billingController.js";
 import { createAuthController } from "./authController.js";
 import { createChildrenController } from "./childrenController.js";
@@ -12,6 +13,7 @@ import { createWatchSessionController } from "./watchSessionController.js";
 
 export function createControllers(services) {
   return {
+    adminDevices: createAdminDeviceController({ adminDeviceService: services.adminDevices }),
     auth: createAuthController({ authService: services.auth }),
     billing: createBillingController({ subscriptionService: services.subscriptions }),
     children: createChildrenController({ childService: services.children }),

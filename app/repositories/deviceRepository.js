@@ -1,5 +1,9 @@
 export function createDeviceRepository(store) {
   return {
+    all() {
+      return store.all("devices");
+    },
+
     findById(id) {
       return store.findById("devices", id);
     },
