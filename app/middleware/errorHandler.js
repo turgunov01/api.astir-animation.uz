@@ -1,6 +1,8 @@
 import { AppError } from "../lib/errors.js";
 
 function logRequestError(error, request, statusCode) {
+  // Picked up by the API monitor for the "last errors" list.
+  request.errorMessage = error.message || "Internal server error";
   const payload = {
     event: "http_error",
     requestId: request.id || null,

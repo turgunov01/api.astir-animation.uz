@@ -15,7 +15,7 @@ import { createLegacyRoutes } from "./legacy/routes.js";
 import { createLegacySwaggerForRequest } from "./legacy/swagger.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { requestContext } from "./middleware/requestContext.js";
-import { requestLogger } from "./middleware/requestLogger.js";
+import { createRequestLogger } from "./middleware/requestLogger.js";
 import { openApiDocument } from "./openapi.js";
 import { createBillingRoutes } from "./routes/billingRoutes.js";
 import { createRoutes } from "./routes/index.js";
@@ -56,7 +56,7 @@ export function createApp({ container = createContainer() } = {}) {
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use(requestContext);
-  app.use(requestLogger);
+  app.use(createRequestLogger({ monitor: container.services.apiMonitor }));
   app.use(helmet({
     // Swagger UI (inline assets) and cross-origin media need these relaxed;
     // the other helmet defaults (HSTS, nosniff, frameguard, etc.) stay enabled.
@@ -127,6 +127,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentLikes: container.repositories.contentLikes,
     contentMovies: container.repositories.contentMovies,
     contentPurge: container.services.contentPurge,
+    apiMonitor: container.services.apiMonitor,
     contentService: container.services.content,
     devices: container.repositories.devices,
     media: legacyMedia,

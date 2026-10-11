@@ -439,9 +439,22 @@ function availableLogSources() {
   const pm2LogsDir = path.join(pm2Home, "logs");
   const pm2AppName = process.env.PM2_APP_NAME || "astir";
 
+  // PM2 names files "<app>-out.log" or, per instance, "<app>-out-0.log":
+  // take the most recently written one.
+  const latestPm2Log = (kind) => {
+    const prefix = `${pm2AppName}-${kind}`;
+    const isLog = (name) => name === `${prefix}.log` || (name.startsWith(`${prefix}-`) && /^\d+\.log$/.test(name.slice(prefix.length + 1)));
+    const files = fs.existsSync(pm2LogsDir)
+      ? fs.readdirSync(pm2LogsDir).filter(isLog).map((name) => path.join(pm2LogsDir, name))
+      : [];
+    files.sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    return files[0] || path.join(pm2LogsDir, `${prefix}.log`);
+  };
+
+
   sources.push(
-    safeLogFileSource("pm2:out", `${pm2AppName} stdout`, path.join(pm2LogsDir, `${pm2AppName}-out.log`)),
-    safeLogFileSource("pm2:error", `${pm2AppName} stderr`, path.join(pm2LogsDir, `${pm2AppName}-error.log`))
+    safeLogFileSource("pm2:out", `${pm2AppName} stdout`, latestPm2Log("out")),
+    safeLogFileSource("pm2:error", `${pm2AppName} stderr`, latestPm2Log("error"))
   );
 
   return sources;
@@ -2031,6 +2044,7 @@ async function maybeStartTranscode(db, config, content) {
 }
 
 export function createLegacyRoutes({
+  apiMonitor = null,
   childContentBlacklist = null,
   config,
   contentCategories = null,
@@ -4551,6 +4565,22 @@ export function createLegacyRoutes({
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
     await markSupportChatRead(request.legacyDb, request.params.id, "admin");
     response.json(messageResponse("read"));
+  }));
+
+  router.get("/admin/api-stats", requireAdmin, asyncHandler(async (request, response) => {
+    const started = process.hrtime.bigint();
+    let database = { ok: false, latency_ms: null };
+    try {
+      await request.legacyDb.one("SELECT 1 AS ok");
+      database = { ok: true, latency_ms: Math.round(Number(process.hrtime.bigint() - started) / 100_000) / 10 };
+    } catch (error) {
+      database = { ok: false, latency_ms: null, error: error.message };
+    }
+    response.json({
+      ...apiMonitor.stats({ range: request.query.range }),
+      process: apiMonitor.process(),
+      database
+    });
   }));
 
   router.get("/admin/logs", requireAdmin, asyncHandler(async (request, response) => {

@@ -10,6 +10,7 @@ import { createChildService } from "../services/childService.js";
 import { createContentPurge } from "../services/contentPurge.js";
 import { createPaymentProviders } from "../services/paymentProviders.js";
 import { createPresence } from "../services/presence.js";
+import { createApiMonitor } from "../services/apiMonitor.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
 import { createLegacyStreamingState } from "../services/legacyStreamingState.js";
@@ -78,6 +79,7 @@ export function createContainer({ store = defaultStore } = {}) {
   services.legacyStreaming = createLegacyStreaming({ config });
   services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
   services.presence = createPresence({ db: databaseDb });
+  services.apiMonitor = createApiMonitor();
   // Admin-entered payment credentials override .env once loaded.
   services.paymentProviders.loadSettings().catch(() => {});
   services.contentPurge = createContentPurge({
