@@ -6,6 +6,10 @@ export function createAdminDeviceController({ adminDeviceService }) {
       response.json(await adminDeviceService.list(request.parent));
     },
 
+    async stats(request, response) {
+      response.json(await adminDeviceService.stats(request.parent, { days: request.query.days }));
+    },
+
     async approvePairing(request, response) {
       response.json({
         pairingSession: await adminDeviceService.approvePairing(

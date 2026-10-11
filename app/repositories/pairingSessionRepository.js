@@ -1,5 +1,9 @@
 export function createPairingSessionRepository(store) {
   return {
+    all() {
+      return store.all("pairingSessions");
+    },
+
     findById(id) {
       return store.findById("pairingSessions", id);
     },

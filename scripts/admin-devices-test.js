@@ -54,3 +54,43 @@ assert.deepEqual(await service.approvePairing({ role: "super_admin", id: "admin"
 assert.deepEqual(approvals, [["p1", "s1", "c1"], ["p2", "s2", "c2"]]);
 
 console.log("Admin devices tests passed");
+
+// ---- devices statistics ----
+import { computeDeviceStats } from "../app/services/deviceStats.js";
+{
+  const now = Date.parse("2026-10-11T12:00:00Z");
+  const ago = (daysAgo) => new Date(now - daysAgo * 86_400_000).toISOString();
+  const devicesList = [
+    { id: "tv", childId: "c1", platform: "tv", pairedAt: ago(5) },
+    { id: "pad", childId: "c1", platform: "ios", pairedAt: ago(10) },
+    { id: "old", childId: "c2", platform: "android", pairedAt: ago(80) },
+    { id: "gone", childId: "c2", platform: "android", pairedAt: ago(50), revokedAt: ago(2) }
+  ];
+  const qr = [
+    { status: "approved", createdAt: ago(5), updatedAt: new Date(Date.parse(ago(5)) + 40_000).toISOString() },
+    { status: "approved", createdAt: ago(10), updatedAt: new Date(Date.parse(ago(10)) + 20_000).toISOString() },
+    { status: "pending", createdAt: ago(3), expiresAt: ago(2.99) },
+    { status: "pending", createdAt: ago(0.001), expiresAt: ago(-0.01) },
+    { status: "expired", createdAt: ago(45) }
+  ];
+  const sessions = [
+    { deviceId: "tv", startedAt: ago(1), updatedAt: ago(1), watchedSeconds: 900 },
+    { deviceId: "pad", startedAt: ago(40), updatedAt: ago(40), watchedSeconds: 100 }
+  ];
+  const stats = computeDeviceStats({ devices: devicesList, pairingSessions: qr, watchSessions: sessions, childNames: new Map([["c1", "Amir"]]), days: 30, now });
+
+  assert.equal(stats.kpis.paired.value, 2);
+  assert.equal(stats.kpis.revoked.value, 1);
+  assert.equal(stats.kpis.active.value, 1, "only the TV watched in the period");
+  assert.equal(stats.current.connected, 3);
+  assert.equal(stats.current.idle, 2, "pad last used 40 days ago, old never used since pairing 80 days ago");
+  assert.equal(stats.current.qr_conversion, 50, "2 of 4 codes in the period ended in a pairing");
+  assert.equal(stats.current.median_pair_seconds, 40);
+  assert.deepEqual(stats.qr_outcomes, [{ key: "approved", count: 2 }, { key: "expired", count: 1 }, { key: "pending", count: 1 }]);
+  assert.equal(stats.current.devices_per_child, 1.5);
+  assert.deepEqual(stats.per_child.map((row) => row.count), [1, 1, 0]);
+  assert.equal(stats.top_devices[0].id, "tv");
+  assert.equal(stats.top_devices[0].child_name, "Amir");
+  assert.equal(stats.daily.length, 30);
+  console.log("device stats tests passed");
+}

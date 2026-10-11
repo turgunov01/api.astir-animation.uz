@@ -1,11 +1,12 @@
 import { forbidden, notFound } from "../lib/errors.js";
+import { computeDeviceStats } from "./deviceStats.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ONLINE_WINDOW_MS = 10 * 60 * 1000;
 
 // Every paired child device across all families, with who it belongs to and
 // when it was last used — the admin "TV устройства" page.
-export function createAdminDeviceService({ children, devices, pairing, parents, watchSessions }) {
+export function createAdminDeviceService({ children, devices, pairing, pairingSessions = null, parents, watchSessions }) {
   function assertAdmin(actor) {
     if (!ADMIN_ROLES.has(actor?.role)) {
       throw forbidden("Admin access required", "ADMIN_REQUIRED");
@@ -87,6 +88,20 @@ export function createAdminDeviceService({ children, devices, pairing, parents, 
           platforms: items.reduce((counts, item) => ({ ...counts, [item.platform]: (counts[item.platform] || 0) + 1 }), {})
         }
       };
+    },
+
+    async stats(actor, { days } = {}) {
+      assertAdmin(actor);
+      const rows = devices.all();
+      const childMap = await lookup(children, new Set(rows.map((device) => device.childId).filter(Boolean)));
+
+      return computeDeviceStats({
+        devices: rows,
+        pairingSessions: pairingSessions?.all?.() || [],
+        watchSessions: watchSessions.all(),
+        childNames: new Map([...childMap].map(([id, child]) => [id, child.name || null])),
+        days: [7, 30, 90, 365].includes(Number(days)) ? Number(days) : 30
+      });
     },
 
     // QA "pair without a phone": approve a pending pairing session on behalf of

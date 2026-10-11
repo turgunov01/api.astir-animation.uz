@@ -123,6 +123,7 @@ export function createContainer({ store = defaultStore } = {}) {
     children: repositories.children,
     devices: repositories.devices,
     pairing: services.pairing,
+    pairingSessions: repositories.pairingSessions,
     parents: repositories.parents,
     watchSessions: repositories.watchSessions
   });
