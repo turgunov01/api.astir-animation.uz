@@ -118,7 +118,8 @@ export function createApp({ container = createContainer() } = {}) {
   });
   const analyticsRoutes = createAnalyticsRoutes({
     contentMovies: container.repositories.contentMovies,
-    contentReactions: container.repositories.contentReactions
+    contentReactions: container.repositories.contentReactions,
+    watchSessions: container.repositories.watchSessions
   });
 
   const fullSwaggerOptions = createSwaggerUiOptions({

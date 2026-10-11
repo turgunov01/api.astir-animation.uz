@@ -229,7 +229,8 @@ async function statisticsForTarget(db, target, { contentMovies = null, contentRe
   return {
     likes: likes?.count || 0,
     dislikes: dislikes?.count || 0,
-    views: views?.views || 0
+    // Catalog cartoons count views in the JSON store, their legacy mirror does not.
+    views: Math.max(views?.views || 0, storeViewsForTarget(contentMovies, target))
   };
 }
 
@@ -382,7 +383,8 @@ async function timeseriesForContent(db, contentId, days) {
     `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
             COUNT(*)::int AS comments
      FROM comments
-     WHERE content_id = $1 AND created_at >= now() - $2::interval
+     WHERE (content_id = $1 OR target_id = $1::text) AND parent_id IS NULL
+       AND created_at >= now() - $2::interval
      GROUP BY 1
      ORDER BY 1`,
     [contentId, interval]
@@ -425,7 +427,50 @@ async function timeseriesForContent(db, contentId, days) {
   };
 }
 
-export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null } = {}) {
+// Catalog cartoons are watched through v1 watch sessions (JSON store), not
+// the legacy watch_history table: fold those into the daily views and the
+// retention curve too.
+function mergeWatchSessions(series, sessions, contentId, days, durationSec) {
+  const since = Date.now() - days * 86_400_000;
+  const own = sessions.filter((session) => session.contentId === contentId && session.countedAsView);
+  const byDay = new Map(series.views_by_day.map((row) => [row.day, { ...row, viewerSet: null }]));
+
+  for (const session of own) {
+    const at = new Date(session.viewCountedAt || session.startedAt || session.createdAt).getTime();
+    if (!Number.isFinite(at) || at < since) continue;
+    const day = new Date(at).toISOString().slice(0, 10);
+    const entry = byDay.get(day) || { day, views: 0, viewers: 0, viewerSet: null };
+    entry.viewerSet = entry.viewerSet || new Set();
+    entry.views += 1;
+    entry.viewerSet.add(session.childId || session.parentId || session.deviceId);
+    byDay.set(day, entry);
+  }
+
+  const viewsByDay = [...byDay.values()]
+    .map(({ viewerSet, ...row }) => ({ ...row, viewers: (row.viewers || 0) + (viewerSet?.size || 0) }))
+    .sort((left, right) => left.day.localeCompare(right.day));
+
+  const retention = new Map(series.retention_buckets.map((row) => [row.bucket, row.viewers]));
+  if (durationSec > 0) {
+    const furthest = new Map();
+    for (const session of own) {
+      const viewer = session.childId || session.parentId || session.deviceId;
+      furthest.set(viewer, Math.max(furthest.get(viewer) || 0, Number(session.positionSeconds) || 0));
+    }
+    for (const position of furthest.values()) {
+      const bucket = Math.min(10, Math.floor(Math.min(Math.max(position / durationSec, 0), 0.9999) * 10) + 1);
+      retention.set(bucket, (retention.get(bucket) || 0) + 1);
+    }
+  }
+
+  return {
+    ...series,
+    views_by_day: viewsByDay,
+    retention_buckets: [...retention.entries()].map(([bucket, viewers]) => ({ bucket, viewers })).sort((a, b) => a.bucket - b.bucket)
+  };
+}
+
+export function createAnalyticsRoutes({ contentMovies = null, contentReactions = null, watchSessions = null } = {}) {
   const router = Router();
   const analyticsOptions = { contentMovies, contentReactions };
 
@@ -474,7 +519,12 @@ export function createAnalyticsRoutes({ contentMovies = null, contentReactions =
     }
 
     const days = clampDays(request.query.days);
-    const series = await timeseriesForContent(request.legacyDb, id, days);
+    const movie = contentMovies?.findById?.(id);
+    let series = await timeseriesForContent(request.legacyDb, id, days);
+
+    if (movie && watchSessions?.all) {
+      series = mergeWatchSessions(series, watchSessions.all(), id, days, Number(movie.duration_sec) || 0);
+    }
 
     response.json({ range_days: days, ...series });
   }));
