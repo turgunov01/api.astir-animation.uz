@@ -512,18 +512,37 @@ export function createAnalyticsRoutes({ contentMovies = null, contentReactions =
     response.json(await statisticsForTarget(request.legacyDb, target, analyticsOptions));
   }));
 
+  // Cartoon or series (all its episodes together) for the admin analytics tab.
   router.get("/statistics/:content_id/studio", requireAdmin, asyncHandler(async (request, response) => {
     const id = request.params.content_id;
+    const durations = {};
     const movie = contentMovies?.findById?.(id);
-    const legacy = movie || !isUuid(id) ? null : await request.legacyDb.one("SELECT duration_sec FROM content WHERE id = $1", [id]);
 
-    if (!movie && !legacy) {
+    if (movie) {
+      durations[movie.id] = Number(movie.duration_sec) || 0;
+    } else if (isUuid(id)) {
+      const series = await request.legacyDb.one("SELECT id FROM series WHERE id = $1", [id]);
+      const rows = series
+        ? await request.legacyDb.many("SELECT id::text AS id, duration_sec FROM content WHERE series_id = $1", [id])
+        : await request.legacyDb.many("SELECT id::text AS id, duration_sec FROM content WHERE id = $1", [id]);
+
+      for (const row of rows) durations[row.id] = Number(row.duration_sec) || 0;
+      if (series) {
+        for (const episode of contentMovies?.list?.() || []) {
+          if (episode.series_id === id) durations[episode.id] = Number(episode.duration_sec) || 0;
+        }
+      }
+      if (!series && !rows.length) {
+        throw legacyError(404, "content_not_found", "content not found");
+      }
+    } else {
       throw legacyError(404, "content_not_found", "content not found");
     }
 
-    response.json(await buildContentStudioStats(request.legacyDb, id, {
+    const ids = Object.keys(durations);
+    response.json(await buildContentStudioStats(request.legacyDb, ids.length ? ids : [id], {
       days: request.query.days,
-      durationSec: Number(movie?.duration_sec ?? legacy?.duration_sec) || 0,
+      durations,
       watchSessions,
       devices,
       children

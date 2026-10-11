@@ -20,7 +20,7 @@ const db = {
 
 const stats = await buildContentStudioStats(db, id, {
   days: 28,
-  durationSec: 1000,
+  durations: { [id]: 1000 },
   watchSessions: { all: () => sessions },
   devices: { findById: (deviceId) => ({ tv: { platform: "tv" }, phone: { platform: "android" } })[deviceId] },
   children: { findById: async (childId) => ({ "kid-a": { age: 5 }, "kid-b": { age: 11 } })[childId] }
@@ -41,5 +41,18 @@ assert.equal(stats.audience.by_age.find((row) => row.group === "4-6").viewers, 1
 assert.equal(stats.audience.by_age.find((row) => row.group === "10-12").viewers, 1);
 assert.equal(stats.retention[0], 100);
 assert.equal(stats.retention[5], 50, "kid-a reached 60 %, kid-b only 10 %");
+
+// A series is all its episodes together.
+const series = await buildContentStudioStats(db, ["ep-1", "ep-2"], {
+  days: 28,
+  durations: { "ep-1": 100, "ep-2": 200 },
+  watchSessions: { all: () => [
+    { contentId: "ep-1", countedAsView: true, childId: "kid-a", viewCountedAt: ago(1000), positionSeconds: 100 },
+    { contentId: "ep-2", countedAsView: true, childId: "kid-a", viewCountedAt: ago(2000), positionSeconds: 50 }
+  ] }
+});
+assert.equal(series.totals.views, 2);
+assert.equal(series.totals.viewers, 1);
+assert.equal(series.retention[5], 50, "ep-1 finished, ep-2 stopped at 25 %");
 
 console.log("content studio stats tests passed");

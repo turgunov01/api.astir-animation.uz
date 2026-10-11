@@ -4,7 +4,8 @@
 // audience retention and who watches (age, device, time of day).
 //
 // Catalog cartoons are watched through v1 watch sessions (JSON store);
-// legacy episodes through watch_history. Both are counted.
+// legacy episodes through watch_history. Both are counted. A series passes
+// all its episode ids and is reported as one title.
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -28,13 +29,16 @@ function viewerOf(session) {
   return session.childId || session.parentId || session.deviceId || session.id;
 }
 
-export async function buildContentStudioStats(db, contentId, {
+export async function buildContentStudioStats(db, contentIds, {
   days: requestedDays,
-  durationSec = 0,
+  durations = {},
   watchSessions = null,
   devices = null,
   children = null
 } = {}) {
+  const ids = new Set((Array.isArray(contentIds) ? contentIds : [contentIds]).map(String));
+  const idList = [...ids];
+  const durationOf = (id) => Number(durations[id]) || 0;
   const days = Math.min(Math.max(Number(requestedDays) || 28, 1), 365);
   const now = Date.now();
   const todayStart = new Date(dayKey(now)).getTime();
@@ -54,6 +58,14 @@ export async function buildContentStudioStats(db, contentId, {
   let totalViews = 0;
   let totalWatchSeconds = 0;
 
+  // Furthest point each viewer reached in each episode, as a 0..1 ratio.
+  function trackPosition(viewer, contentId, position) {
+    const duration = durationOf(String(contentId));
+    if (!duration) return;
+    const key = `${viewer}:${contentId}`;
+    viewerPositions.set(key, Math.max(viewerPositions.get(key) || 0, Math.min((Number(position) || 0) / duration, 1)));
+  }
+
   function countView(time, viewer, seconds = 0) {
     totalViews += 1;
     totalWatchSeconds += seconds;
@@ -70,12 +82,12 @@ export async function buildContentStudioStats(db, contentId, {
   }
 
   for (const session of watchSessions?.all?.() || []) {
-    if (session.contentId !== contentId || !session.countedAsView) continue;
+    if (!ids.has(String(session.contentId)) || !session.countedAsView) continue;
     const time = new Date(session.viewCountedAt || session.startedAt || session.createdAt).getTime();
     if (!Number.isFinite(time)) continue;
     const viewer = viewerOf(session);
     countView(time, viewer, Number(session.watchedSeconds) || 0);
-    viewerPositions.set(viewer, Math.max(viewerPositions.get(viewer) || 0, Number(session.positionSeconds) || 0));
+    trackPosition(viewer, session.contentId, session.positionSeconds);
     if (session.childId) childIds.add(session.childId);
     if (time >= from) {
       const platform = devices?.findById?.(session.deviceId)?.platform || (session.actorType === "parent" ? "parent" : "unknown");
@@ -84,15 +96,15 @@ export async function buildContentStudioStats(db, contentId, {
   }
 
   const [history, reactions, comments] = await Promise.all([
-    db.many("SELECT viewer_id::text AS viewer, watched_at, position_sec FROM watch_history WHERE content_id::text = $1", [contentId]),
-    db.many("SELECT reaction, updated_at FROM content_reactions WHERE target_id::text = $1", [contentId]),
-    db.many("SELECT created_at FROM comments WHERE (target_id = $1 OR content_id::text = $1) AND parent_id IS NULL", [contentId])
+    db.many("SELECT viewer_id::text AS viewer, content_id::text AS content_id, watched_at, position_sec FROM watch_history WHERE content_id::text = ANY($1::text[])", [idList]),
+    db.many("SELECT reaction, updated_at FROM content_reactions WHERE target_id::text = ANY($1::text[])", [idList]),
+    db.many("SELECT created_at FROM comments WHERE (target_id = ANY($1::text[]) OR content_id::text = ANY($1::text[])) AND parent_id IS NULL", [idList])
   ]);
 
   for (const row of history) {
     const time = new Date(row.watched_at).getTime();
     countView(time, row.viewer);
-    viewerPositions.set(row.viewer, Math.max(viewerPositions.get(row.viewer) || 0, Number(row.position_sec) || 0));
+    trackPosition(row.viewer, row.content_id, row.position_sec);
   }
 
   for (const row of reactions) {
@@ -117,11 +129,10 @@ export async function buildContentStudioStats(db, contentId, {
     }
   }
 
-  // Retention: share of viewers who reached each 10 % of the cartoon.
+  // Retention: share of (viewer, episode) pairs that reached each 10 %.
   const retention = Array.from({ length: 11 }, (_, index) => {
-    if (!durationSec || !viewerPositions.size) return null;
-    const mark = (index / 10) * durationSec;
-    const reached = [...viewerPositions.values()].filter((position) => position >= mark || index === 0).length;
+    if (!viewerPositions.size) return null;
+    const reached = [...viewerPositions.values()].filter((ratio) => ratio >= index / 10 || index === 0).length;
     return Math.round((reached / viewerPositions.size) * 100);
   });
 
