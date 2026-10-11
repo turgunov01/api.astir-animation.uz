@@ -4092,7 +4092,8 @@ export function createLegacyRoutes({
     const replies = rows.length
       ? await request.legacyDb.many(
         `
-          SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url, u.avatar_path AS user_avatar_path
+          SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url, u.avatar_path AS user_avatar_path,
+            u.role IN ('admin', 'super_admin') AS is_team
           FROM comments c JOIN users u ON u.id = c.user_id
           WHERE c.parent_id = ANY($1::uuid[])
           ORDER BY c.created_at ASC
@@ -4104,7 +4105,11 @@ export function createLegacyRoutes({
     const withAvatar = (row) => ({ ...row, user_avatar_url: sign(row) });
     response.json(rows.map((row) => ({
       ...serializeComment(withAvatar(row)),
-      replies: replies.filter((reply) => reply.parent_id === row.id).map((reply) => serializeComment(withAvatar(reply)))
+      replies: replies.filter((reply) => reply.parent_id === row.id).map((reply) => ({
+        ...serializeComment(withAvatar(reply)),
+        // Staff answers are shown as "Команда Astir", not under the admin's name.
+        is_team: Boolean(reply.is_team)
+      }))
     })));
   }));
 
