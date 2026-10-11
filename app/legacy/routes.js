@@ -2054,6 +2054,7 @@ export function createLegacyRoutes({
   contentService = null,
   devices = null,
   media,
+  requestJournal = null,
   paymentProviders = null,
   streaming = null,
   tariffs = null,
@@ -4572,6 +4573,18 @@ export function createLegacyRoutes({
   router.post("/admin/support/chats/:id/read", requireAdmin, asyncHandler(async (request, response) => {
     await markSupportChatRead(request.legacyDb, request.params.id, "admin");
     response.json(messageResponse("read"));
+  }));
+
+  router.get("/admin/api-requests", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(requestJournal.list(request.query));
+  }));
+
+  router.get("/admin/api-requests/:id", requireAdmin, asyncHandler(async (request, response) => {
+    const entry = requestJournal.get(request.params.id);
+    if (!entry) {
+      throw legacyError(404, "request_not_found", "запрос уже вытеснен из журнала");
+    }
+    response.json(entry);
   }));
 
   router.get("/admin/api-stats", requireAdmin, asyncHandler(async (request, response) => {

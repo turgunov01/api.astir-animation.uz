@@ -56,7 +56,7 @@ export function createApp({ container = createContainer() } = {}) {
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use(requestContext);
-  app.use(createRequestLogger({ monitor: container.services.apiMonitor }));
+  app.use(createRequestLogger({ monitor: container.services.apiMonitor, journal: container.services.requestJournal }));
   app.use(helmet({
     // Swagger UI (inline assets) and cross-origin media need these relaxed;
     // the other helmet defaults (HSTS, nosniff, frameguard, etc.) stay enabled.
@@ -128,6 +128,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentMovies: container.repositories.contentMovies,
     contentPurge: container.services.contentPurge,
     apiMonitor: container.services.apiMonitor,
+    requestJournal: container.services.requestJournal,
     contentService: container.services.content,
     devices: container.repositories.devices,
     media: legacyMedia,
