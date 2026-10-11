@@ -130,7 +130,9 @@ export function createApp({ container = createContainer() } = {}) {
     media: legacyMedia,
     paymentProviders: container.services.paymentProviders,
     streaming: container.services.legacyStreaming,
-    tariffs: container.repositories.tariffs
+    tariffs: container.repositories.tariffs,
+    watchLimits: container.repositories.watchLimits,
+    watchSessions: container.repositories.watchSessions
   });
   const analyticsRoutes = createAnalyticsRoutes({
     contentMovies: container.repositories.contentMovies,

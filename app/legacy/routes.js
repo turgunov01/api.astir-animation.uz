@@ -32,6 +32,7 @@ import { buildAdminOverview } from "./adminOverview.js";
 import { listAdminComments, replyToComment } from "./adminComments.js";
 import { buildSalesStats } from "./adminSalesStats.js";
 import { buildParentStats } from "./adminParentStats.js";
+import { buildChildStats } from "./adminChildStats.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -2026,7 +2027,9 @@ export function createLegacyRoutes({
   media,
   paymentProviders = null,
   streaming = null,
-  tariffs = null
+  tariffs = null,
+  watchLimits = null,
+  watchSessions = null
 }) {
   const router = Router();
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
@@ -4425,6 +4428,10 @@ export function createLegacyRoutes({
       throw legacyError(404, "provider_not_found", "unknown payment provider");
     }
     response.json(provider);
+  }));
+
+  router.get("/admin/children/stats", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await buildChildStats(request.legacyDb, { days: request.query.days, watchSessions, watchLimits, devices, contentMovies }));
   }));
 
   router.get("/admin/parents/stats", requireAdmin, asyncHandler(async (request, response) => {
