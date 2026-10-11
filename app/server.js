@@ -12,7 +12,6 @@ import { createLegacyDb, requireLegacyDb } from "./legacy/db.js";
 import { createLegacyMedia } from "./legacy/media.js";
 import { createMediaThumbnailHandler } from "./legacy/mediaThumbnails.js";
 import { createLegacyRoutes } from "./legacy/routes.js";
-import { createLegacyStreaming } from "./legacy/streaming.js";
 import { createLegacySwaggerForRequest } from "./legacy/swagger.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { requestContext } from "./middleware/requestContext.js";
@@ -114,7 +113,7 @@ export function createApp({ container = createContainer() } = {}) {
     contentLikes: container.repositories.contentLikes,
     contentMovies: container.repositories.contentMovies,
     media: legacyMedia,
-    streaming: createLegacyStreaming({ config: container.config }),
+    streaming: container.services.legacyStreaming,
     tariffs: container.repositories.tariffs
   });
   const analyticsRoutes = createAnalyticsRoutes({

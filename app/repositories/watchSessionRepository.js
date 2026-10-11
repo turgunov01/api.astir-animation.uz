@@ -1,5 +1,11 @@
 export function createWatchSessionRepository(store) {
   return {
+    deleteByContentId(contentId) {
+      for (const session of store.filter("watchSessions", (item) => item.contentId === contentId)) {
+        store.delete("watchSessions", session.id);
+      }
+    },
+
     all() {
       return store.all("watchSessions");
     },

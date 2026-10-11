@@ -847,6 +847,7 @@ function actorBlacklistTarget(actor) {
 export function createContentService({
   childService,
   contentCategories,
+  contentPurge = null,
   contentLikes,
   contentMovieTags,
   contentMovies,
@@ -1833,6 +1834,7 @@ export function createContentService({
           childService?.removeContentFromAllBlacklists?.(movieToDelete.id);
           transcoder.removeMovieFiles(movieToDelete);
           removeStoredFile(movieToDelete.poster);
+          await contentPurge?.purge(movieToDelete.id);
         }
 
         if (movieToDelete.id === movie.id) {

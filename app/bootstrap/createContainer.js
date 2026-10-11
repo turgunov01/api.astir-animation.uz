@@ -1,11 +1,13 @@
 import { config } from "../config.js";
 import { createControllers } from "../controllers/index.js";
 import { createLegacyDb } from "../legacy/db.js";
+import { createLegacyStreaming } from "../legacy/streaming.js";
 import { createAuthMiddleware } from "../middleware/auth.js";
 import { createUploadMiddleware } from "../middleware/upload.js";
 import { createRepositories } from "../repositories/index.js";
 import { createAuthService } from "../services/authService.js";
 import { createChildService } from "../services/childService.js";
+import { createContentPurge } from "../services/contentPurge.js";
 import { createContentService } from "../services/contentService.js";
 import { createFaqService } from "../services/faqService.js";
 import { createLegacyStreamingState } from "../services/legacyStreamingState.js";
@@ -71,7 +73,15 @@ export function createContainer({ store = defaultStore } = {}) {
     config,
     contentMovies: repositories.contentMovies
   });
+  services.legacyStreaming = createLegacyStreaming({ config });
   services.content = createContentService({
+    contentPurge: createContentPurge({
+      db: databaseDb,
+      mediaRoot: config.mediaRoot,
+      streaming: services.legacyStreaming,
+      contentReactions: repositories.contentReactions,
+      watchSessions: repositories.watchSessions
+    }),
     contentCategories: repositories.contentCategories,
     contentLikes: repositories.contentLikes,
     contentMovieTags: repositories.contentMovieTags,
