@@ -149,7 +149,7 @@ export function createApiRequestStore({ db }) {
       };
     },
 
-    async list({ client = "", status = "", q = "", method = "", before = "", limit = 100 } = {}) {
+    async list({ client = "", status = "", q = "", method = "", route = "", before = "", limit = 100 } = {}) {
       await flush();
       const size = Math.min(Math.max(Number(limit) || 100, 1), 500);
       const where = ["at >= now() - interval '7 days'"];
@@ -160,6 +160,7 @@ export function createApiRequestStore({ db }) {
       };
       if (client) add("client = ?", client);
       if (method) add("method = ?", method);
+      if (route) add("route = ?", route);
       if (status === "errors") where.push("status >= 400");
       if (status === "4xx") where.push("status >= 400 AND status < 500");
       if (status === "5xx") where.push("status >= 500");

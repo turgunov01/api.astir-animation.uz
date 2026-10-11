@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { normalizeRoute } from "./apiMonitor.js";
 
 // Full journal of recent API requests (app, admin panel, TVs) for the admin
 // "Отладка API → Все запросы" tab: who called what, with which headers,
@@ -122,7 +123,7 @@ export function createRequestJournal() {
     },
 
     // Newest first; `before` (an entry id) pages back.
-    list({ client = "", status = "", q = "", method = "", before = "", limit = 100 } = {}) {
+    list({ client = "", status = "", q = "", method = "", route = "", before = "", limit = 100 } = {}) {
       const size = Math.min(Math.max(Number(limit) || 100, 1), 500);
       const needle = String(q).trim().toLowerCase();
       let rows = [...entries].reverse();
@@ -133,6 +134,7 @@ export function createRequestJournal() {
       rows = rows.filter((entry) => {
         if (client && entry.client !== client) return false;
         if (method && entry.method !== method) return false;
+        if (route && (entry.route || normalizeRoute(entry.path)) !== route) return false;
         if (status === "errors" && entry.status < 400) return false;
         if (status === "5xx" && entry.status < 500) return false;
         if (status === "4xx" && (entry.status < 400 || entry.status >= 500)) return false;
