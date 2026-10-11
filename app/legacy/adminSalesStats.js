@@ -178,7 +178,9 @@ export function computeSalesStats({ transactions, subscriptions, parentsTotal, n
 export async function buildSalesStats(db, { days: requestedDays, tariffs = [] } = {}) {
   const days = [7, 30, 90, 365].includes(Number(requestedDays)) ? Number(requestedDays) : 30;
   const name = "NULLIF(TRIM(CONCAT_WS(' ', u.name, u.last_name)), '')";
-  const [transactions, subscriptions, parents, newParents] = await Promise.all([
+  // Subscriptions live in two places: v1 billing (Click checkout in the new
+  // API) and the legacy table (older checkout, store purchases, grants).
+  const [transactions, v1Subscriptions, legacySubscriptions, plans, parents, newParents] = await Promise.all([
     db.many(`
       SELECT t.id, t.parent_id, t.tariff_id, t.amount_cents, t.currency, t.provider, t.status, t.created_at, t.processed_at,
         COALESCE(${name}, u.email) AS parent_name
@@ -190,6 +192,12 @@ export async function buildSalesStats(db, { days: requestedDays, tariffs = [] } 
         COALESCE(${name}, u.email) AS parent_name
       FROM v1_subscriptions s LEFT JOIN users u ON u.id = s.parent_id
     `),
+    db.many(`
+      SELECT s.id, s.user_id AS parent_id, s.plan_id AS tariff_id, s.status, s.starts_at AS started_at, s.created_at, s.ends_at AS expires_at,
+        COALESCE(${name}, u.email) AS parent_name
+      FROM subscriptions s LEFT JOIN users u ON u.id = s.user_id
+    `),
+    db.many("SELECT id::text AS id, name AS title, price_cents, duration_days FROM plans"),
     db.one("SELECT count(*)::int AS count FROM users WHERE role = 'parent'"),
     db.one(`
       SELECT
@@ -201,10 +209,10 @@ export async function buildSalesStats(db, { days: requestedDays, tariffs = [] } 
 
   return computeSalesStats({
     transactions,
-    subscriptions,
+    subscriptions: [...v1Subscriptions, ...legacySubscriptions],
     parentsTotal: parents?.count || 0,
     newParents: { current: newParents?.current || 0, previous: newParents?.previous || 0 },
-    tariffs,
+    tariffs: [...tariffs, ...plans],
     days
   });
 }
