@@ -29,6 +29,7 @@ import {
 } from "./auth.js";
 import { exchangeAppleAuthorizationCode, revokeAppleToken } from "./appleAuth.js";
 import { buildAdminOverview } from "./adminOverview.js";
+import { listAdminComments, replyToComment } from "./adminComments.js";
 import {
   asyncHandler,
   buildUpdate,
@@ -4015,14 +4016,30 @@ export function createLegacyRoutes({
           u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url
         FROM comments c
         JOIN users u ON u.id = c.user_id
-        WHERE (c.target_type = $1 AND c.target_id = $2)
-          OR ($3::uuid IS NOT NULL AND c.content_id = $3)
+        WHERE ((c.target_type = $1 AND c.target_id = $2)
+          OR ($3::uuid IS NOT NULL AND c.content_id = $3))
+          AND c.parent_id IS NULL
         ORDER BY c.created_at DESC
         LIMIT $4 OFFSET $5
       `,
       [target.targetType, target.targetId, target.contentId, limit, offset]
     );
-    response.json(rows.map(serializeComment));
+    // Replies (e.g. from the Astir team) ride along under their comment.
+    const replies = rows.length
+      ? await request.legacyDb.many(
+        `
+          SELECT c.*, u.name AS user_name, u.last_name AS user_last_name, u.avatar_url AS user_avatar_url
+          FROM comments c JOIN users u ON u.id = c.user_id
+          WHERE c.parent_id = ANY($1::uuid[])
+          ORDER BY c.created_at ASC
+        `,
+        [rows.map((row) => row.id)]
+      )
+      : [];
+    response.json(rows.map((row) => ({
+      ...serializeComment(row),
+      replies: replies.filter((reply) => reply.parent_id === row.id).map(serializeComment)
+    })));
   }));
 
   router.post("/content/:id/comments", requireUser, asyncHandler(async (request, response) => {
@@ -4316,6 +4333,22 @@ export function createLegacyRoutes({
 
   router.get("/admin/overview", requireAdmin, asyncHandler(async (request, response) => {
     response.json(await buildAdminOverview(request.legacyDb, request.query));
+  }));
+
+  router.get("/admin/comments", requireAdmin, asyncHandler(async (request, response) => {
+    response.json(await listAdminComments(request.legacyDb, contentMovies, request.query));
+  }));
+
+  router.post("/admin/comments/:id/replies", requireAdmin, asyncHandler(async (request, response) => {
+    const body = String(request.body?.body || "").trim();
+    if (!body) {
+      throw legacyError(400, "validation_error", "body is required");
+    }
+    const reply = await replyToComment(request.legacyDb, request.legacyUser, request.params.id, body);
+    if (!reply) {
+      throw legacyError(404, "comment_not_found", "comment not found");
+    }
+    response.status(201).json(reply);
   }));
 
   router.get("/admin/support/chats", requireAdmin, asyncHandler(async (request, response) => {
