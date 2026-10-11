@@ -106,6 +106,7 @@ export function createContainer({ store = defaultStore } = {}) {
   services.adminDevices = createAdminDeviceService({
     children: repositories.children,
     devices: repositories.devices,
+    pairing: services.pairing,
     parents: repositories.parents,
     watchSessions: repositories.watchSessions
   });

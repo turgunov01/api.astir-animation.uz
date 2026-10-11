@@ -5,7 +5,7 @@ const ONLINE_WINDOW_MS = 10 * 60 * 1000;
 
 // Every paired child device across all families, with who it belongs to and
 // when it was last used — the admin "TV устройства" page.
-export function createAdminDeviceService({ children, devices, parents, watchSessions }) {
+export function createAdminDeviceService({ children, devices, pairing, parents, watchSessions }) {
   function assertAdmin(actor) {
     if (!ADMIN_ROLES.has(actor?.role)) {
       throw forbidden("Admin access required", "ADMIN_REQUIRED");
@@ -87,6 +87,21 @@ export function createAdminDeviceService({ children, devices, parents, watchSess
           platforms: items.reduce((counts, item) => ({ ...counts, [item.platform]: (counts[item.platform] || 0) + 1 }), {})
         }
       };
+    },
+
+    // QA "pair without a phone": approve a pending pairing session on behalf of
+    // the child's real parent, so the device is owned by that family.
+    async approvePairing(actor, sessionId, childId) {
+      assertAdmin(actor);
+
+      const child = await children.findById(childId);
+      const parentId = child?.parentId || child?.parent_id;
+
+      if (!child || !parentId) {
+        throw notFound("Child not found", "CHILD_NOT_FOUND");
+      }
+
+      return await pairing.approvePairingSession(parentId, sessionId, childId);
     },
 
     revoke(actor, deviceId) {
