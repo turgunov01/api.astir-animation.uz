@@ -159,6 +159,7 @@ export function createApp({ container = createContainer() } = {}) {
     media: legacyMedia,
     paymentProviders: container.services.paymentProviders,
     streaming: container.services.legacyStreaming,
+    subscriptions: container.repositories.subscriptions,
     tariffs: container.repositories.tariffs,
     tariffService: container.services.tariffs,
     tariffStoreSync: container.services.tariffStoreSync,

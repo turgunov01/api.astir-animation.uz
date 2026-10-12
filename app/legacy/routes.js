@@ -1,6 +1,7 @@
 import { ageFromBirthDate, formatBirthDate, parseBirthDate } from "../lib/childAge.js";
 import { Router } from "express";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -2096,6 +2097,7 @@ export function createLegacyRoutes({
   paymentProviders = null,
   projectSettings = null,
   streaming = null,
+  subscriptions = null,
   tariffs = null,
   tariffService = null,
   tariffStoreSync = null,
@@ -2103,6 +2105,28 @@ export function createLegacyRoutes({
   watchSessions = null
 }) {
   const router = Router();
+
+  // The app reads access from v1_subscriptions, so a plan given from the
+  // admin is mirrored there as an "admin" subscription. A new grant replaces
+  // the previous admin one; giving the free plan just takes it away.
+  async function grantAccessSubscription(parentId, tariffId, expiresAt) {
+    if (!subscriptions) return;
+    for (const current of await subscriptions.listByParentId(parentId)) {
+      if (current.provider === "admin" && current.status === "active") {
+        await subscriptions.update(current.id, { status: "cancelled" });
+      }
+    }
+    if (!tariffId || String(tariffId).toLowerCase() === "free") return;
+    await subscriptions.create({
+      parentId,
+      tariffId,
+      provider: "admin",
+      providerSubscriptionId: `admin:${randomUUID()}`,
+      status: "active",
+      startedAt: new Date().toISOString(),
+      expiresAt
+    });
+  }
 
   // Push + in-app notice to a parent when the team answers them. Best
   // effort: a failed push never fails the admin's action.
@@ -2615,6 +2639,7 @@ export function createLegacyRoutes({
       ends_at: endsAt,
       auto_renew: Boolean(request.body.auto_renew ?? true)
     });
+    await grantAccessSubscription(request.params.id, plan.package_code || planId, endsAt);
     response.status(201).json(subscription);
   }));
 
