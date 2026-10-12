@@ -53,7 +53,14 @@ function memoryRepositories() {
           : null;
       }
     },
-    transactions: {}
+    transactions: (() => {
+      const payments = [];
+      return {
+        payments,
+        async findByProviderRef(provider, ref) { return payments.find((row) => row.provider === provider && row.provider_ref === ref) || null; },
+        async create(attributes) { const row = { id: `tx-${payments.length + 1}`, ...attributes }; payments.push(row); return row; }
+      };
+    })()
   };
 }
 
@@ -169,6 +176,22 @@ const { token } = appleRequests.at(-1);
 assert.equal(decodeProtectedHeader(token).kid, "KEY123");
 const { payload } = await jwtVerify(token, publicKey, { audience: "appstoreconnect-v1", issuer: "issuer-123" });
 assert.equal(payload.bid, BUNDLE_ID);
+
+// 1b. Each App Store charge is a payment for the revenue: once, in the
+// currency paid; sandbox charges don't count as revenue.
+{
+  const paid = appleTransaction({ appAccountToken: parent.id, price: 4990, currency: "USD" });
+  await service.verifyApplePurchase(parent, { transactionId: paid.transactionId });
+  await service.verifyApplePurchase(parent, { transactionId: paid.transactionId });
+  const rows = repos.transactions.payments.filter((row) => row.provider_ref === paid.transactionId);
+  assert.equal(rows.length, 1, "recorded once");
+  assert.equal(rows[0].amount_cents, 499);
+  assert.equal(rows[0].currency, "USD");
+  assert.equal(rows[0].status, "succeeded");
+  const test = appleTransaction({ appAccountToken: parent.id, environment: "Sandbox", price: 1990, currency: "USD" });
+  await service.verifyApplePurchase(parent, { transactionId: test.transactionId });
+  assert.equal(repos.transactions.payments.find((row) => row.provider_ref === test.transactionId).status, "sandbox");
+}
 
 // 2. The signed transaction from StoreKit is accepted as an id carrier only.
 const viaJws = await service.verifyApplePurchase(parent, { signedTransaction: await jws({ transactionId: valid.transactionId }) });

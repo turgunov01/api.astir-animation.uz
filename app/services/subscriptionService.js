@@ -474,6 +474,34 @@ export function createSubscriptionService({
     };
   }
 
+  // Each App Store charge (purchase or renewal) becomes a payment for the
+  // revenue stats, once per transaction id, in the currency the buyer paid.
+  // Sandbox charges are kept with status "sandbox" so they don't count.
+  async function recordApplePayment(parentId, tariffId, transaction) {
+    if (!transactions?.findByProviderRef || !transaction?.transactionId || transaction.revocationDate) return;
+    const ref = String(transaction.transactionId);
+    if (await transactions.findByProviderRef("apple", ref)) return;
+
+    const tariff = getTariff(tariffId);
+    const hasPrice = Number.isFinite(Number(transaction.price)) && transaction.currency;
+    const cents = hasPrice ? Math.round(Number(transaction.price) / 10) : Number(tariff.price_cents) || 0;
+    const sandbox = String(transaction.environment || "").toLowerCase() === "sandbox";
+    await transactions.create({
+      parentId,
+      tariffId,
+      provider: "apple",
+      kind: "subscription",
+      status: sandbox ? "sandbox" : "succeeded",
+      amount: moneyStringFromCents(cents),
+      amount_cents: cents,
+      currency: hasPrice ? String(transaction.currency).toUpperCase() : tariff.currency || "UZS",
+      description: `App Store ${transaction.productId}`,
+      expiresAt: transaction.expiresDate ? new Date(Number(transaction.expiresDate)).toISOString() : null,
+      provider_ref: ref,
+      provider_payload: applePayload(transaction)
+    });
+  }
+
   function appleExpiry(transaction, tariffId) {
     if (transaction.expiresDate) {
       return new Date(Number(transaction.expiresDate)).toISOString();
@@ -542,6 +570,7 @@ export function createSubscriptionService({
 
     assertAppleBundle(latest.transaction);
     const expiresAt = appleExpiry(latest.transaction, subscription.tariffId);
+    await recordApplePayment(subscription.parentId, subscription.tariffId, { ...latest.transaction, environment: latest.environment });
 
     return await subscriptions.update(subscription.id, {
       status: appleSubscriptionStatuses[latest.status] || appleStatus(latest.transaction, expiresAt),
@@ -869,6 +898,7 @@ export function createSubscriptionService({
       const providerSubscriptionId = String(transaction.originalTransactionId);
       await assertPurchaseOwner(parent, "apple", providerSubscriptionId);
       const expiresAt = appleExpiry(transaction, tariffId);
+      await recordApplePayment(parent.id, tariffId, transaction);
 
       return await activateStorePurchase(parent, {
         expiresAt,

@@ -1,3 +1,4 @@
+import { uzsPerUnit } from "../lib/exchangeRates.js";
 import { localDayKey, localDayStart } from "../lib/localDay.js";
 // Sales report for the admin "Подписки" page, from the live v1 billing
 // tables: revenue and payments by day, MRR, ARPU/ARPPU, conversion to paid,
@@ -167,6 +168,8 @@ export function computeSalesStats({ transactions, subscriptions, parentsTotal, n
       tariff: localizedTitle(tariffById.get(String(tx.tariff_id))?.title) || tx.tariff_id,
       amount_cents: Number(tx.amount_cents) || 0,
       currency: tx.currency || "UZS",
+      original_amount_cents: tx.original_amount_cents ?? null,
+      original_currency: tx.original_currency ?? null,
       provider: tx.provider,
       status: SUCCEEDED.has(String(tx.status)) ? "succeeded" : FAILED.has(String(tx.status)) ? "failed" : String(tx.status || "pending"),
       created_at: tx.created_at
@@ -206,8 +209,26 @@ export async function buildSalesStats(db, { days: requestedDays, tariffs = [] } 
     `, [`${days} days`, `${days * 2} days`])
   ]);
 
+  // Revenue is in UZS: store payments (USD) are converted at the CBU rate,
+  // keeping the original amount for the payments list.
+  const rates = new Map();
+  for (const currency of new Set(transactions.map((tx) => String(tx.currency || "UZS").toUpperCase()))) {
+    rates.set(currency, await uzsPerUnit(currency));
+  }
+  const inUzs = transactions.map((tx) => {
+    const currency = String(tx.currency || "UZS").toUpperCase();
+    if (currency === "UZS") return tx;
+    return {
+      ...tx,
+      original_amount_cents: Number(tx.amount_cents) || 0,
+      original_currency: currency,
+      amount_cents: Math.round((Number(tx.amount_cents) || 0) * (rates.get(currency) || 0)),
+      currency: "UZS"
+    };
+  });
+
   return computeSalesStats({
-    transactions,
+    transactions: inUzs,
     subscriptions: [...v1Subscriptions, ...legacySubscriptions],
     parentsTotal: parents?.count || 0,
     newParents: { current: newParents?.current || 0, previous: newParents?.previous || 0 },

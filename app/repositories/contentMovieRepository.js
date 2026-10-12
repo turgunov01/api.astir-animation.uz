@@ -15,6 +15,9 @@ export function createContentMovieRepository(store) {
       }
       return all.filter((movie) => {
         const parent = parentOf.get(movie.id) || (movie.series_id ? byId.get(movie.series_id) : null);
+        // An episode of a series kept in the legacy series table: that
+        // series' own visibility (active) decides, so the episode is shown.
+        if (!parent && movie.series_id) return true;
         return (parent || movie).published === true;
       });
     },

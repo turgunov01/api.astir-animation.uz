@@ -1063,6 +1063,9 @@ export function createContentService({
   // The admin panel sees everything.
   function isMoviePublished(movie) {
     const parentSeries = parentSeriesForMovie(movie);
+    // Episode of a series in the legacy series table: its visibility is that
+    // series' own "active", checked by the series routes.
+    if (!parentSeries && movie.series_id) return true;
     return (parentSeries || movie).published === true;
   }
 

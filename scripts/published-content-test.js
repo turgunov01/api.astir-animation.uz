@@ -19,7 +19,8 @@ movies.create({ id: "ep1", published: false }); // follows its series
 movies.create({ id: "hiddenSeries", published: false, series: ["ep2"] });
 movies.create({ id: "ep2", published: true }); // its series is hidden
 assert.ok(live && series);
-assert.deepEqual(movies.listPublished().map((movie) => movie.id).sort(), ["ep1", "live", "series"]);
+movies.create({ id: "legacyEp", published: false, series_id: "series-in-postgres" }); // series lives elsewhere
+assert.deepEqual(movies.listPublished().map((movie) => movie.id).sort(), ["ep1", "legacyEp", "live", "series"]);
 
 // ---- transcoder leaves no junk ----
 const mediaRoot = path.join(dir, "media");
