@@ -284,6 +284,12 @@ function movieMetadataAttributes(body, { includeDefaults = false } = {}) {
     attributes.year = optionalIntegerValue(body, "year", null, { min: 0 });
   }
 
+  for (const field of ["season_number", "episode_number"]) {
+    if (Object.hasOwn(body, field)) {
+      attributes[field] = optionalIntegerValue(body, field, null, { min: 0 });
+    }
+  }
+
   if (includeDefaults || Object.hasOwn(body, "age_rating")) {
     attributes.age_rating = optionalIntegerValue(body, "age_rating", 0, { min: 0 });
   }
@@ -677,6 +683,12 @@ export function createContentController({ contentService }) {
 
         if (Object.hasOwn(body, "year")) {
           attributes.year = optionalIntegerValue(body, "year", null, { min: 0 });
+        }
+
+        for (const field of ["season_number", "episode_number"]) {
+          if (Object.hasOwn(body, field)) {
+            attributes[field] = optionalIntegerValue(body, field, null, { min: 0 });
+          }
         }
 
         if (Object.hasOwn(body, "age_rating")) {

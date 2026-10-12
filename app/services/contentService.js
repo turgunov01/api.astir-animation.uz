@@ -168,6 +168,8 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     content_type: movie.content_type || "movie",
     category_id: movie.category_id || null,
     series_id: movie.series_id || null,
+    season_number: movie.season_number ?? null,
+    episode_number: movie.episode_number ?? null,
     series: series.length > 0
       ? await Promise.all(series.map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext)))
       : movie.series || [],
@@ -714,6 +716,8 @@ function movieAttributes(attributes) {
     age_rating: attributes.age_rating ?? 0,
     duration_sec: attributes.duration_sec ?? 0,
     year: attributes.year ?? null,
+    season_number: attributes.season_number ?? null,
+    episode_number: attributes.episode_number ?? null,
     published,
     published_at: published ? new Date().toISOString() : null,
     views_count: 0,
