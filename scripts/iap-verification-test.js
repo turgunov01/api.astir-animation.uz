@@ -77,6 +77,8 @@ const appleConfig = {
 const appleTransactions = new Map();
 const appleRequests = [];
 
+let unreleasedApp = false;
+
 async function appleFetch(url, options) {
   const { pathname, origin } = new URL(url);
   const token = options.headers.authorization.replace("Bearer ", "");
@@ -84,6 +86,8 @@ async function appleFetch(url, options) {
 
   // Production does not know sandbox transactions; the client must fall back.
   const id = decodeURIComponent(pathname.split("/").pop());
+  // An app that isn't released yet: production rejects the key with 401.
+  if (unreleasedApp && !origin.includes("sandbox")) return jsonResponse(401, {});
   const transaction = appleTransactions.get(id);
 
   if (!transaction || transaction.environment !== (origin.includes("sandbox") ? "Sandbox" : "Production")) {
@@ -180,6 +184,12 @@ await expectError(
 // 4. Sandbox purchases (TestFlight / App Review) are found after production 404.
 const sandbox = appleTransaction({ environment: "Sandbox" });
 assert.equal((await service.verifyApplePurchase(parent, { transactionId: sandbox.transactionId })).subscription.status, "active");
+
+// 4b. Before release production answers 401; sandbox purchases still verify.
+unreleasedApp = true;
+const beforeRelease = appleTransaction({ environment: "Sandbox" });
+assert.equal((await service.verifyApplePurchase(parent, { transactionId: beforeRelease.transactionId })).subscription.status, "active");
+unreleasedApp = false;
 
 // 5. Another app's transaction, unknown product, other account's token, reuse.
 await expectError(

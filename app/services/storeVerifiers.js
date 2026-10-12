@@ -107,12 +107,16 @@ export function createAppStoreClient(appleIap = {}, { fetchImpl = fetch } = {}) 
     assertConfigured();
     const token = await authToken();
 
-    for (const { environment, url } of baseUrls()) {
+    const urls = baseUrls();
+    for (const [index, { environment, url }] of urls.entries()) {
       const response = await fetchImpl(`${url}${pathName}`, {
         headers: { authorization: `Bearer ${token}` }
       });
 
-      if (response.status === 404) {
+      // "auto": a sandbox transaction is 404 in production, and production
+      // answers 401 while the app isn't released yet — try sandbox next.
+      const hasNext = index < urls.length - 1;
+      if (response.status === 404 || (hasNext && response.status === 401)) {
         continue;
       }
 
