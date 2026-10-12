@@ -46,7 +46,13 @@ export const PROVIDER_FIELDS = {
       { key: "keyId", label: "Key ID", placeholder: "10 символов, из названия .p8 файла" },
       { key: "privateKey", label: "Private key (.p8)", secret: true, multiline: true, placeholder: "-----BEGIN PRIVATE KEY-----" },
       { key: "environment", label: "Окружение", options: ["auto", "production", "sandbox"] },
-      { key: "products", label: "Продукты → тарифы", type: "products" }
+      { key: "products", label: "Продукты → тарифы", type: "products" },
+      // App Store Connect API key (a separate key): syncs tariffs ↔ subscriptions.
+      { key: "ascIssuerId", label: "App Store Connect API: Issuer ID", placeholder: "Пусто для индивидуального ключа" },
+      { key: "ascKeyId", label: "App Store Connect API: Key ID", placeholder: "Users and Access → Integrations → App Store Connect API" },
+      { key: "ascPrivateKey", label: "App Store Connect API: ключ (.p8)", secret: true, multiline: true, placeholder: "-----BEGIN PRIVATE KEY-----" },
+      { key: "ascAppId", label: "App Store Connect: Apple ID приложения", placeholder: "Число из адреса приложения в App Store Connect" },
+      { key: "ascGroupId", label: "App Store Connect: ID группы подписок", placeholder: "Пусто — первая группа приложения" }
     ]
   },
   // Not a payment provider, but stored and applied the same way (encrypted
@@ -109,7 +115,7 @@ function validateValue(provider, field, value) {
       throw badRequest("Продукты: каждому product_id нужен id тарифа", "VALIDATION_ERROR");
     }
   }
-  if (provider === "apple" && field.key === "privateKey" && !/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(value)) {
+  if (provider === "apple" && (field.key === "privateKey" || field.key === "ascPrivateKey") && !/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(value)) {
     throw badRequest("Private key: вставьте содержимое .p8 файла целиком, вместе с BEGIN/END", "VALIDATION_ERROR");
   }
   if (provider === "email" && field.key === "port" && !/^\d{2,5}$/.test(value)) {
@@ -259,7 +265,7 @@ export function createPaymentProviders({ db = null, config = {} } = {}) {
         }
         let value = field.type === "products" && typeof raw === "object" ? JSON.stringify(raw) : String(raw).trim();
         validateValue(id, field, value);
-        if (id === "apple" && field.key === "privateKey") value = normalizePrivateKeyPem(value);
+        if (id === "apple" && (field.key === "privateKey" || field.key === "ascPrivateKey")) value = normalizePrivateKeyPem(value);
         if (field.secret && !key) throw badRequest("Нет ключа шифрования на сервере (JWT_SECRET)", "ENCRYPTION_KEY_MISSING");
         changes.push({ field, value: field.secret ? encrypt(key, value) : value });
       }

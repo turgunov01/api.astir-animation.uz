@@ -2077,6 +2077,8 @@ export function createLegacyRoutes({
   projectSettings = null,
   streaming = null,
   tariffs = null,
+  tariffService = null,
+  tariffStoreSync = null,
   watchLimits = null,
   watchSessions = null
 }) {
@@ -4491,6 +4493,33 @@ export function createLegacyRoutes({
         };
       })
     });
+  }));
+
+  // Tariffs for the admin panel: hidden drafts included. New App Store
+  // Connect subscriptions are pulled in as drafts every few minutes.
+  router.get("/admin/tariffs", requireAdmin, asyncHandler(async (request, response) => {
+    const imported = tariffStoreSync ? await tariffStoreSync.autoImport() : null;
+    response.json({
+      tariffs: tariffService.listTariffs({ includeInactive: true }),
+      app_store: { configured: Boolean(tariffStoreSync?.isConfigured()), imported: imported?.created?.length || 0 }
+    });
+  }));
+
+  router.post("/admin/tariffs/app-store/sync", requireAdmin, asyncHandler(async (request, response) => {
+    const result = await tariffStoreSync.importFromAppStore();
+    response.json({ created: result.created, subscriptions: result.subscriptions });
+  }));
+
+  router.post("/admin/tariffs/:id/app-store", requireAdmin, asyncHandler(async (request, response) => {
+    const usdPrice = String(request.body?.usd_price || "").trim();
+    if (usdPrice && !/^\d{1,4}(\.\d{2})?$/.test(usdPrice)) {
+      throw legacyError(400, "validation_error", "usd_price must look like 4.99");
+    }
+    const tariff = await tariffStoreSync.pushTariff(request.params.id, {
+      usdPrice: usdPrice || null,
+      productId: request.body?.product_id ? String(request.body.product_id).trim() : undefined
+    });
+    response.status(201).json({ tariff });
   }));
 
   router.put("/admin/payment-providers/:id/settings", requireAdmin, asyncHandler(async (request, response) => {

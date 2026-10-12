@@ -160,6 +160,8 @@ export function createApp({ container = createContainer() } = {}) {
     paymentProviders: container.services.paymentProviders,
     streaming: container.services.legacyStreaming,
     tariffs: container.repositories.tariffs,
+    tariffService: container.services.tariffs,
+    tariffStoreSync: container.services.tariffStoreSync,
     watchLimits: container.repositories.watchLimits,
     watchSessions: container.repositories.watchSessions
   });

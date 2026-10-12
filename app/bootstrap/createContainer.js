@@ -24,6 +24,7 @@ import { createAppStoreClient, createGooglePlayClient } from "../services/storeV
 import { createAdminDeviceService } from "../services/adminDeviceService.js";
 import { createSubscriptionService } from "../services/subscriptionService.js";
 import { createTariffService } from "../services/tariffService.js";
+import { createTariffStoreSync } from "../services/tariffStoreSync.js";
 import { createTranscoderService } from "../services/transcoderService.js";
 import { createWatchService } from "../services/watchService.js";
 import { store as defaultStore } from "../store/jsonStore.js";
@@ -81,6 +82,11 @@ export function createContainer({ store = defaultStore } = {}) {
   });
   services.legacyStreaming = createLegacyStreaming({ config });
   services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
+  services.tariffStoreSync = createTariffStoreSync({
+    config,
+    tariffService: services.tariffs,
+    paymentProviders: services.paymentProviders
+  });
   services.presence = createPresence({ db: databaseDb });
   services.apiMonitor = createApiMonitor();
   // Kept in Postgres so the journal and monitoring survive restarts.

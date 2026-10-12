@@ -110,6 +110,29 @@ export function tariffUnlocksMovie(tariff, movie) {
   return true;
 }
 
+const LANGS = ["ru", "uz", "en"];
+
+// What a tariff still lacks before the app may offer it. Tariffs imported
+// from App Store Connect start hidden (store_draft) and go live by themselves
+// once the admin has filled all of this in.
+export function missingTariffFields(tariff) {
+  const missing = [];
+  for (const lang of LANGS) {
+    if (!String(tariff.title?.[lang] || "").trim()) missing.push(`title.${lang}`);
+  }
+  for (const lang of LANGS) {
+    if (!String(tariff.description?.[lang] || "").trim()) missing.push(`description.${lang}`);
+  }
+  if (!(tariffPriceCents(tariff) > 0) && !tariff.is_default) missing.push("price");
+  if (!(Number(tariff.duration_days) > 0)) missing.push("duration_days");
+  if (!(Number(tariff.max_children) > 0)) missing.push("max_children");
+  return missing;
+}
+
+export function isTariffActive(tariff) {
+  return tariff.active !== false;
+}
+
 function serializeTariff(tariff) {
   const priceCents = tariffPriceCents(tariff);
 
@@ -127,6 +150,10 @@ function serializeTariff(tariff) {
     price: priceString(priceCents),
     price_cents: priceCents,
     currency: tariff.currency || "UZS",
+    active: isTariffActive(tariff),
+    store_draft: Boolean(tariff.store_draft),
+    missing_fields: missingTariffFields(tariff),
+    app_store: tariff.app_store || null,
     createdAt: tariff.createdAt,
     updatedAt: tariff.updatedAt
   };
@@ -358,8 +385,9 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
       return serializeTariff(getTariffRecord(tariffId));
     },
 
-    listTariffs() {
-      return tariffs.list().map(serializeTariff);
+    // The app sees only active tariffs; the admin panel sees all of them.
+    listTariffs({ includeInactive = false } = {}) {
+      return tariffs.list().filter((tariff) => includeInactive || isTariffActive(tariff)).map(serializeTariff);
     },
 
     async updateParentTariff(parent, tariffId) {
@@ -384,6 +412,20 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
 
       if (attributes.is_default === true) {
         clearOtherDefaultTariffs(tariff.id);
+      }
+
+      const next = { ...tariff, ...attributes };
+      const missing = missingTariffFields(next);
+      if (attributes.active === true && missing.length) {
+        throw badRequest(`Tariff is not complete: ${missing.join(", ")}`, "TARIFF_INCOMPLETE");
+      }
+      if (attributes.active === false && tariff.is_default) {
+        throw badRequest("The default tariff cannot be hidden", "DEFAULT_TARIFF_REQUIRED");
+      }
+      // A draft from App Store Connect goes live once the constructor is filled in.
+      if (tariff.store_draft && !missing.length && attributes.active !== false) {
+        attributes.active = true;
+        attributes.store_draft = false;
       }
 
       return serializeTariff(tariffs.update(tariff.id, attributes));

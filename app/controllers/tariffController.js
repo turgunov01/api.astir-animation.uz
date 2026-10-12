@@ -240,6 +240,10 @@ export function createTariffController({ tariffService }) {
         attributes.can_watch_premium = optionalBoolean(request.body, "can_watch_premium");
       }
 
+      if (Object.hasOwn(request.body, "active")) {
+        attributes.active = optionalBoolean(request.body, "active");
+      }
+
       Object.assign(attributes, constructorAttributes(request.body));
       Object.assign(attributes, pricingAttributes(request.body));
 
