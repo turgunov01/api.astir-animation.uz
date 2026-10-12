@@ -80,6 +80,15 @@ export function createContainer({ store = defaultStore } = {}) {
     config,
     contentMovies: repositories.contentMovies
   });
+  // Restart transcodes a previous server process didn't finish.
+  setTimeout(() => {
+    try {
+      const resumed = services.transcoder.resumeInterrupted();
+      if (resumed) console.log(JSON.stringify({ event: "transcode_resumed", count: resumed }));
+    } catch (error) {
+      console.error(JSON.stringify({ event: "transcode_resume_failed", message: error.message }));
+    }
+  }, 5000).unref();
   services.legacyStreaming = createLegacyStreaming({ config });
   services.paymentProviders = createPaymentProviders({ db: databaseDb, config });
   services.tariffStoreSync = createTariffStoreSync({

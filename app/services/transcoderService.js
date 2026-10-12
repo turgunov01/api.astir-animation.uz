@@ -67,13 +67,31 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     });
   }
 
-  function runFfmpeg(job, args) {
+  // Writes transcode.progress (0–99 while running) at most every 2% or 5 s,
+  // so the app and admin can show how far along the video is.
+  function progressReporter(movieId) {
+    let lastValue = -1;
+    let lastAt = 0;
+    return (value) => {
+      const progress = Math.max(0, Math.min(99, Math.floor(value)));
+      const now = Date.now();
+      if (progress === lastValue || (progress - lastValue < 2 && now - lastAt < 5000)) return;
+      lastValue = progress;
+      lastAt = now;
+      const current = contentMovies.findById(movieId);
+      if (current?.transcode?.status !== "processing") return;
+      contentMovies.update(movieId, { transcode: { ...current.transcode, progress, updatedAt: new Date().toISOString() } });
+    };
+  }
+
+  // onSeconds gets how many seconds of the video ffmpeg has written so far.
+  function runFfmpeg(job, args, onSeconds = null) {
     return new Promise((resolve, reject) => {
       let childProcess;
 
       try {
-        childProcess = spawnProcess(config.ffmpegPath, args, {
-          stdio: "ignore"
+        childProcess = spawnProcess(config.ffmpegPath, onSeconds ? ["-progress", "pipe:1", "-nostats", ...args] : args, {
+          stdio: onSeconds ? ["ignore", "pipe", "ignore"] : "ignore"
         });
       } catch (error) {
         reject(error);
@@ -82,6 +100,19 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
 
       job.process = childProcess;
       let settled = false;
+
+      if (onSeconds && childProcess.stdout) {
+        let buffer = "";
+        childProcess.stdout.on("data", (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const match = /^out_time_(?:us|ms)=(\d+)/.exec(line.trim());
+            if (match) onSeconds(Number(match[1]) / 1e6);
+          }
+        });
+      }
 
       childProcess.on("error", (error) => {
         if (settled) {
@@ -197,6 +228,9 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
       `scale=-2:${rendition.height}`,
       "-c:v",
       "h264",
+      // 2–3× faster than the default "medium" at the same bitrate.
+      "-preset",
+      "veryfast",
       "-b:v",
       String(profile.videoBitrate),
       "-maxrate",
@@ -223,13 +257,18 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
 
   async function transcodeMovie(movie, sourcePath, playlistPath, renditions, job) {
     try {
-      for (const rendition of renditions) {
+      const duration = Number(movie.duration_sec) || await probeVideoDuration(sourcePath);
+      const report = progressReporter(movie.id);
+      for (const [index, rendition] of renditions.entries()) {
         if (job.cancelled) {
           return;
         }
 
         fs.mkdirSync(path.dirname(rendition.playlistPath), { recursive: true });
-        await runFfmpeg(job, transcodeArgs(sourcePath, rendition));
+        const onSeconds = duration
+          ? (seconds) => report(((index + Math.min(1, seconds / duration)) / renditions.length) * 100)
+          : null;
+        await runFfmpeg(job, transcodeArgs(sourcePath, rendition), onSeconds);
       }
 
       if (job.cancelled) {
@@ -312,6 +351,7 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     const renditions = hlsRenditions(movie.id);
     updateTranscode(movie.id, {
       status: "processing",
+      progress: 0,
       error: null,
       hlsPath: playlistPath,
       hlsUrl: hlsUrl(movie.id),
@@ -396,8 +436,18 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     }
   }
 
+  // After a restart: titles left "processing"/"queued" had their ffmpeg
+  // killed with the server, so start them again instead of leaving them stuck.
+  function resumeInterrupted() {
+    const stuck = (contentMovies.list ? contentMovies.list() : [])
+      .filter((movie) => ["processing", "queued"].includes(movie.transcode?.status) && !runningJobs.has(movie.id));
+    for (const movie of stuck) queueMovieTranscode(movie);
+    return stuck.length;
+  }
+
   return {
     ensureMovieTranscoded,
+    resumeInterrupted,
     hlsUrl,
     probeVideoDuration,
     queueMovieTranscode,

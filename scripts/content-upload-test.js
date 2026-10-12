@@ -118,6 +118,76 @@ async function assertMultiRenditionTranscode() {
 
 await assertMultiRenditionTranscode();
 
+// ffmpeg's -progress output turns into transcode.progress while it runs.
+{
+  const sourcePath = path.join(testRoot, "progress-source.mp4");
+  const movie = { id: "movie-progress-test", duration_sec: 100, source: { path: sourcePath }, transcode: { status: "queued" } };
+  const records = new Map([[movie.id, movie]]);
+  const seen = [];
+  const contentMovies = {
+    findById: (id) => records.get(id),
+    update(id, attributes) {
+      const updated = { ...records.get(id), ...attributes };
+      records.set(id, updated);
+      if (updated.transcode?.status === "processing") seen.push(updated.transcode.progress);
+      return updated;
+    }
+  };
+  let renditionIndex = 0;
+  const spawnWithProgress = (command, args) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.kill = () => child.emit("close", 143);
+    const playlistPath = args[args.length - 1];
+    assert.deepEqual(args.slice(0, 3), ["-progress", "pipe:1", "-nostats"]);
+    const isFirst = renditionIndex++ === 0;
+    queueMicrotask(() => {
+      if (isFirst) child.stdout.emit("data", Buffer.from("frame=10\nout_time_us=50000000\nprogress=continue\n"));
+      fs.mkdirSync(path.dirname(playlistPath), { recursive: true });
+      fs.writeFileSync(playlistPath, "#EXTM3U\n#EXT-X-ENDLIST\n");
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const transcoder = createTranscoderService({
+    config: { mediaRoot: path.join(testRoot, "progress-media"), ffmpegPath: "fake-ffmpeg", transcoderEnabled: true },
+    contentMovies,
+    spawnProcess: spawnWithProgress
+  });
+  fs.writeFileSync(sourcePath, "fake mp4 bytes");
+  transcoder.ensureMovieTranscoded(movie);
+  await waitForTranscode(() => records.get(movie.id));
+  assert.equal(seen[0], 0, "starts at 0%");
+  assert.ok(seen.includes(12), "half of the first of 4 renditions = 12%");
+  assert.equal(records.get(movie.id).transcode.status, "ready");
+}
+
+// After a restart a title left "processing" is transcoded again.
+{
+  const sourcePath = path.join(testRoot, "resume-source.mp4");
+  fs.writeFileSync(sourcePath, "fake mp4 bytes");
+  const stuck = { id: "movie-resume-test", source: { path: sourcePath }, transcode: { status: "processing" } };
+  const done = { id: "movie-done-test", source: { path: sourcePath }, transcode: { status: "ready" } };
+  const records = new Map([[stuck.id, stuck], [done.id, done]]);
+  const contentMovies = {
+    list: () => [...records.values()],
+    findById: (id) => records.get(id),
+    update(id, attributes) {
+      const updated = { ...records.get(id), ...attributes };
+      records.set(id, updated);
+      return updated;
+    }
+  };
+  const transcoder = createTranscoderService({
+    config: { mediaRoot: path.join(testRoot, "resume-media"), ffmpegPath: "fake-ffmpeg", transcoderEnabled: true },
+    contentMovies,
+    spawnProcess: fakeFfmpegSpawn
+  });
+  assert.equal(transcoder.resumeInterrupted(), 1, "only the unfinished title");
+  await waitForTranscode(() => records.get(stuck.id));
+  assert.equal(records.get(stuck.id).transcode.status, "ready");
+}
+
 function listen(server) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
