@@ -324,7 +324,7 @@ export function createContentController({ contentService }) {
 
         return await contentService.addSeriesMovie(request.params.movie_id, {
           title: requiredLocalizedTextWithFallback(body, "title"),
-          description: requiredLocalizedTextWithFallback(body, "description"),
+          description: optionalLocalizedTextWithFallback(body, "description") || { en: "", ru: "", uz: "" },
           ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: uploadedFile(request, "video"),
           posterFile: uploadedFile(request, "poster")
@@ -363,9 +363,13 @@ export function createContentController({ contentService }) {
           });
         }
 
+        // Episodes may have no description; films keep at least one language.
+        const isEpisode = String(body?.content_type || "").toLowerCase() === "episode" || Boolean(body?.series_id);
         const createdMovie = await contentService.createMovie({
           title: requiredLocalizedTextWithFallback(body, "title"),
-          description: requiredLocalizedTextWithFallback(body, "description"),
+          description: isEpisode
+            ? optionalLocalizedTextWithFallback(body, "description") || { en: "", ru: "", uz: "" }
+            : requiredLocalizedTextWithFallback(body, "description"),
           ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: videoFile,
           posterFile
