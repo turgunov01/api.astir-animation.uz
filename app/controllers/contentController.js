@@ -2,11 +2,11 @@ import fs from "node:fs";
 import { badRequest } from "../lib/errors.js";
 import {
   optionalBoolean,
-  optionalLocalizedText,
+  optionalLocalizedTextWithFallback,
   optionalString,
   optionalStringArray,
   requiredString,
-  requiredLocalizedText
+  requiredLocalizedTextWithFallback
 } from "../lib/validation.js";
 
 function parseJsonField(value, field) {
@@ -306,8 +306,8 @@ export function createContentController({ contentService }) {
         const body = payload(request);
 
         return await contentService.createCategory({
-          title: requiredLocalizedText(body, "title"),
-          description: optionalLocalizedText(body, "description") || { en: "", ru: "", uz: "" },
+          title: requiredLocalizedTextWithFallback(body, "title"),
+          description: optionalLocalizedTextWithFallback(body, "description") || { en: "", ru: "", uz: "" },
           type: optionalString(body, "type") || "other",
           slug: optionalString(body, "slug"),
           active: optionalBoolean(body, "active", true),
@@ -323,8 +323,8 @@ export function createContentController({ contentService }) {
         const body = payload(request);
 
         return await contentService.addSeriesMovie(request.params.movie_id, {
-          title: requiredLocalizedText(body, "title"),
-          description: requiredLocalizedText(body, "description"),
+          title: requiredLocalizedTextWithFallback(body, "title"),
+          description: requiredLocalizedTextWithFallback(body, "description"),
           ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: uploadedFile(request, "video"),
           posterFile: uploadedFile(request, "poster")
@@ -364,8 +364,8 @@ export function createContentController({ contentService }) {
         }
 
         const createdMovie = await contentService.createMovie({
-          title: requiredLocalizedText(body, "title"),
-          description: requiredLocalizedText(body, "description"),
+          title: requiredLocalizedTextWithFallback(body, "title"),
+          description: requiredLocalizedTextWithFallback(body, "description"),
           ...movieMetadataAttributes(body, { includeDefaults: true }),
           file: videoFile,
           posterFile
@@ -601,11 +601,11 @@ export function createContentController({ contentService }) {
         const attributes = {};
 
         if (Object.hasOwn(body, "title")) {
-          attributes.title = requiredLocalizedText(body, "title");
+          attributes.title = requiredLocalizedTextWithFallback(body, "title");
         }
 
         if (Object.hasOwn(body, "description")) {
-          attributes.description = optionalLocalizedText(body, "description");
+          attributes.description = optionalLocalizedTextWithFallback(body, "description");
         }
 
         if (Object.hasOwn(body, "type")) {
@@ -640,11 +640,11 @@ export function createContentController({ contentService }) {
         const attributes = {};
 
         if (Object.hasOwn(body, "title")) {
-          attributes.title = requiredLocalizedText(body, "title");
+          attributes.title = requiredLocalizedTextWithFallback(body, "title");
         }
 
         if (Object.hasOwn(body, "description")) {
-          attributes.description = optionalLocalizedText(body, "description");
+          attributes.description = optionalLocalizedTextWithFallback(body, "description");
         }
 
         if (Object.hasOwn(body, "is_premium")) {

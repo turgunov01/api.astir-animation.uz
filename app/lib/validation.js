@@ -46,6 +46,36 @@ function localizedTextValue(value, field, options = {}) {
   return localized;
 }
 
+// Like requiredLocalizedText, but a language left empty takes the Russian
+// text (or the first one filled in): content can be saved with ru only.
+function localizedWithFallback(value, field) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest(`${field} must include en, ru, and uz values`, "VALIDATION_ERROR");
+  }
+  const filled = (locale) => (typeof value[locale] === "string" ? value[locale].trim() : "");
+  const base = filled("ru") || supportedLocales.map(filled).find(Boolean) || "";
+  if (!base) {
+    throw badRequest(`${field}.ru is required`, "VALIDATION_ERROR");
+  }
+  const unsupportedLocale = Object.keys(value).find((locale) => !supportedLocales.includes(locale));
+  if (unsupportedLocale) {
+    throw badRequest(`${field}.${unsupportedLocale} is not supported`, "VALIDATION_ERROR");
+  }
+  return Object.fromEntries(supportedLocales.map((locale) => [locale, filled(locale) || base]));
+}
+
+export function requiredLocalizedTextWithFallback(body, field) {
+  return localizedWithFallback(body?.[field], field);
+}
+
+export function optionalLocalizedTextWithFallback(body, field) {
+  const value = body?.[field];
+  if (value === undefined || value === null) return null;
+  const empty = value && typeof value === "object" && !Array.isArray(value)
+    && supportedLocales.every((locale) => !String(value[locale] ?? "").trim());
+  return empty ? { en: "", ru: "", uz: "" } : localizedWithFallback(value, field);
+}
+
 export function requiredLocalizedText(body, field) {
   return localizedTextValue(body?.[field], field);
 }

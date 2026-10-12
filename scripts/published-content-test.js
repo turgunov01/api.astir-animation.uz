@@ -35,3 +35,14 @@ assert.equal(fs.existsSync(hls("gone")), false);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("published content tests passed");
+
+// ---- titles/descriptions: an empty language takes the Russian text ----
+{
+  const { requiredLocalizedTextWithFallback, optionalLocalizedTextWithFallback } = await import("../app/lib/validation.js");
+  assert.deepEqual(requiredLocalizedTextWithFallback({ description: { ru: "Описание", uz: "", en: " " } }, "description"), { en: "Описание", ru: "Описание", uz: "Описание" });
+  assert.deepEqual(requiredLocalizedTextWithFallback({ title: { ru: "Муса", uz: "Muso", en: "" } }, "title"), { en: "Муса", ru: "Муса", uz: "Muso" });
+  assert.deepEqual(requiredLocalizedTextWithFallback({ title: { uz: "Faqat uz" } }, "title"), { en: "Faqat uz", ru: "Faqat uz", uz: "Faqat uz" }, "no ru: the first filled one");
+  assert.throws(() => requiredLocalizedTextWithFallback({ title: { ru: "", uz: "", en: "" } }, "title"), (error) => error.statusCode === 400);
+  assert.deepEqual(optionalLocalizedTextWithFallback({ description: { ru: "", uz: "", en: "" } }, "description"), { en: "", ru: "", uz: "" });
+  console.log("localized fallback tests passed");
+}
