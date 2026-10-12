@@ -162,6 +162,47 @@ await assertMultiRenditionTranscode();
   assert.equal(records.get(movie.id).transcode.status, "ready");
 }
 
+// A ready title whose upload probe timed out gets its duration on start.
+{
+  const sourcePath = path.join(testRoot, "backfill-source.mp4");
+  fs.writeFileSync(sourcePath, "fake mp4 bytes");
+  const records = new Map([
+    ["no-duration", { id: "no-duration", duration_sec: 0, source: { path: sourcePath }, transcode: { status: "ready" } }],
+    ["has-duration", { id: "has-duration", duration_sec: 50, source: { path: sourcePath }, transcode: { status: "ready" } }]
+  ]);
+  const contentMovies = {
+    list: () => [...records.values()],
+    findById: (id) => records.get(id),
+    update(id, attributes) {
+      records.set(id, { ...records.get(id), ...attributes });
+      return records.get(id);
+    }
+  };
+  let probes = 0;
+  const fakeProbe = (command) => {
+    probes += 1;
+    assert.equal(command, "fake-ffprobe");
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stdout.emit("data", Buffer.from('{"format":{"duration":"6022.077"}}'));
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const transcoder = createTranscoderService({
+    config: { mediaRoot: path.join(testRoot, "backfill-media"), ffmpegPath: "fake-ffmpeg", ffprobePath: "fake-ffprobe", transcoderEnabled: true },
+    contentMovies,
+    spawnProcess: fakeProbe
+  });
+  assert.equal(await transcoder.backfillDurations(), 1);
+  assert.equal(records.get("no-duration").duration_sec, 6022);
+  assert.equal(records.get("has-duration").duration_sec, 50);
+  assert.equal(probes, 1, "titles with a duration aren't probed");
+}
+
 // After a restart a title left "processing" is transcoded again.
 {
   const sourcePath = path.join(testRoot, "resume-source.mp4");

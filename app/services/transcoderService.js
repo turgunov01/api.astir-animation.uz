@@ -6,7 +6,9 @@ import { buildHlsMasterPlaylist, hlsRenditionProfiles } from "../lib/hlsProfiles
 export function createTranscoderService({ config, contentMovies, spawnProcess = spawn }) {
   const runningJobs = new Map();
   const queuedJobs = new Set();
-  const probeTimeoutMs = 5000;
+  // A busy server (several transcodes at once) can take well over 5 s to
+  // open a long video; a timeout here leaves the title without a duration.
+  const probeTimeoutMs = 30000;
 
   function hlsDirectory(movieId) {
     return path.resolve(config.mediaRoot, "hls", movieId);
@@ -258,6 +260,8 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
   async function transcodeMovie(movie, sourcePath, playlistPath, renditions, job) {
     try {
       const duration = Number(movie.duration_sec) || await probeVideoDuration(sourcePath);
+      // The upload's probe may have timed out: fill the duration in now.
+      if (duration && !Number(movie.duration_sec)) contentMovies.update(movie.id, { duration_sec: duration });
       const report = progressReporter(movie.id);
       for (const [index, rendition] of renditions.entries()) {
         if (job.cancelled) {
@@ -445,7 +449,23 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     return stuck.length;
   }
 
+  // Ready titles whose duration was never read (probe timed out on upload).
+  async function backfillDurations() {
+    const missing = (contentMovies.list ? contentMovies.list() : [])
+      .filter((movie) => movie.source?.path && !Number(movie.duration_sec) && movie.transcode?.status === "ready");
+    let filled = 0;
+    for (const movie of missing) {
+      const duration = await probeVideoDuration(path.resolve(movie.source.path));
+      if (duration) {
+        contentMovies.update(movie.id, { duration_sec: duration });
+        filled += 1;
+      }
+    }
+    return filled;
+  }
+
   return {
+    backfillDurations,
     ensureMovieTranscoded,
     resumeInterrupted,
     hlsUrl,

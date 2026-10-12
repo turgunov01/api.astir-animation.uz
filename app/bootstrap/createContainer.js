@@ -85,6 +85,9 @@ export function createContainer({ store = defaultStore } = {}) {
     try {
       const resumed = services.transcoder.resumeInterrupted();
       if (resumed) console.log(JSON.stringify({ event: "transcode_resumed", count: resumed }));
+      services.transcoder.backfillDurations()
+        .then((filled) => filled && console.log(JSON.stringify({ event: "durations_backfilled", count: filled })))
+        .catch((error) => console.error(JSON.stringify({ event: "duration_backfill_failed", message: error.message })));
     } catch (error) {
       console.error(JSON.stringify({ event: "transcode_resume_failed", message: error.message }));
     }
