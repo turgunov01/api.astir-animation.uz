@@ -548,6 +548,14 @@ try {
 
   const replacementTagId = replaceTagsResponse.body.movie.tag_ids[0];
 
+  // An unpublished title isn't shown to the app; publishing it shows it.
+  const hiddenList = await requestJson(baseUrl, "/v1/content/movies");
+  assert.equal(hiddenList.body.movies.some((movie) => movie.id === movieId), false, "unpublished is hidden");
+  assert.equal((await requestJson(baseUrl, `/v1/content/movies/${movieId}`)).status, 404, "and can't be opened");
+  const publishResponse = await requestJson(baseUrl, `/v1/content/movies/${movieId}`, { method: "PATCH", body: { published: true } });
+  assert.equal(publishResponse.status, 200);
+  assert.equal(publishResponse.body.movie.published, true);
+
   const listedMovies = await requestJson(baseUrl, "/v1/content/movies");
   assert.equal(listedMovies.status, 200);
   assert.equal(
@@ -562,7 +570,7 @@ try {
   assert.equal(singleMovie.body.movie.year, 2027);
   assert.equal(singleMovie.body.movie.age_rating, 12);
   assert.equal(singleMovie.body.movie.duration_sec, 2345);
-  assert.equal(singleMovie.body.movie.published, false);
+  assert.equal(singleMovie.body.movie.published, true);
   assert.equal(singleMovie.body.movie.tags[0].name, "Replacement Upload Test Tag");
 
   const deleteTagResponse = await requestJson(baseUrl, `/v1/content/tags/${replacementTagId}`, {

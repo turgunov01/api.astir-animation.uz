@@ -1025,7 +1025,7 @@ export function createContentService({
   // Premium content is listed for everyone (marked subscription_required,
   // with a 15 s preview); only the parent's blacklist hides it.
   function canExposeMovieToActor(actor, movie, adminActor) {
-    return adminActor || !isMovieBlacklistedForActor(actor, movie);
+    return adminActor || !isMovieHiddenForActor(actor, movie);
   }
 
   function blacklistIdsForMovie(movie) {
@@ -1059,7 +1059,22 @@ export function createContentService({
     );
   }
 
+  // Only published titles reach the app; an episode follows its series.
+  // The admin panel sees everything.
+  function isMoviePublished(movie) {
+    const parentSeries = parentSeriesForMovie(movie);
+    return (parentSeries || movie).published === true;
+  }
+
+  function isMovieHiddenForActor(actor, movie) {
+    return (!isAdminActor(actor) && !isMoviePublished(movie)) || isMovieBlacklistedForActor(actor, movie);
+  }
+
   function assertMovieNotBlacklisted(actor, movie) {
+    if (!isAdminActor(actor) && !isMoviePublished(movie)) {
+      throw notFound("Content movie not found", "CONTENT_MOVIE_NOT_FOUND");
+    }
+
     if (isMovieBlacklistedForActor(actor, movie)) {
       throw forbidden("Content is blocked for this child", "CONTENT_BLACKLISTED");
     }
@@ -1359,7 +1374,7 @@ export function createContentService({
         const movie = contentMovies.findById(like.targetId);
 
         if (movie) {
-          if (isMovieBlacklistedForActor(actor, movie)) {
+          if (isMovieHiddenForActor(actor, movie)) {
             continue;
           }
 
@@ -1497,7 +1512,7 @@ export function createContentService({
         movie: await overlayStreaming(await serializeMovie(
           movieWithTranscode,
           listSeriesRecords(movieWithTranscode)
-            .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item)),
+            .filter((item) => adminActor || !isMovieHiddenForActor(actor, item)),
           contentTags,
           contentMovieTags,
           likeContext
@@ -1520,7 +1535,7 @@ export function createContentService({
         movie_id: movie.id,
         series: await overlayStreamingMany(await Promise.all(
           listSeriesRecords(movie)
-            .filter((item) => adminActor || !isMovieBlacklistedForActor(actor, item))
+            .filter((item) => adminActor || !isMovieHiddenForActor(actor, item))
             .map((item) => serializeMovie(item, [], contentTags, contentMovieTags, likeContext))
         ))
       };
@@ -1722,7 +1737,7 @@ export function createContentService({
         contentMovies.list()
           .filter((movie) => !isSeriesMovie(movie))
           .filter((movie) => !seriesOnly || listSeriesRecords(movie).length > 0 || normalized(movie.content_type) === "series")
-          .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
+          .filter((movie) => adminActor || !isMovieHiddenForActor(actor, movie))
           .filter((movie) => categoryValues.length === 0 || categoryValues.includes(movie.category_id))
           .filter((movie) => movieMatchesSearch(movie, q) || listSeriesRecords(movie).some((item) => movieMatchesSearch(item, q)))
           .filter((movie) => !liked || Boolean(contentLikes.findByOwnerAndTarget(likeContext.ownerId, movie.id)))
@@ -1765,7 +1780,7 @@ export function createContentService({
       const maxItems = Math.min(Math.max(Number(limit) || 20, 1), MAX_PAGE_LIMIT);
       const movies = contentMovies.list()
         .filter((movie) => !isSeriesMovie(movie))
-        .filter((movie) => adminActor || !isMovieBlacklistedForActor(actor, movie))
+        .filter((movie) => adminActor || !isMovieHiddenForActor(actor, movie))
         .sort((left, right) => (
           (metricValue(right.views_count) + metricValue(right.series_views_count))
           - (metricValue(left.views_count) + metricValue(left.series_views_count))
