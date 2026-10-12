@@ -83,6 +83,8 @@ export function createContainer({ store = defaultStore } = {}) {
   // Restart transcodes a previous server process didn't finish.
   setTimeout(() => {
     try {
+      const cleaned = services.transcoder.cleanupOrphanOutputs();
+      if (cleaned) console.log(JSON.stringify({ event: "transcode_orphans_removed", count: cleaned }));
       const resumed = services.transcoder.resumeInterrupted();
       if (resumed) console.log(JSON.stringify({ event: "transcode_resumed", count: resumed }));
       services.transcoder.backfillDurations()

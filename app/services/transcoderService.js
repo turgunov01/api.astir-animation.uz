@@ -298,10 +298,12 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
         return;
       }
 
+      // Half-written segments are useless; don't leave them on the disk.
+      fs.rmSync(hlsDirectory(movie.id), { recursive: true, force: true });
       updateTranscode(movie.id, {
         status: "failed",
         error: error.message,
-        hlsPath: playlistPath,
+        hlsPath: null,
         hlsUrl: null,
         renditions: []
       });
@@ -450,6 +452,22 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     return stuck.length;
   }
 
+  // HLS folders nothing will use: their title was deleted, or its transcode
+  // failed. (An unfinished one is cleared when it is transcoded again.)
+  function cleanupOrphanOutputs() {
+    const root = path.join(config.mediaRoot, "hls");
+    if (!fs.existsSync(root)) return 0;
+    let removed = 0;
+    for (const id of fs.readdirSync(root)) {
+      if (runningJobs.has(id) || queuedJobs.has(id)) continue;
+      const movie = contentMovies.findById(id);
+      if (movie && !["failed", "unavailable", "disabled"].includes(movie.transcode?.status)) continue;
+      fs.rmSync(path.join(root, id), { recursive: true, force: true });
+      removed += 1;
+    }
+    return removed;
+  }
+
   // Every uploaded title whose duration was never read (probe timed out).
   async function backfillDurations() {
     const missing = (contentMovies.list ? contentMovies.list() : [])
@@ -467,6 +485,7 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
 
   return {
     backfillDurations,
+    cleanupOrphanOutputs,
     ensureMovieTranscoded,
     resumeInterrupted,
     hlsUrl,

@@ -1066,6 +1066,11 @@ export function createContentService({
     return (parentSeries || movie).published === true;
   }
 
+  // Published rows straight from the store (its "WHERE published = true").
+  function publishedMovies() {
+    return contentMovies.listPublished ? contentMovies.listPublished() : contentMovies.list().filter(isMoviePublished);
+  }
+
   function isMovieHiddenForActor(actor, movie) {
     return (!isAdminActor(actor) && !isMoviePublished(movie)) || isMovieBlacklistedForActor(actor, movie);
   }
@@ -1734,7 +1739,7 @@ export function createContentService({
       const seriesOnly = normalized(kind) === "series";
 
       const movieRows = await Promise.all(
-        contentMovies.list()
+        (adminActor ? contentMovies.list() : publishedMovies())
           .filter((movie) => !isSeriesMovie(movie))
           .filter((movie) => !seriesOnly || listSeriesRecords(movie).length > 0 || normalized(movie.content_type) === "series")
           .filter((movie) => adminActor || !isMovieHiddenForActor(actor, movie))
@@ -1778,7 +1783,7 @@ export function createContentService({
       const likeContext = likeContextForActor(actor);
       const adminActor = isAdminActor(actor);
       const maxItems = Math.min(Math.max(Number(limit) || 20, 1), MAX_PAGE_LIMIT);
-      const movies = contentMovies.list()
+      const movies = (adminActor ? contentMovies.list() : publishedMovies())
         .filter((movie) => !isSeriesMovie(movie))
         .filter((movie) => adminActor || !isMovieHiddenForActor(actor, movie))
         .sort((left, right) => (
