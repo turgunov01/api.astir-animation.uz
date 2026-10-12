@@ -449,10 +449,10 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     return stuck.length;
   }
 
-  // Ready titles whose duration was never read (probe timed out on upload).
+  // Every uploaded title whose duration was never read (probe timed out).
   async function backfillDurations() {
     const missing = (contentMovies.list ? contentMovies.list() : [])
-      .filter((movie) => movie.source?.path && !Number(movie.duration_sec) && movie.transcode?.status === "ready");
+      .filter((movie) => movie.source?.path && !Number(movie.duration_sec) && fs.existsSync(path.resolve(movie.source.path)));
     let filled = 0;
     for (const movie of missing) {
       const duration = await probeVideoDuration(path.resolve(movie.source.path));
