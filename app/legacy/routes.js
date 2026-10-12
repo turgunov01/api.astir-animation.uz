@@ -254,9 +254,21 @@ async function targetLikeState(db, targetType, targetId, userId = null) {
   };
 }
 
-async function serializeSeriesWithLikes(db, row, userId = null) {
+// A series whose episodes are all still being transcoded: the app shows it
+// as a loading card and doesn't open it.
+function seriesProcessing(contentMovies, seriesId) {
+  const episodes = contentMovies?.list ? contentMovies.list().filter((movie) => movie.series_id === seriesId) : [];
+  if (!episodes.length) return false;
+  if (episodes.some((movie) => movie.transcode?.status === "ready")) return false;
+  return episodes.some((movie) => ["processing", "queued", "uploaded", "transcoding"].includes(movie.transcode?.status));
+}
+
+async function serializeSeriesWithLikes(db, row, userId = null, contentMovies = null) {
+  const processing = seriesProcessing(contentMovies, row.id);
   return {
     ...serializeSeries(row),
+    processing,
+    transcode_status: processing ? "processing" : "ready",
     ...await targetLikeState(db, "series", row.id, userId)
   };
 }
@@ -3498,7 +3510,7 @@ export function createLegacyRoutes({
     const visibleRows = legacyExternalVisibleRows(childContentBlacklist, actor, rows);
     const data = await Promise.all(
       visibleRows.map(async (row) => localizeRecord(
-        await serializeSeriesWithLikes(request.legacyDb, row, userId),
+        await serializeSeriesWithLikes(request.legacyDb, row, userId, contentMovies),
         lang
       ))
     );
@@ -3535,7 +3547,7 @@ export function createLegacyRoutes({
     const userId = actor ? await ownerUserIdForActor(request.legacyDb, actor) : null;
     const row = await getById(request.legacyDb, "series", request.params.id);
     response.json(localizeRecord(
-      await serializeSeriesWithLikes(request.legacyDb, row, userId),
+      await serializeSeriesWithLikes(request.legacyDb, row, userId, contentMovies),
       contentLangFor(request, actor)
     ));
   }));
