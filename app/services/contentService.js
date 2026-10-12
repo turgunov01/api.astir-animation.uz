@@ -208,6 +208,8 @@ async function serializeMovie(movie, series = [], contentTags, contentMovieTags,
     storage_path: movie.source?.path || null,
     transcode_status: transcodeStatus,
     transcode_progress: transcodeStatus === "ready" ? 100 : Number(movie.transcode?.progress) || 0,
+    // With the progress, lets the admin estimate the time left.
+    transcode_started_at: movie.transcode?.startedAt || null,
     transcode_error: transcodeError,
     status_error: transcodeError,
     error_message: transcodeError,

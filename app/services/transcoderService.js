@@ -356,6 +356,7 @@ export function createTranscoderService({ config, contentMovies, spawnProcess = 
     updateTranscode(movie.id, {
       status: "processing",
       progress: 0,
+      startedAt: new Date().toISOString(),
       error: null,
       hlsPath: playlistPath,
       hlsUrl: hlsUrl(movie.id),
