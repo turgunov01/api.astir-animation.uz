@@ -61,14 +61,14 @@ assert.deepEqual(readImageInfo(write("b.webp", webp("VP8L", 512, 512)).path), { 
 assert.deepEqual(readImageInfo(write("c.webp", webp("VP8X", 3840, 2160)).path), { format: "webp", width: 3840, height: 2160 });
 assert.equal(readImageInfo(write("a.gif", Buffer.from("GIF89a................")).path), null);
 
-// Banner: 16:9, at least 1280x720, <= 5 MB.
+// Banner: 16:9, at least 1280x720, any file size.
 assert.equal(imageProblem(write("ok.png", png(1920, 1080)), "banner"), null);
 assert.equal(imageProblem(write("ok2.jpg", jpeg(1280, 720)), "banner"), null);
 assert.match(imageProblem(write("portrait.png", png(1080, 1350)), "banner"), /пропорции/);
 assert.match(imageProblem(write("wide.png", png(1280, 656)), "banner"), /пропорции/);
 assert.match(imageProblem(write("small.png", png(960, 540)), "banner"), /маленькое/);
 assert.match(imageProblem(write("x.gif", Buffer.from("GIF89a................")), "banner"), /JPG, PNG и WebP/);
-assert.match(imageProblem({ ...write("big.png", png(1920, 1080)), size: 6 * 1024 * 1024 }, "banner"), /большой/);
+assert.equal(imageProblem({ ...write("big.png", png(1920, 1080)), size: 60 * 1024 * 1024 }, "banner"), null, "posters may be any size");
 
 // Category icon: square, at least 256x256, <= 1 MB.
 assert.equal(imageProblem(write("icon.webp", webp("VP8L", 512, 512)), "icon"), null);

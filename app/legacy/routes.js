@@ -2094,7 +2094,7 @@ export function createLegacyRoutes({
   }
   const preview = (text, fallback) => (String(text || "").trim() || fallback).slice(0, 140);
   const avatarUpload = media.upload("avatars", { maxMb: 10 }).single("file");
-  const posterUpload = media.upload("posters", { maxMb: 20 }).single("file");
+  const posterUpload = media.upload("posters", { maxMb: config.maxVideoUploadMb || 2048 }).single("file");
   const imageError = (message) => legacyError(400, "invalid_image", message);
   const bannerUpload = [posterUpload, validateImageUploads({ file: "banner" }, { toError: imageError })];
   const categoryIconUpload = [posterUpload, validateImageUploads({ file: "icon" }, { toError: imageError })];

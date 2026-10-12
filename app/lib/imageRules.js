@@ -12,7 +12,8 @@ export const IMAGE_RULES = {
     minWidth: 1280,
     minHeight: 720,
     recommended: "1920×1080",
-    maxBytes: 5 * 1024 * 1024
+    // No size limit for posters/banners (only the upload limit applies).
+    maxBytes: null
   },
   icon: {
     label: "Иконка",
@@ -109,13 +110,14 @@ export function readImageInfo(filePath) {
 export function imageProblem(file, ruleName) {
   const rule = IMAGE_RULES[ruleName];
   const info = file?.path ? readImageInfo(file.path) : null;
-  const hint = `Нужно ${rule.ratioLabel}, рекомендуем ${rule.recommended} (JPG, PNG или WebP до ${Math.round(rule.maxBytes / 1024 / 1024) || 1} МБ).`;
+  const sizeNote = rule.maxBytes ? ` до ${Math.round(rule.maxBytes / 1024 / 1024) || 1} МБ` : "";
+  const hint = `Нужно ${rule.ratioLabel}, рекомендуем ${rule.recommended} (JPG, PNG или WebP${sizeNote}).`;
 
   if (!info) {
     return `${rule.label}: поддерживаются только JPG, PNG и WebP. ${hint}`;
   }
 
-  if (file.size > rule.maxBytes) {
+  if (rule.maxBytes && file.size > rule.maxBytes) {
     return `${rule.label}: файл ${(file.size / 1024 / 1024).toFixed(1)} МБ — слишком большой. ${hint}`;
   }
 
