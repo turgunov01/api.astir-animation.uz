@@ -302,6 +302,8 @@ function serializeMovieAsLegacyContent(movie, seriesId = null) {
     source_path: movie.source?.path || "",
     status: legacyStatusForMovie(movie),
     transcode_status: transcodeStatus,
+    transcode_progress: transcodeStatus === "ready" ? 100 : Number(movie.transcode?.progress) || 0,
+    transcode_started_at: movie.transcode?.startedAt || null,
     transcode_error: transcodeError,
     status_error: transcodeError,
     error_message: transcodeError,
