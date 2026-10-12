@@ -4260,7 +4260,7 @@ export function createLegacyRoutes({
       [viewerId, actor.kind, request.params.id, position]
     );
 
-    if (position >= 10 && Number(previousProgress?.position_sec || 0) < 10) {
+    if (position >= 30 && Number(previousProgress?.position_sec || 0) < 30) {
       await request.legacyDb.query(
         "UPDATE content SET views_count = views_count + 1 WHERE id = $1",
         [request.params.id]

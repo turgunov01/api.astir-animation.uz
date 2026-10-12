@@ -1,6 +1,7 @@
 import { badRequest, forbidden, notFound } from "../lib/errors.js";
 
-const countedViewThresholdSeconds = 10;
+// One view per visit: a watch session counts once, after 30 s of watching.
+const countedViewThresholdSeconds = 30;
 
 function minutesSinceMidnight(date) {
   return date.getHours() * 60 + date.getMinutes();
