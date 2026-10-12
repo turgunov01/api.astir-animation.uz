@@ -146,8 +146,29 @@ export function createAppStoreConnectClient(settings = {}, { fetchImpl = fetch, 
     throw badRequest(`App Store Connect: нет цены $${usdPrice} — выберите цену из сетки Apple`, "APP_STORE_PRICE_POINT_MISSING");
   }
 
+  // Current USD price ("4.99"), or null when none is set yet.
+  async function currentUsdPrice(subscriptionId) {
+    const payload = await call(
+      "GET",
+      `/v1/subscriptions/${subscriptionId}/prices?filter[territory]=USA&include=subscriptionPricePoint&limit=50`
+    );
+    const points = new Map(
+      (payload.included || [])
+        .filter((item) => item.type === "subscriptionPricePoints")
+        .map((item) => [item.id, item.attributes?.customerPrice])
+    );
+    const today = new Date(now()).toISOString().slice(0, 10);
+    const current = (payload.data || [])
+      .filter((price) => !price.attributes?.startDate || price.attributes.startDate <= today)
+      .sort((left, right) => String(right.attributes?.startDate || "").localeCompare(String(left.attributes?.startDate || "")))[0];
+    const pointId = current?.relationships?.subscriptionPricePoint?.data?.id;
+    const value = pointId ? points.get(pointId) : null;
+    return value ? Number(value).toFixed(2) : null;
+  }
+
   // Sets the USD price and Apple's equalized price in every other territory.
-  async function setPrice(subscriptionId, usdPrice) {
+  // preserveCurrentPrice keeps existing subscribers on the price they pay.
+  async function setPrice(subscriptionId, usdPrice, { preserveCurrentPrice = false } = {}) {
     const usaPoint = await usdPricePoint(subscriptionId, usdPrice);
     const points = [usaPoint];
     let path = `/v1/subscriptionPricePoints/${usaPoint}/equalizations?limit=200`;
@@ -160,7 +181,7 @@ export function createAppStoreConnectClient(settings = {}, { fetchImpl = fetch, 
       await call("POST", "/v1/subscriptionPrices", {
         data: {
           type: "subscriptionPrices",
-          attributes: { preserveCurrentPrice: false },
+          attributes: { preserveCurrentPrice },
           relationships: {
             subscription: { data: { type: "subscriptions", id: subscriptionId } },
             subscriptionPricePoint: { data: { type: "subscriptionPricePoints", id: point } }
@@ -227,5 +248,5 @@ export function createAppStoreConnectClient(settings = {}, { fetchImpl = fetch, 
     return { id: subscriptionId, productId, state: created.data.attributes?.state || "MISSING_METADATA" };
   }
 
-  return { isConfigured, listSubscriptions, createSubscription, setPrice };
+  return { isConfigured, listSubscriptions, createSubscription, setPrice, currentUsdPrice };
 }

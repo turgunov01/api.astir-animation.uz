@@ -67,6 +67,7 @@ export function createTariffStoreSync({
         product_id: subscription.productId,
         subscription_id: subscription.id,
         state: subscription.state,
+        usd_price: await client.currentUsdPrice(subscription.id).catch(() => null),
         synced_at: new Date(now()).toISOString()
       };
 
@@ -122,6 +123,18 @@ export function createTariffStoreSync({
         console.error(JSON.stringify({ event: "app_store_sync_failed", message: error.message }));
         return null;
       }
+    },
+
+    // Changes the App Store price of a linked tariff; current subscribers keep
+    // the price they already pay.
+    async updatePrice(tariffId, usdPrice) {
+      const tariff = tariffService.getTariff(tariffId);
+      const subscriptionId = tariff.app_store?.subscription_id;
+      if (!subscriptionId) throw conflict("Тариф ещё не связан с подпиской App Store", "TARIFF_NOT_IN_APP_STORE");
+      await client.setPrice(subscriptionId, usdPrice, { preserveCurrentPrice: true });
+      return tariffService.updateTariff(tariff.id, {
+        app_store: { ...tariff.app_store, usd_price: Number(usdPrice).toFixed(2), synced_at: new Date(now()).toISOString() }
+      });
     },
 
     // Creates the tariff's subscription in App Store Connect and links it.

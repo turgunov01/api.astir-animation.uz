@@ -38,6 +38,24 @@ async function fakeFetch(url, { method = "GET", body } = {}) {
   if (method === "GET" && pathname.startsWith("/v1/subscriptionGroups/g1/subscriptions")) {
     return json({ data: subscriptions, included: [{ type: "subscriptionLocalizations", id: "l1", attributes: { locale: "ru", name: "Семья", description: "Для всей семьи" } }] });
   }
+  if (method === "GET" && /^\/v1\/subscriptions\/[^/]+\/prices/.test(pathname)) {
+    return json({
+      data: [
+        { id: "p-old", attributes: { startDate: "2020-01-01" }, relationships: { subscriptionPricePoint: { data: { id: "pp-3.99" } } } },
+        { id: "p-new", attributes: { startDate: "2026-01-01" }, relationships: { subscriptionPricePoint: { data: { id: "pp-4.99" } } } },
+        { id: "p-future", attributes: { startDate: "2099-01-01" }, relationships: { subscriptionPricePoint: { data: { id: "pp-9.99" } } } }
+      ],
+      included: [
+        { type: "subscriptionPricePoints", id: "pp-3.99", attributes: { customerPrice: "3.99" } },
+        { type: "subscriptionPricePoints", id: "pp-4.99", attributes: { customerPrice: "4.99" } },
+        { type: "subscriptionPricePoints", id: "pp-9.99", attributes: { customerPrice: "9.99" } }
+      ]
+    });
+  }
+  if (method === "GET" && pathname.startsWith("/v1/subscriptions/sub-premium/pricePoints")) {
+    return json({ data: [{ id: "pp-premium-6.99", attributes: { customerPrice: "6.99" } }] });
+  }
+  if (method === "GET" && pathname.startsWith("/v1/subscriptionPricePoints/pp-premium-6.99/equalizations")) return json({ data: [] });
   if (method === "POST" && pathname === "/v1/subscriptions") return json({ data: { id: "sub-new", attributes: { state: "MISSING_METADATA" } } }, 201);
   if (method === "GET" && pathname === "/v1/territories?limit=200") return json({ data: [{ id: "USA" }, { id: "UZB" }] });
   if (method === "GET" && pathname.startsWith("/v1/subscriptions/sub-new/pricePoints")) {
@@ -82,6 +100,14 @@ assert.equal(draft.duration_days, 365);
 assert.equal(draft.app_store.product_id, "astir.family.yearly");
 assert.equal(config.appleIap.products["astir.family.yearly"], draft.id, "linked for the app and receipt checks");
 assert.equal(tariffService.getTariff("premium").app_store.state, "READY_TO_SUBMIT", "linked tariff gets the store state");
+assert.equal(tariffService.getTariff("premium").app_store.usd_price, "4.99", "current price, not a past or future one");
+
+// ---- App Store price changes from the admin panel ----
+calls.length = 0;
+assert.equal((await sync.updatePrice("premium", "6.99")).app_store.usd_price, "6.99");
+const priceChange = calls.find((call) => call.path === "/v1/subscriptionPrices");
+assert.equal(priceChange.body.data.relationships.subscriptionPricePoint.data.id, "pp-premium-6.99");
+assert.equal(priceChange.body.data.attributes.preserveCurrentPrice, true, "current subscribers keep their price");
 
 assert.ok(!tariffService.listTariffs().some((tariff) => tariff.id === draft.id), "the app doesn't see the draft");
 assert.ok(tariffService.listTariffs({ includeInactive: true }).some((tariff) => tariff.id === draft.id), "the admin does");
@@ -140,6 +166,15 @@ const individual = createAppStoreConnectClient({ ...config.appleIap, ascIssuerId
   }
 });
 assert.deepEqual(await individual.listSubscriptions(), []);
+
+// ---- exactly one default tariff, the free one ----
+{
+  const second = new JsonStore(path.join(dir, "defaults.json"));
+  const repository = createTariffRepository(second);
+  repository.create({ id: "basic", title: { ru: "Базовый" }, is_default: true });
+  createTariffService({ parents: {}, subscriptions: {}, tariffs: repository });
+  assert.deepEqual(repository.list().filter((tariff) => tariff.is_default).map((tariff) => tariff.id), ["free"]);
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("tariff store sync tests passed");

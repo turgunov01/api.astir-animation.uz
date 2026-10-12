@@ -215,6 +215,15 @@ export function createTariffService({ parents, subscriptions, tariffs }) {
         tariffs.update(existingTariff.id, attributes);
       }
     }
+
+    // Exactly one default tariff — the free one when it is among several.
+    const defaults = tariffs.list().filter((tariff) => tariff.is_default);
+    if (defaults.length > 1) {
+      const keep = defaults.find((tariff) => tariff.id === defaultTariffId) || defaults[0];
+      for (const tariff of defaults) {
+        if (tariff.id !== keep.id) tariffs.update(tariff.id, { is_default: false });
+      }
+    }
   }
 
   function defaultTariff() {

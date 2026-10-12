@@ -4510,6 +4510,14 @@ export function createLegacyRoutes({
     response.json({ created: result.created, subscriptions: result.subscriptions });
   }));
 
+  router.post("/admin/tariffs/:id/app-store/price", requireAdmin, asyncHandler(async (request, response) => {
+    const usdPrice = String(request.body?.usd_price || "").trim();
+    if (!/^\d{1,4}(\.\d{2})?$/.test(usdPrice)) {
+      throw legacyError(400, "validation_error", "usd_price must look like 4.99");
+    }
+    response.json({ tariff: await tariffStoreSync.updatePrice(request.params.id, usdPrice) });
+  }));
+
   router.post("/admin/tariffs/:id/app-store", requireAdmin, asyncHandler(async (request, response) => {
     const usdPrice = String(request.body?.usd_price || "").trim();
     if (usdPrice && !/^\d{1,4}(\.\d{2})?$/.test(usdPrice)) {
