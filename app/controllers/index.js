@@ -17,7 +17,7 @@ export function createControllers(services) {
     auth: createAuthController({ authService: services.auth }),
     billing: createBillingController({ subscriptionService: services.subscriptions }),
     children: createChildrenController({ childService: services.children }),
-    content: createContentController({ contentService: services.content }),
+    content: createContentController({ contentService: services.content, watchService: services.watch }),
     device: createDeviceController({
       childService: services.children,
       notificationService: services.notifications,

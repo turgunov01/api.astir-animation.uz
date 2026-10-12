@@ -305,7 +305,7 @@ function movieMetadataAttributes(body, { includeDefaults = false } = {}) {
   return attributes;
 }
 
-export function createContentController({ contentService }) {
+export function createContentController({ contentService, watchService = null }) {
   return {
     async createCategory(request, response) {
       const category = await withUploadCleanup(request, async () => {
@@ -448,9 +448,14 @@ export function createContentController({ contentService }) {
     },
 
     async getMovie(request, response) {
-      const result = await contentService.getMovie(request.actor, request.params.movie_id, {
-        childId: optionalChildIdParam(request)
-      });
+      const childId = optionalChildIdParam(request);
+      const result = await contentService.getMovie(request.actor, request.params.movie_id, { childId });
+
+      // Where this viewer stopped last time, so the app resumes from there.
+      if (result.movie && watchService && request.actor) {
+        const progress = await watchService.getProgress(request.actor, result.movie.id, { childId }).catch(() => null);
+        result.movie.last_position_sec = progress?.position_sec || 0;
+      }
 
       response.json({
         data: result.movie,

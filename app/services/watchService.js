@@ -605,7 +605,9 @@ export function createWatchService({ childService, children, contentService, wat
     const countedAsView = !session.countedAsView && nextWatchedSeconds >= countedViewThresholdSeconds;
     const updates = {
       watchedSeconds: nextWatchedSeconds,
-      positionSeconds: positionSeconds ?? session.positionSeconds ?? nextWatchedSeconds,
+      // A 0 s report comes from the player before it seeks to the saved spot;
+      // it must not wipe the resume position.
+      positionSeconds: positionSeconds > 0 ? positionSeconds : session.positionSeconds ?? nextWatchedSeconds,
       countedAsView: session.countedAsView || countedAsView,
       viewCountedAt: countedAsView ? new Date().toISOString() : session.viewCountedAt || null
     };
