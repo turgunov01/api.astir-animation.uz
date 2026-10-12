@@ -970,6 +970,12 @@ async function requireOwnerUserIdForActor(db, actor) {
   return userId;
 }
 
+// The admin panel edits every language, so it gets the texts unlocalized
+// (the browser's Accept-Language would otherwise collapse them to one).
+function contentLangFor(request, actor) {
+  return isLegacyAdminActor(actor) ? null : requestedLang(request);
+}
+
 function isLegacyAdminActor(actor) {
   return actor?.kind === "user" && ["admin", "super_admin"].includes(actor.user?.role);
 }
@@ -3530,7 +3536,7 @@ export function createLegacyRoutes({
     const row = await getById(request.legacyDb, "series", request.params.id);
     response.json(localizeRecord(
       await serializeSeriesWithLikes(request.legacyDb, row, userId),
-      requestedLang(request)
+      contentLangFor(request, actor)
     ));
   }));
 
@@ -3576,8 +3582,8 @@ export function createLegacyRoutes({
   }));
 
   router.get("/series/:id/episodes", asyncHandler(async (request, response) => {
-    const lang = requestedLang(request);
     const actor = await optionalLegacyActor(request);
+    const lang = contentLangFor(request, actor);
     let rows;
 
     if (
