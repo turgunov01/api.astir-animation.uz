@@ -1,5 +1,6 @@
 import http from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -113,6 +114,13 @@ export function createApp({ container = createContainer() } = {}) {
 
   app.get("/health", (request, response) => {
     response.status(200).json({ status: "ok" });
+  });
+
+  // Public privacy policy page; the Google Play listing links here.
+  const privacyPolicyPath = fileURLToPath(new URL("./public/privacy-policy.html", import.meta.url));
+  app.get(["/privacy", "/privacy-policy"], (request, response) => {
+    response.set("Cache-Control", "public, max-age=3600");
+    response.sendFile(privacyPolicyPath);
   });
 
   app.get(["/", "/index.html"], (request, response) => {
