@@ -456,7 +456,19 @@ export async function verifyGoogleToken(idToken, body = {}) {
       audience: audiences,
       issuer: ["accounts.google.com", "https://accounts.google.com"]
     }));
-  } catch {
+  } catch (error) {
+    // Logged so Android failures can be told apart: an aud mismatch means the
+    // app's serverClientId (Web client ID) is missing from GOOGLE_CLIENT_IDS;
+    // a malformed token usually means an access token was sent instead.
+    console.warn(JSON.stringify({
+      level: "warn",
+      msg: "google id token rejected",
+      code: error.code,
+      claim: error.claim,
+      reason: error.reason,
+      error: error.message,
+      accepted_audiences: audiences
+    }));
     throw legacyError(401, "invalid credentials", "invalid credentials");
   }
 
