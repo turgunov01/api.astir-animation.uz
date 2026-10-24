@@ -4,6 +4,7 @@ import { createApiMonitor, normalizeRoute } from "../app/services/apiMonitor.js"
 assert.equal(normalizeRoute("/v1/content/movies/edc017bc-0bb2-46aa-9feb-47e9541c12c6?x=1"), "/v1/content/movies/:id");
 assert.equal(normalizeRoute("/api/v1/users/12/children"), "/api/v1/users/:id/children");
 assert.equal(normalizeRoute("/media/uploads/a.jpg"), "/media/*");
+assert.equal(normalizeRoute("/%c0"), "/%c0", "a malformed escape must not throw");
 
 const monitor = createApiMonitor();
 const now = Date.now();

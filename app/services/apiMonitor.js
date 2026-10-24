@@ -10,12 +10,22 @@ const KEEP_MS = 24 * 60 * 60 * 1000;
 const RANGES = { "15m": 15, "1h": 60, "6h": 360, "24h": 1440 };
 const ID_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+|[0-9a-f]{24,}|[A-Za-z0-9_-]{32,})$/i;
 
+// A bad escape such as "/%c0" must not throw: this runs in a response
+// "finish" listener, where an exception kills the whole process.
+function safeDecode(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 // "/v1/content/movies/3f2…?limit=5" -> "/v1/content/movies/:id"
 export function normalizeRoute(url) {
   const path = String(url || "").split("?")[0] || "/";
   return path
     .split("/")
-    .map((segment) => (ID_SEGMENT.test(decodeURIComponent(segment)) ? ":id" : segment))
+    .map((segment) => (ID_SEGMENT.test(safeDecode(segment)) ? ":id" : segment))
     .join("/")
     .replace(/\/(?:media|media-thumb)\/.*/, "/media/*") || "/";
 }
